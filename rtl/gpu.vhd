@@ -7,6 +7,10 @@ library mem;
 use work.pGPU.all;
 
 entity gpu is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk1x                : in  std_logic;
@@ -181,7 +185,7 @@ architecture arch of gpu is
    signal GPUSTAT_ReadyRecDMA       : std_logic;
    signal GPUSTAT_DMADirection      : std_logic_vector(1 downto 0);
       
-   signal vramRange                 : unsigned(18 downto 0) := (others => '0');
+   signal vramRange                 : unsigned(VRAM_Y_BITS + 9 downto 0) := (others => '0');
    signal hDisplayRange             : unsigned(23 downto 0) := x"C60260";
    signal vDisplayRange             : unsigned(19 downto 0) := x"3FC10";
       
@@ -195,8 +199,8 @@ architecture arch of gpu is
       
    signal drawingAreaLeft           : unsigned(9 downto 0) := (others => '0');
    signal drawingAreaRight          : unsigned(9 downto 0) := (others => '0');
-   signal drawingAreaTop            : unsigned(8 downto 0) := (others => '0');
-   signal drawingAreaBottom         : unsigned(8 downto 0) := (others => '0');
+   signal drawingAreaTop            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
+   signal drawingAreaBottom         : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal drawingOffsetX            : signed(10 downto 0) := (others => '0');
    signal drawingOffsetY            : signed(10 downto 0) := (others => '0');
    signal interlacedDrawing         : std_logic;
@@ -220,13 +224,19 @@ architecture arch of gpu is
    signal pixelStall                : std_logic;
    signal pixelColor                : std_logic_vector(15 downto 0);
    signal pixelColor2               : std_logic_vector(15 downto 0);
-   signal pixelAddr                 : unsigned(19 downto 0);
+   signal pixelAddr                 : unsigned(VRAM_Y_BITS + 10 downto 0);
    signal pixelWrite                : std_logic;
       
    signal pixel64data               : std_logic_vector(63 downto 0) := (others => '0');
    signal pixel64data2              : std_logic_vector(63 downto 0) := (others => '0');
    signal pixel64wordEna            : std_logic_vector(3 downto 0) := (others => '0');
-   signal pixel64addr               : std_logic_vector(16 downto 0) := (others => '0');
+   -- write FIFO layout: data 63..0, 64-bit word address (Y + X/4 bits), 4 word
+   -- enables, source flag; the address width follows VRAM_Y_BITS
+   constant PA_W      : integer := VRAM_Y_BITS + 8;
+   constant F_ADDR_HI : integer := 63 + PA_W;
+   constant F_BE_LO   : integer := 64 + PA_W;
+   constant F_SRC     : integer := 68 + PA_W;
+   signal pixel64addr               : std_logic_vector(PA_W - 1 downto 0) := (others => '0');
    signal pixel64filled             : std_logic := '0';
    signal pixel64source             : std_logic := '0';
    signal pixel64timeout            : integer range 0 to 15;
@@ -239,25 +249,25 @@ architecture arch of gpu is
    signal vramFill_done             : std_logic; 
    --signal vramFill_CmdDone          : std_logic; 
    signal vramFill_pixelColor       : std_logic_vector(15 downto 0);
-   signal vramFill_pixelAddr        : unsigned(19 downto 0);
+   signal vramFill_pixelAddr        : unsigned(VRAM_Y_BITS + 10 downto 0);
    signal vramFill_pixelWrite       : std_logic;   
       
    signal cpu2vram_requestFifo      : std_logic; 
    signal cpu2vram_done             : std_logic; 
    --signal cpu2vram_CmdDone          : std_logic; 
    signal cpu2vram_pixelColor       : std_logic_vector(15 downto 0);
-   signal cpu2vram_pixelAddr        : unsigned(19 downto 0);
+   signal cpu2vram_pixelAddr        : unsigned(VRAM_Y_BITS + 10 downto 0);
    signal cpu2vram_pixelWrite       : std_logic;
       
    signal vram2vram_requestFifo     : std_logic; 
    signal vram2vram_done            : std_logic; 
    --signal vram2vram_CmdDone         : std_logic; 
    signal vram2vram_pixelColor      : std_logic_vector(15 downto 0);
-   signal vram2vram_pixelAddr       : unsigned(19 downto 0);
+   signal vram2vram_pixelAddr       : unsigned(VRAM_Y_BITS + 10 downto 0);
    signal vram2vram_pixelWrite      : std_logic;
    signal vram2vram_reqVRAMEnable   : std_logic;
    signal vram2vram_reqVRAMXPos     : unsigned(9 downto 0);
-   signal vram2vram_reqVRAMYPos     : unsigned(8 downto 0);
+   signal vram2vram_reqVRAMYPos     : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal vram2vram_reqVRAMSize     : unsigned(10 downto 0);
    signal vram2vram_vramLineEna     : std_logic;
    signal vram2vram_vramLineAddr    : unsigned(9 downto 0);
@@ -267,7 +277,7 @@ architecture arch of gpu is
    --signal vram2cpu_CmdDone          : std_logic; 
    signal vram2cpu_reqVRAMEnable    : std_logic;
    signal vram2cpu_reqVRAMXPos      : unsigned(9 downto 0);
-   signal vram2cpu_reqVRAMYPos      : unsigned(8 downto 0);
+   signal vram2cpu_reqVRAMYPos      : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal vram2cpu_reqVRAMSize      : unsigned(10 downto 0);
    signal vram2cpu_vramLineEna      : std_logic;
    signal vram2cpu_vramLineAddr     : unsigned(9 downto 0);
@@ -283,13 +293,13 @@ architecture arch of gpu is
    signal line_pipeline_new         : std_logic;
    signal line_pipeline_transparent : std_logic;
    signal line_pipeline_x           : unsigned(9 downto 0);
-   signal line_pipeline_y           : unsigned(8 downto 0);
+   signal line_pipeline_y           : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal line_pipeline_cr          : unsigned(7 downto 0);
    signal line_pipeline_cg          : unsigned(7 downto 0);
    signal line_pipeline_cb          : unsigned(7 downto 0);
    signal line_reqVRAMEnable        : std_logic;
    signal line_reqVRAMXPos          : unsigned(9 downto 0);
-   signal line_reqVRAMYPos          : unsigned(8 downto 0);
+   signal line_reqVRAMYPos          : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal line_reqVRAMSize          : unsigned(10 downto 0);
    signal line_vramLineEna          : std_logic;
    signal line_vramLineAddr         : unsigned(9 downto 0);
@@ -302,7 +312,7 @@ architecture arch of gpu is
    signal rect_pipeline_transparent : std_logic;
    signal rect_pipeline_rawTexture  : std_logic;
    signal rect_pipeline_x           : unsigned(9 downto 0);
-   signal rect_pipeline_y           : unsigned(8 downto 0);
+   signal rect_pipeline_y           : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal rect_pipeline_cr          : unsigned(7 downto 0);
    signal rect_pipeline_cg          : unsigned(7 downto 0);
    signal rect_pipeline_cb          : unsigned(7 downto 0);
@@ -310,13 +320,13 @@ architecture arch of gpu is
    signal rect_pipeline_v           : unsigned(7 downto 0);
    signal rect_reqVRAMEnable        : std_logic;
    signal rect_reqVRAMXPos          : unsigned(9 downto 0);
-   signal rect_reqVRAMYPos          : unsigned(8 downto 0);
+   signal rect_reqVRAMYPos          : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal rect_reqVRAMSize          : unsigned(10 downto 0);
    signal rect_vramLineEna          : std_logic;
    signal rect_vramLineAddr         : unsigned(9 downto 0);
    signal rect_textPalNew           : std_logic;
    signal rect_textPalX             : unsigned(9 downto 0);   
-   signal rect_textPalY             : unsigned(8 downto 0); 
+   signal rect_textPalY             : unsigned(VRAM_Y_BITS - 1 downto 0); 
    
    signal poly_requestFifo          : std_logic; 
    signal poly_done                 : std_logic;
@@ -328,7 +338,7 @@ architecture arch of gpu is
    signal poly_pipeline_rawTexture  : std_logic;
    signal poly_pipeline_dithering   : std_logic;
    signal poly_pipeline_x           : unsigned(9 downto 0);
-   signal poly_pipeline_y           : unsigned(8 downto 0);
+   signal poly_pipeline_y           : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal poly_pipeline_cr          : unsigned(7 downto 0);
    signal poly_pipeline_cg          : unsigned(7 downto 0);
    signal poly_pipeline_cb          : unsigned(7 downto 0);
@@ -338,7 +348,7 @@ architecture arch of gpu is
    signal poly_pipeline_v11         : unsigned(7 downto 0);
    signal poly_reqVRAMEnable        : std_logic;
    signal poly_reqVRAMXPos          : unsigned(9 downto 0);
-   signal poly_reqVRAMYPos          : unsigned(8 downto 0);
+   signal poly_reqVRAMYPos          : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal poly_reqVRAMSize          : unsigned(10 downto 0);
    signal poly_vramLineEna          : std_logic;
    signal poly_vramLineAddr         : unsigned(9 downto 0);
@@ -346,15 +356,15 @@ architecture arch of gpu is
    signal poly_drawModeNew          : std_logic;
    signal poly_textPalNew           : std_logic;
    signal poly_textPalX             : unsigned(9 downto 0);   
-   signal poly_textPalY             : unsigned(8 downto 0); 
+   signal poly_textPalY             : unsigned(VRAM_Y_BITS - 1 downto 0); 
    
    signal pipeline_pixelColor       : std_logic_vector(15 downto 0);
    signal pipeline_pixelColor2      : std_logic_vector(15 downto 0);
-   signal pipeline_pixelAddr        : unsigned(19 downto 0);
+   signal pipeline_pixelAddr        : unsigned(VRAM_Y_BITS + 10 downto 0);
    signal pipeline_pixelWrite       : std_logic;
    signal pipeline_reqVRAMEnable    : std_logic;
    signal pipeline_reqVRAMXPos      : unsigned(9 downto 0);
-   signal pipeline_reqVRAMYPos      : unsigned(8 downto 0);
+   signal pipeline_reqVRAMYPos      : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal pipeline_reqVRAMSize      : unsigned(10 downto 0);
    
    signal pipeline_busy             : std_logic;
@@ -365,7 +375,7 @@ architecture arch of gpu is
    signal pipeline_rawTexture       : std_logic;
    signal pipeline_dithering        : std_logic;
    signal pipeline_x                : unsigned(9 downto 0);
-   signal pipeline_y                : unsigned(8 downto 0);
+   signal pipeline_y                : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal pipeline_cr               : unsigned(7 downto 0);
    signal pipeline_cg               : unsigned(7 downto 0);
    signal pipeline_cb               : unsigned(7 downto 0);
@@ -382,15 +392,15 @@ architecture arch of gpu is
    
    signal pipeline_textPalNew       : std_logic;
    signal pipeline_textPalX         : unsigned(9 downto 0);   
-   signal pipeline_textPalY         : unsigned(8 downto 0); 
+   signal pipeline_textPalY         : unsigned(VRAM_Y_BITS - 1 downto 0); 
       
    -- FIFO OUT 
    signal fifoOut_reset             : std_logic; 
-   signal fifoOut_Din               : std_logic_vector(85 downto 0);
+   signal fifoOut_Din               : std_logic_vector(F_SRC downto 0);
    signal fifoOut_Wr                : std_logic; 
    signal fifoOut_Wr_1              : std_logic; 
    signal fifoOut_NearFull          : std_logic;
-   signal fifoOut_Dout              : std_logic_vector(85 downto 0);
+   signal fifoOut_Dout              : std_logic_vector(F_SRC downto 0);
    signal fifoOut_Rd                : std_logic;
    signal fifoOut_Empty             : std_logic;
    signal fifoOut_idle              : std_logic;
@@ -418,7 +428,7 @@ architecture arch of gpu is
    
    signal reqVRAMEnable             : std_logic;
    signal reqVRAMXPos               : unsigned(9 downto 0);
-   signal reqVRAMYPos               : unsigned(8 downto 0);
+   signal reqVRAMYPos               : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal reqVRAMSize               : unsigned(10 downto 0);
    signal reqVRAMremain             : unsigned(7 downto 0);
    signal reqVRAMremain2            : unsigned(7 downto 0);
@@ -440,7 +450,7 @@ architecture arch of gpu is
    signal videoout_reqVRAMEnable    : std_logic;
    signal videoout_reqRAMMirror     : std_logic;
    signal videoout_reqVRAMXPos      : unsigned(9 downto 0);
-   signal videoout_reqVRAMYPos      : unsigned(8 downto 0);
+   signal videoout_reqVRAMYPos      : unsigned(VRAM_Y_BITS - 1 downto 0);
    signal videoout_reqVRAMSize      : unsigned(10 downto 0);
    
    -- direct framebuffer mode
@@ -467,7 +477,7 @@ architecture arch of gpu is
    signal fpscountBCD               : unsigned(7 downto 0) := (others => '0');
    signal fpscountBCD_next          : unsigned(7 downto 0) := (others => '0');
    signal fps_SecondCounter         : integer range 0 to 33868799 := 0;
-   signal fps_vramRange_last        : unsigned(18 downto 0) := (others => '0');
+   signal fps_vramRange_last        : unsigned(VRAM_Y_BITS + 9 downto 0) := (others => '0');
    
    -- savestates
    type t_ssarray is array(0 to 7) of std_logic_vector(31 downto 0);
@@ -530,7 +540,7 @@ begin
    ss_gpu_out(1)  <= GPUSTAT;                
 
    ss_timing_out(4)(19)            <= videoout_ss_out.interlacedDisplayField;
-   ss_timing_out(2)(18 downto 0)   <= std_logic_vector(vramRange);    
+   ss_timing_out(2)(VRAM_Y_BITS + 9 downto 0)   <= std_logic_vector(vramRange);    
    ss_timing_out(1)(23 downto 0)   <= std_logic_vector(hDisplayRange);
    ss_timing_out(0)(19 downto 0)   <= std_logic_vector(vDisplayRange);
    ss_timing_out(4)(11 downto 0)   <= videoout_ss_out.nextHCount;
@@ -560,7 +570,7 @@ begin
             fifoIn_reset            <= '1';
             fifoOut_reset           <= '1';
             
-            vramRange               <= unsigned(ss_timing_in(2)(18 downto 0));
+            vramRange               <= unsigned(ss_timing_in(2)(VRAM_Y_BITS + 9 downto 0));
             hDisplayRange           <= unsigned(ss_timing_in(1)(23 downto 0)); -- x"C60260";
             vDisplayRange           <= unsigned(ss_timing_in(0)(19 downto 0)); -- x"3FC10";
       
@@ -640,7 +650,7 @@ begin
                         GPUSTAT_DMADirection <= bus_dataWrite(1 downto 0);
                         
                      when 16#05# => -- Start of Display area (in VRAM)
-                        vramRange <= unsigned(bus_dataWrite(18 downto 1)) & '0';
+                        vramRange <= unsigned(bus_dataWrite(VRAM_Y_BITS + 9 downto 1)) & '0';
                         
                      when 16#06# => -- horizontal diplay range
                         hDisplayRange <= unsigned(bus_dataWrite(23 downto 0));
@@ -666,13 +676,18 @@ begin
                               GPUREAD <= x"000" & std_logic_vector(textureWindow);
                            
                            when 3 => --Get Draw Area Top Left
-                              GPUREAD <= x"000" & '0' & std_logic_vector(drawingAreaTop) & std_logic_vector(drawingAreaLeft);
+                              GPUREAD <= std_logic_vector(resize(drawingAreaTop & drawingAreaLeft, 32));
                            
                            when 4 => --Get Draw Area Bottom Right
-                              GPUREAD <= x"000" & '0' & std_logic_vector(drawingAreaBottom) & std_logic_vector(drawingAreaRight);
+                              GPUREAD <= std_logic_vector(resize(drawingAreaBottom & drawingAreaRight, 32));
                            
                            when 5 => --Get Drawing Offset
                               GPUREAD <= x"00" & "00" & std_logic_vector(drawingOffsetY) & std_logic_vector(drawingOffsetX);
+                           
+                           when 7 => --GPU type (G-NET: the ZN-2 CXD8654Q answers 2, MAME psxgpu.cpp case 0x07; PS1 mode unchanged)
+                              if (VRAM_Y_BITS = 10) then
+                                 GPUREAD <= x"00000002";
+                              end if;
                            
                            when others => null;
                         end case;
@@ -689,7 +704,7 @@ begin
             end if;
             
             -- 480i framebuffer logic
-            frameWriteLineY := unsigned(vram_ADDR(19 downto 11)) - videoout_out.DisplayOffsetY;
+            frameWriteLineY := unsigned(vram_ADDR(19 downto 11)) - videoout_out.DisplayOffsetY;   -- low 9 bits of Y (fb output only)
             
             if (vram_we = '1' and frameVramType = '1') then
                if (unsigned(vram_ADDR(19 downto 11)) >= videoout_out.DisplayOffsetY) then
@@ -845,8 +860,8 @@ begin
    ss_gpu_out(2)(19 downto 0)   <= std_logic_vector(textureWindow);
    ss_gpu_out(4)(9 downto 0)    <= std_logic_vector(drawingAreaLeft);  
    ss_gpu_out(5)(9 downto 0)    <= std_logic_vector(drawingAreaRight); 
-   ss_gpu_out(4)(24 downto 16)  <= std_logic_vector(drawingAreaTop);   
-   ss_gpu_out(5)(24 downto 16)  <= std_logic_vector(drawingAreaBottom);
+   ss_gpu_out(4)(VRAM_Y_BITS + 15 downto 16)  <= std_logic_vector(drawingAreaTop);   
+   ss_gpu_out(5)(VRAM_Y_BITS + 15 downto 16)  <= std_logic_vector(drawingAreaBottom);
    ss_gpu_out(6)(10 downto 0)   <= std_logic_vector(drawingOffsetX);   
    ss_gpu_out(6)(26 downto 16)  <= std_logic_vector(drawingOffsetY);   
    ss_gpu_out(3)(13 downto 0)   <= std_logic_vector(drawMode);         
@@ -880,8 +895,8 @@ begin
             
             drawingAreaLeft         <= unsigned(ss_gpu_in(4)(9 downto 0)); 
             drawingAreaRight        <= unsigned(ss_gpu_in(5)(9 downto 0)); 
-            drawingAreaTop          <= unsigned(ss_gpu_in(4)(24 downto 16)); 
-            drawingAreaBottom       <= unsigned(ss_gpu_in(5)(24 downto 16)); 
+            drawingAreaTop          <= unsigned(ss_gpu_in(4)(VRAM_Y_BITS + 15 downto 16)); 
+            drawingAreaBottom       <= unsigned(ss_gpu_in(5)(VRAM_Y_BITS + 15 downto 16)); 
             drawingOffsetX          <= signed(ss_gpu_in(6)(10 downto 0)); 
             drawingOffsetY          <= signed(ss_gpu_in(6)(26 downto 16)); 
             
@@ -953,11 +968,11 @@ begin
                   
                elsif (cmdNew = 16#E3#) then -- Set Drawing Area top left (X1,Y1)
                   drawingAreaLeft <= unsigned(fifoIn_Dout(9 downto 0));
-                  drawingAreaTop  <= unsigned(fifoIn_Dout(18 downto 10));
+                  drawingAreaTop  <= unsigned(fifoIn_Dout(VRAM_Y_BITS + 9 downto 10));
                   
                elsif (cmdNew = 16#E4#) then -- Set Drawing Area bottom right (X2,Y2)
                   drawingAreaRight  <= unsigned(fifoIn_Dout(9 downto 0));
-                  drawingAreaBottom <= unsigned(fifoIn_Dout(18 downto 10));
+                  drawingAreaBottom <= unsigned(fifoIn_Dout(VRAM_Y_BITS + 9 downto 10));
                   
                elsif (cmdNew = 16#E5#) then -- Set Drawing Offset (X,Y)
                   drawingOffsetX <= signed(fifoIn_Dout(10 downto 0));
@@ -1024,6 +1039,7 @@ begin
    
    -- workers
    igpu_fillVram : entity work.gpu_fillVram
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1050,6 +1066,7 @@ begin
    );
    
    igpu_cpu2vram : entity work.gpu_cpu2vram
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1076,6 +1093,7 @@ begin
    );
    
    igpu_vram2vram : entity work.gpu_vram2vram
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1125,6 +1143,7 @@ begin
    GPUSTAT_ReadySendVRAM <= not vram2cpu_Fifo_Empty;
    
    igpu_vram2cpu : entity work.gpu_vram2cpu
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1161,6 +1180,7 @@ begin
    );
    
    igpu_line : entity work.gpu_line
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1219,6 +1239,7 @@ begin
    );
    
    igpu_rect : entity work.gpu_rect
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,  
@@ -1278,6 +1299,7 @@ begin
    );
    
    igpu_poly : entity work.gpu_poly
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1379,6 +1401,7 @@ begin
    pipeline_textPalY    <= rect_textPalY   or poly_textPalY  ;
    
    igpu_pixelpipeline : entity work.gpu_pixelpipeline
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk2x                => clk2x,     
@@ -1481,7 +1504,7 @@ begin
    generic map
    (
       SIZE             => 256,
-      DATAWIDTH        => 64 + 17 + 4 + 1,  -- 64bit data + 17 bit address + 4bit word enable + 1bit source=pipeline
+      DATAWIDTH        => 64 + PA_W + 4 + 1,  -- 64bit data + PA_W bit address + 4bit word enable + 1bit source=pipeline
       NEARFULLDISTANCE => 250
    )
    port map
@@ -1537,7 +1560,7 @@ begin
             if (vramFill_pixelWrite = '1') then
             
                fifoOut_Wr    <= '1';
-               fifoOut_Din   <=  '1' & "1111" & std_logic_vector(vramFill_pixelAddr(19 downto 3)) & vramFill_pixelColor & vramFill_pixelColor & vramFill_pixelColor & vramFill_pixelColor;
+               fifoOut_Din   <=  '1' & "1111" & std_logic_vector(vramFill_pixelAddr(VRAM_Y_BITS + 10 downto 3)) & vramFill_pixelColor & vramFill_pixelColor & vramFill_pixelColor & vramFill_pixelColor;
                pixel64filled <= '0';
          
                fifoOut2_Din  <= x"0000000000000000";
@@ -1546,11 +1569,11 @@ begin
             
                pixel64timeout <= 15;
             
-               if (pixel64filled = '0' or pixelAddr(19 downto 3) /= unsigned(pixel64Addr)) then
+               if (pixel64filled = '0' or pixelAddr(VRAM_Y_BITS + 10 downto 3) /= unsigned(pixel64Addr)) then
                
                   fifoOut_Wr <= pixel64filled;
                
-                  pixel64Addr <= std_logic_vector(pixelAddr(19 downto 3));
+                  pixel64Addr <= std_logic_vector(pixelAddr(VRAM_Y_BITS + 10 downto 3));
                   case (pixelAddr(2 downto 1)) is
                      when "00" => pixel64data(15 downto  0) <= pixelColor; pixel64data2(15 downto  0) <= pixelColor2; pixel64wordEna <= "0001";
                      when "01" => pixel64data(31 downto 16) <= pixelColor; pixel64data2(31 downto 16) <= pixelColor2; pixel64wordEna <= "0010";
@@ -1667,7 +1690,7 @@ begin
                         end if;
                         if (reqVRAMSizeRounded > 1024) then reqVRAMSizeRounded := to_unsigned(1024, 11); end if;
                         vramState     <= READVRAM;
-                        vram_ADDR     <= x"00" & std_logic_vector(reqVRAMYPos) & std_logic_vector(reqVRAMXPos(9 downto 2)) & "000";
+                        vram_ADDR     <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & std_logic_vector(reqVRAMYPos) & std_logic_vector(reqVRAMXPos(9 downto 2)) & "000";
                         if (videoout_reqVRAMEnable = '1' and videoout_reqRAMMirror = '1') then
                            vram_ADDR(27 downto 20) <= x"04";
                         end if;
@@ -1704,11 +1727,11 @@ begin
                            vramState   <= WRITESECOND;
                         end if;
                         vram_WE         <= '1';
-                        vram_ADDR       <= x"00" & fifoOut_Dout(80 downto 64) & "000";
-                        vram_BE         <= fifoOut_Dout(84) & fifoOut_Dout(84) & fifoOut_Dout(83) & fifoOut_Dout(83) & fifoOut_Dout(82) & fifoOut_Dout(82) & fifoOut_Dout(81) & fifoOut_Dout(81);
+                        vram_ADDR       <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & fifoOut_Dout(F_ADDR_HI downto 64) & "000";
+                        vram_BE         <= fifoOut_Dout(F_BE_LO + 3) & fifoOut_Dout(F_BE_LO + 3) & fifoOut_Dout(F_BE_LO + 2) & fifoOut_Dout(F_BE_LO + 2) & fifoOut_Dout(F_BE_LO + 1) & fifoOut_Dout(F_BE_LO + 1) & fifoOut_Dout(F_BE_LO) & fifoOut_Dout(F_BE_LO);
                         vram_DIN        <= fifoOut_Dout(63 downto 0);
                         vram_BURSTCNT   <= x"01";
-                        frameVramType   <= fifoOut_Dout(85);
+                        frameVramType   <= fifoOut_Dout(F_SRC);
                         fifoOut2_Dout_1 <= fifoOut2_Dout;
                         if (interlacedDrawing = '1' and interlaced480pHack = '1' and videoout_reports.activeLineLSB = fifoOut_Dout(72) and fifoOut_Dout(85) = '1') then
                            vram_WE    <= '0';
@@ -1869,7 +1892,7 @@ begin
    videoout_settings.GPUSTAT_HorRes1         <= GPUSTAT_HorRes1;
    videoout_settings.GPUSTAT_ColorDepth24    <= GPUSTAT_ColorDepth24;
    videoout_settings.GPUSTAT_DisplayDisable  <= GPUSTAT_DisplayDisable;
-   videoout_settings.vramRange               <= vramRange;
+   videoout_settings.vramRange               <= resize(vramRange, 20);
    videoout_settings.hDisplayRange           <= hDisplayRange;
    videoout_settings.vDisplayRange           <= vDisplayRange;
    videoout_settings.pal60                   <= pal60;
@@ -1891,6 +1914,7 @@ begin
    videoout_ss_in.GPUSTAT_DrawingOddline  <= ss_gpu_in(1)(31);
    
    igpu_videoout : entity work.gpu_videoout
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk1x                      => clk1x,

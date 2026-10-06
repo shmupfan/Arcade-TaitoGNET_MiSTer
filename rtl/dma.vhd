@@ -73,6 +73,10 @@ entity dma is
       DMA_SPU_readEna      : out std_logic := '0';
       DMA_SPU_write        : out std_logic_vector(15 downto 0);
       DMA_SPU_read         : in  std_logic_vector(15 downto 0);
+      -- CPU on its own clock (psx_top CPU_CLK_SPLIT = 1): hold channel 4 reads
+      -- until the halfword has crossed; DMA_SPU_readReq is the ungated want
+      DMA_SPU_readStall    : in  std_logic := '0';
+      DMA_SPU_readReq      : out std_logic;
       
       bus_addr             : in  unsigned(6 downto 0); 
       bus_dataWrite        : in  std_logic_vector(31 downto 0);
@@ -221,9 +225,11 @@ begin
 
    DMA_CD_readEna    <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 3 and toDevice = '0') else '0';
    
-   DMA_SPU_readEna   <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 4 and toDevice = '0') else '0';
+   DMA_SPU_readReq   <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 4 and toDevice = '0') else '0';
+   DMA_SPU_readEna   <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 4 and toDevice = '0' and DMA_SPU_readStall = '0') else '0';
 
-   readStall <= '1' when (activeChannel = 2 and toDevice = '0' and gpu_dmaRequest = '0') else '0';
+   readStall <= '1' when (activeChannel = 2 and toDevice = '0' and gpu_dmaRequest = '0') else
+                '1' when (activeChannel = 4 and toDevice = '0' and DMA_SPU_readStall = '1') else '0';
 
    chopsize     <= to_unsigned(1, 8) sll to_integer(dmaSettings.D_CHCR(18 downto 16));
    chopwaittime <= to_unsigned(1, 8) sll to_integer(dmaSettings.D_CHCR(22 downto 20));

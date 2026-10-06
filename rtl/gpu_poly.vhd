@@ -6,6 +6,10 @@ library mem;
 use work.pGPU.all;
 
 entity gpu_poly is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -27,8 +31,8 @@ entity gpu_poly is
       drawingOffsetY       : in  signed(10 downto 0);
       drawingAreaLeft      : in  unsigned(9 downto 0);
       drawingAreaRight     : in  unsigned(9 downto 0);
-      drawingAreaTop       : in  unsigned(8 downto 0);
-      drawingAreaBottom    : in  unsigned(8 downto 0);
+      drawingAreaTop       : in  unsigned(VRAM_Y_BITS - 1 downto 0);
+      drawingAreaBottom    : in  unsigned(VRAM_Y_BITS - 1 downto 0);
       
       drawModeRec          : out unsigned(11 downto 0);
       drawModeNew          : out std_logic := '0';
@@ -50,7 +54,7 @@ entity gpu_poly is
       pipeline_rawTexture  : out std_logic := '0';
       pipeline_dithering   : out std_logic := '0';
       pipeline_x           : out unsigned(9 downto 0) := (others => '0');
-      pipeline_y           : out unsigned(8 downto 0) := (others => '0');
+      pipeline_y           : out unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
       pipeline_cr          : out unsigned(7 downto 0) := (others => '0');
       pipeline_cg          : out unsigned(7 downto 0) := (others => '0');
       pipeline_cb          : out unsigned(7 downto 0) := (others => '0');
@@ -71,14 +75,14 @@ entity gpu_poly is
       
       requestVRAMEnable    : out std_logic;
       requestVRAMXPos      : out unsigned(9 downto 0);
-      requestVRAMYPos      : out unsigned(8 downto 0);
+      requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
       requestVRAMIdle      : in  std_logic;
       requestVRAMDone      : in  std_logic;
       
       textPalNew           : out std_logic := '0';
       textPalX             : out unsigned(9 downto 0) := (others => '0');   
-      textPalY             : out unsigned(8 downto 0) := (others => '0'); 
+      textPalY             : out unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0'); 
       
       vramLineEna          : out std_logic;
       vramLineAddr         : out unsigned(9 downto 0)
@@ -143,7 +147,7 @@ architecture arch of gpu_poly is
    signal rec_index           : integer range 0 to 3;
    
    signal rec_textPalX        : unsigned(9 downto 0) := (others => '0');   
-   signal rec_textPalY        : unsigned(8 downto 0) := (others => '0');
+   signal rec_textPalY        : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
 
    signal quadFirst           : std_logic := '0';
    signal nextQuad            : std_logic := '0';
@@ -253,7 +257,7 @@ begin
    
    requestVRAMEnable <= '1'                        when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else '0';
    requestVRAMXPos   <= unsigned(xPos(9 downto 0)) when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
-   requestVRAMYPos   <= unsigned(yPos(8 downto 0)) when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
+   requestVRAMYPos   <= unsigned(yPos(VRAM_Y_BITS - 1 downto 0)) when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
    requestVRAMSize   <= xSize                      when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
    
    vramLineEna  <= '1' when (state = PROCPIXELS) else '0';
@@ -527,7 +531,7 @@ begin
                      rec_vertices(rec_index).v <= unsigned(fifo_data(15 downto  8));
                      if (rec_index = 0) then
                         rec_textPalX  <= unsigned(fifo_data(21 downto 16)) & "0000";
-                        rec_textPalY  <= unsigned(fifo_data(30 downto 22));
+                        rec_textPalY  <= unsigned(fifo_data(VRAM_Y_BITS + 21 downto 22));
                      end if;
                      if (rec_index = 1) then
                         drawModeRec   <= unsigned(fifo_data(27 downto 16));
@@ -1119,7 +1123,7 @@ begin
                         pipeline_rawTexture  <= rec_rawTexture;
                         pipeline_dithering   <= rec_dithering;
                         pipeline_x           <= unsigned(xPos(9 downto 0));
-                        pipeline_y           <= unsigned(yPos(8 downto 0));
+                        pipeline_y           <= unsigned(yPos(VRAM_Y_BITS - 1 downto 0));
                         pipeline_cr          <= work_R(19 downto 12);
                         pipeline_cg          <= work_G(19 downto 12);
                         pipeline_cb          <= work_B(19 downto 12);

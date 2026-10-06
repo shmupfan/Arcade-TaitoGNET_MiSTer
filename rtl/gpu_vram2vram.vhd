@@ -7,6 +7,10 @@ use IEEE.numeric_std.all;
 -- todo: if (width == 0 || height == 0 || (srcX == dstX && srcY == dstY && !((PSXRegs.GPUSTAT >> 11) & 1))) -> don't draw
 
 entity gpu_vram2vram is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -30,7 +34,7 @@ entity gpu_vram2vram is
       fifoOut_idle         : in  std_logic;
       requestVRAMEnable    : out std_logic;
       requestVRAMXPos      : out unsigned(9 downto 0);
-      requestVRAMYPos      : out unsigned(8 downto 0);
+      requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
       requestVRAMIdle      : in  std_logic;
       requestVRAMDone      : in  std_logic;
@@ -42,7 +46,7 @@ entity gpu_vram2vram is
       pixelEmpty           : in  std_logic;
       pixelStall           : in  std_logic;
       pixelColor           : out std_logic_vector(15 downto 0);
-      pixelAddr            : out unsigned(19 downto 0);
+      pixelAddr            : out unsigned(VRAM_Y_BITS + 10 downto 0);
       pixelWrite           : out std_logic
    );
 end entity;
@@ -65,18 +69,18 @@ architecture arch of gpu_vram2vram is
    signal state : tState := IDLE;
    
    signal srcX         : unsigned(9 downto 0);
-   signal srcY         : unsigned(8 downto 0);   
+   signal srcY         : unsigned(VRAM_Y_BITS - 1 downto 0);   
    signal dstX         : unsigned(9 downto 0);
-   signal dstY         : unsigned(8 downto 0);   
+   signal dstY         : unsigned(VRAM_Y_BITS - 1 downto 0);   
    signal widt         : unsigned(10 downto 0);
-   signal heig         : unsigned(9 downto 0);
+   signal heig         : unsigned(VRAM_Y_BITS downto 0);
    
    signal dir          : std_logic;
                        
    signal xSrc         : unsigned(9 downto 0);
    signal xDst         : unsigned(9 downto 0);
    signal xCnt         : unsigned(10 downto 0);
-   signal yCnt         : unsigned(9 downto 0);
+   signal yCnt         : unsigned(VRAM_Y_BITS downto 0);
    
    signal drawTiming   : unsigned(6 downto 0);
   
@@ -139,14 +143,14 @@ begin
                   if (fifo_Valid = '1') then
                      state    <= REQUESTWORD3;  
                      srcX <= unsigned(fifo_data( 9 downto  0));
-                     srcY <= unsigned(fifo_data(24 downto 16));
+                     srcY <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                   end if;
             
                when REQUESTWORD3 =>
                   if (fifo_Valid = '1') then
                      state    <= REQUESTWORD4;  
                      dstX <= unsigned(fifo_data( 9 downto  0));
-                     dstY <= unsigned(fifo_data(24 downto 16));
+                     dstY <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                   end if;
             
                when REQUESTWORD4 =>
@@ -161,9 +165,9 @@ begin
                      CmdDone    <= '1';
                      state      <= REQUESTFIRST;
                      widt       <= '0' & unsigned(fifo_data( 9 downto  0));
-                     heig       <= '0' & unsigned(fifo_data(24 downto 16));
+                     heig       <= '0' & unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                      if (unsigned(fifo_data( 9 downto  0)) = 0) then widt <= to_unsigned(16#400#, 11); end if;
-                     if (unsigned(fifo_data(24 downto 16)) = 0) then heig <= to_unsigned(16#200#, 10); end if;
+                     if (unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16)) = 0) then heig <= to_unsigned(2**VRAM_Y_BITS, VRAM_Y_BITS + 1); end if;
                   end if;
                   
                when REQUESTFIRST =>

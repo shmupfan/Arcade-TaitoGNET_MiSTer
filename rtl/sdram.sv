@@ -19,6 +19,19 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 module sdram
+#(
+	// clk edges per clk_base cycle, both from one PLL with aligned edges:
+	// 3 = upstream (101.6064 / 33.8688 MHz), 2 = CPU domain at 2:1
+	// (docs/r1_cpu_domain_design.md, "Step: fast-clock ratio generic")
+	parameter CLK_FAST_RATIO = 3,
+	// 1 (only with CLK_FAST_RATIO = 2): a plain channel 1 read (not a cache
+	// line, not DMA) raises ready one fast edge earlier, when its first
+	// halfword is in, and clk_base takes the second halfword straight from
+	// dq_reg, so the CPU gets its word one clk_base cycle earlier
+	// (docs/r1_cpu_domain_design.md, throughput section, option B).
+	// 0 = the timing before (default)
+	parameter EARLY_READY = 0
+)
 (
 	input              init,        // reset to initialize RAM
 	input              clk,         // clock ~100MHz
@@ -166,7 +179,12 @@ always @(posedge clk_base) begin
    end
    
    if (ch1_ready_ramclock) begin
-      ch1_dout32 <= ch1_dout[31:0];
+      // EARLY_READY: when the second halfword arrives on this very edge
+      // (data_ready_delay1[6]), it is in dq_reg, not yet in ch1_dout
+      if (CLK_FAST_RATIO == 2 && EARLY_READY != 0 && data_ready_delay1[6])
+         ch1_dout32 <= {dq_reg, ch1_dout[15:0]};
+      else
+         ch1_dout32 <= ch1_dout[31:0];
    end
    
    dma_wr  <= 0;
@@ -229,11 +247,43 @@ reg [15:0] dq_reg;
 
 reg [1:0] ch;
 
+// Row address and bank of an ACTIVE command, per source, as the IDLE state
+// splits them: {cas_addr[12:9], SDRAM_BA, SDRAM_A, cas_addr[8:0]}
+wire [27:0] dma_rowv, ch1_rowv, ch2_rowv, ch3_rowv;
+assign dma_rowv = {2'b00, 1'b0, dmafifo_adr[25:1]};
+assign ch1_rowv = {2'b00, 1'b1, ch1_addr[25:1]};
+assign ch2_rowv = {~ch2_be[1:0], ch2_rnw, ch2_addr[25:1]};
+assign ch3_rowv = {~ch3buf_be[1:0], ch3buf_rnw, ch3buf_addr[25:1]};
+
+// R1 at CLK_FAST_RATIO 2 (docs/r1_cpu_domain_design.md, SDRAM address
+// timing): ch1_req and ch2_req (the core's RAM read and write strobes) and
+// their addresses come from the CPU clock domain, 10 ns before the edge
+// that loads the SDRAM_A / SDRAM_BA I/O registers. The IDLE state's
+// address and bank are therefore built as the value without the two
+// strobes (idle_ab_rest, from registers of this domain) and two last mux
+// levels that the strobes select (ch1_take_req, ch2_take_req), instead of
+// the strobes deciding at the top of the request priority chain. The same
+// function, cycle for cycle (priority refresh, DMA FIFO, ch1, ch2, ch3).
+wire refresh_due, ch1_take_req, ch2_take_req;
+assign refresh_due  = refreshForce_req || refresh_count > cycles_per_refresh;
+assign ch1_take_req = (state == STATE_IDLE) && !refresh_due && dmafifo_empty && ch1_req;
+assign ch2_take_req = (state == STATE_IDLE) && !refresh_due && dmafifo_empty && !ch1_req && !ch1_rq && ch2_req;
+reg [14:0] idle_ab_rest;
+always @* begin
+   if (~dmafifo_empty)        idle_ab_rest = dma_rowv[23:9];
+   else if (ch1_rq)           idle_ab_rest = ch1_rowv[23:9];
+   else if (ch2_rq)           idle_ab_rest = ch2_rowv[23:9];
+   else if (ch3_rq)           idle_ab_rest = ch3_rowv[23:9];
+   else                       idle_ab_rest = {SDRAM_BA, SDRAM_A};
+end
+
 always @(posedge clk) begin
   
    clk1xToggle3X   <= clk1xToggle;
    clk1xToggle3X_1 <= clk1xToggle3X;
-   clk3xIndex      <= clk1xToggle3X_1 == clk1xToggle;
+   // request index: 1 on the first clk edge after each clk_base edge
+   if (CLK_FAST_RATIO == 2) clk3xIndex <= clk1xToggle3X   == clk1xToggle;
+   else                     clk3xIndex <= clk1xToggle3X_1 == clk1xToggle;
 	
 	ch1_rq <= ch1_rq | (ch1_req & clk3xIndex);
 	ch2_rq <= ch2_rq | (ch2_req & clk3xIndex);
@@ -283,8 +333,17 @@ always @(posedge clk) begin
    if(data_ready_delay1[2]) ch1_dout[ 95: 80]  <= dq_reg;
    if(data_ready_delay1[1]) ch1_dout[111: 96]  <= dq_reg;
    if(data_ready_delay1[0]) ch1_dout[127:112]  <= dq_reg;
-   if(data_ready_delay1[6] && ~dma_buffer && ~cache_buffer_next) ch1_ready_ramclock <= 1;
-   if(data_ready_delay1[4] && cache_buffer_next)                 ch1_ready_ramclock <= 1;
+   if(!(CLK_FAST_RATIO == 2 && EARLY_READY != 0) && data_ready_delay1[6] && ~dma_buffer && ~cache_buffer_next) ch1_ready_ramclock <= 1;
+   if( (CLK_FAST_RATIO == 2 && EARLY_READY != 0) && data_ready_delay1[7] && ~dma_buffer && ~cache_buffer)      ch1_ready_ramclock <= 1;
+   // cache line fill: at 3:1 (upstream) ready after the second word; the
+   // last two words reach the I-cache 2 and 4 edges later, before the CPU
+   // can fetch them. At 2:1 a fetch two instructions after the miss (a
+   // taken branch to word 3) hit the line before word 3 was written and
+   // executed the old line's word (G-NET BIOS halt on a BREAK, 2026-10-05),
+   // so ready waits until the last word is written (cache_done_3 is the
+   // edge that sets cache_wr for it)
+   if(CLK_FAST_RATIO != 2 && data_ready_delay1[4] && cache_buffer_next) ch1_ready_ramclock <= 1;
+   if(CLK_FAST_RATIO == 2 && cache_done_3)                            ch1_ready_ramclock <= 1;
    if(data_ready_delay1[6] && dma_buffer)                        dma_done <= 1;
 
    if(data_ready_delay1[7]) cache_buffer_next <= cache_buffer;
@@ -417,6 +476,8 @@ always @(posedge clk) begin
    
          STATE_IDLE: begin
             saved_128read <= 0;
+            // 2:1: address and bank from idle_ab_rest here, ch1_req / ch2_req after the case
+            if (CLK_FAST_RATIO == 2 && !refresh_due) {SDRAM_BA, SDRAM_A} <= idle_ab_rest;
             if (refreshForce_req || refresh_count > cycles_per_refresh) begin
                state            <= STATE_RFSH;
                command          <= CMD_AUTO_REFRESH;
@@ -428,7 +489,8 @@ always @(posedge clk) begin
                   refresh_count <= 14'd0;
                
             end else if(~dmafifo_empty) begin
-               {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {2'b00, 1'b0, dmafifo_adr[25:1]};
+               if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {2'b00, 1'b0, dmafifo_adr[25:1]};
+               else                     {cas_addr[12:9],cas_addr[8:0]} <= {dma_rowv[27:24], dma_rowv[8:0]};
                chip         <= dmafifo_adr[26];
                saved_data   <= dmafifo_data;
                saved_wr     <= 1'b1;
@@ -439,7 +501,8 @@ always @(posedge clk) begin
                dmafifo_read <= 1'b1;
                lastbank     <= dmafifo_adr[20:10];
             end else if(ch1_req | ch1_rq) begin
-               {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {2'b00, 1'b1, ch1_addr[25:1]};
+               if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {2'b00, 1'b1, ch1_addr[25:1]};
+               else                     {cas_addr[12:9],cas_addr[8:0]} <= {ch1_rowv[27:24], ch1_rowv[8:0]};
                chip         <= ch1_addr[26];
                saved_data   <= ch1_din;
                saved_wr     <= ~ch1_rnw;
@@ -462,7 +525,8 @@ always @(posedge clk) begin
                saved_128read <= ch1_dma | ch1_cache;
                
             end else if(ch2_req | ch2_rq) begin
-               {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {~ch2_be[1:0], ch2_rnw, ch2_addr[25:1]};
+               if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {~ch2_be[1:0], ch2_rnw, ch2_addr[25:1]};
+               else                     {cas_addr[12:9],cas_addr[8:0]} <= {ch2_rowv[27:24], ch2_rowv[8:0]};
                chip       <= ch2_addr[26];
                saved_data <= ch2_din;
                saved_wr   <= ~ch2_rnw;
@@ -473,7 +537,8 @@ always @(posedge clk) begin
                state      <= STATE_WAIT;
                ch2_ready_ramclock <= 1;
             end else if(ch3_rq) begin
-               {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {~ch3buf_be[1:0], ch3buf_rnw, ch3buf_addr[25:1]};
+               if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {~ch3buf_be[1:0], ch3buf_rnw, ch3buf_addr[25:1]};
+               else                     {cas_addr[12:9],cas_addr[8:0]} <= {ch3_rowv[27:24], ch3_rowv[8:0]};
                chip       <= ch3buf_addr[26];
                saved_data <= ch3buf_din;
                saved_wr   <= ~ch3buf_rnw;
@@ -536,6 +601,11 @@ always @(posedge clk) begin
          end
       endcase
    
+      // 2:1: ch1_req / ch2_req (CPU clock domain) select the row address and
+      // bank in the last mux levels before the I/O registers
+      if (CLK_FAST_RATIO == 2 && ch1_take_req)      {SDRAM_BA, SDRAM_A} <= ch1_rowv[23:9];
+      else if (CLK_FAST_RATIO == 2 && ch2_take_req) {SDRAM_BA, SDRAM_A} <= ch2_rowv[23:9];
+
       if (init) begin
          state <= STATE_STARTUP;
          refresh_count <= startup_refresh_max - sdram_startup_cycles;

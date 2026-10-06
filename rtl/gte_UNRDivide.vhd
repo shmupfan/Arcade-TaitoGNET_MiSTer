@@ -6,6 +6,15 @@ use STD.textio.all;
 use work.pGTE.all;
 
 entity gte_UNRDivide is
+   generic
+   (
+      -- 1 = G-NET 100 MHz option: same latency (trigger to result 7 clocks),
+      -- stages rebalanced: stages 0 and 1 (leading-zero count and shift of
+      -- rhs) merged, the final multiply registered before the rounding,
+      -- overflow check and result select. Needs rhs held for the clock after
+      -- trigger, as gte.vhd does. 0 = upstream.
+      RETIME         : integer := 0
+   );
    port 
    (
       clk2x          : in  std_logic;
@@ -93,8 +102,15 @@ architecture arch of gte_UNRDivide is
    signal calc_lhs      : unsigned(31 downto 0);
    signal calc_val_r    : unsigned(19 downto 0);
 
+   -- RETIME = 1: stage 7
+   signal trigger_7     : std_logic := '0';
+   signal divError_7    : std_logic := '0';
+   signal calc_prod     : unsigned(51 downto 0);
+
 begin 
 
+   gupstream : if RETIME = 0 generate
+   begin
    process (clk2x)
       variable var_calc_d  : signed(27 downto 0);
       variable var_calc_r  : signed(27 downto 0);
@@ -191,6 +207,108 @@ begin
          
       end if;
    end process;
+   end generate;
+   
+   gretime : if RETIME = 1 generate
+   begin
+   process (clk2x)
+      variable sc          : integer range 0 to 15;
+      variable var_calc_d  : signed(27 downto 0);
+      variable var_calc_r  : signed(27 downto 0);
+      variable calc_result : unsigned(31 downto 0);
+   begin
+      if rising_edge(clk2x) then
+      
+         divError       <= '0';
+
+         -- stages 0 and 1: receive, leading zeros, shift (results as upstream stage 1)
+         trigger_2  <= trigger;
+         divError_2 <= '0';
+         lhs_2      <= lhs;
+         
+         if (trigger = '1') then
+            if (rhs * 2 <= lhs) then
+               divError_2 <= '1';
+            end if;
+            
+            sc := 0;
+            for i in 0 to 15 loop
+               if (rhs(i) = '1') then
+                  sc := 15 - i;
+               end if;
+            end loop;
+            shiftcount_2 <= sc;
+            calc_rhs     <= rhs sll sc;
+         end if;
+            
+         -- stage 2: READTABLE
+         trigger_3      <= trigger_2;
+         divError_3     <= divError_2;
+         lhs_3          <= lhs_2;
+         shiftcount_3   <= shiftcount_2;
+         
+         if (trigger_2 = '1') then
+            tableValue <= unr_table((to_integer(calc_rhs(14 downto 0)) + 64) / 128);
+            divisor    <= '0' & signed(calc_rhs);
+            divisor(15)<= '1';
+         end if;
+            
+         -- stage 3: CALC_X
+         trigger_4      <= trigger_3;
+         divError_4     <= divError_3;
+         lhs_4          <= lhs_3;
+         shiftcount_4   <= shiftcount_3;
+         divisor_4      <= divisor;
+         
+         if (trigger_3 = '1') then
+            calc_val_x  <= signed(resize(tableValue, 11) + 16#101#);
+            calc_val_xn <= -signed((resize(tableValue, 11) + 16#101#));
+         end if;
+         
+         -- stage 4: CALC_D
+         trigger_5      <= trigger_4;
+         divError_5     <= divError_4;
+         lhs_5          <= lhs_4;
+         shiftcount_5   <= shiftcount_4;
+         calc_val_x_5   <= calc_val_x;
+         
+         var_calc_d := resize(((divisor_4 * calc_val_xn) + 16#80#), 28);
+         if (trigger_4 = '1') then
+            calc_val_d <= x"20000" + var_calc_d(27 downto 8); 
+         end if;
+
+         -- stage 5: CALC_R
+         trigger_6   <= trigger_5;
+         divError_6 <= divError_5;
+         
+         var_calc_r := resize(((calc_val_x_5 * calc_val_d) + 16#80#), 28);
+         if (trigger_5 = '1') then
+            calc_val_r <= unsigned(var_calc_r(27 downto 8));
+            calc_lhs   <= resize(lhs_5, 32) sll shiftcount_5;
+         end if;
+
+         -- stage 6: product
+         trigger_7   <= trigger_6;
+         divError_7  <= divError_6;
+         
+         if (trigger_6 = '1') then
+            calc_prod <= calc_lhs * calc_val_r;
+         end if;
+
+         -- stage 7: CALCRESULT
+         calc_result := resize((calc_prod + x"8000") / x"10000", 32);
+         if (trigger_7 = '1') then
+            if (calc_result > x"1FFFF" or divError_7 = '1') then
+               result   <= (others => '1');
+            else
+               result   <= calc_result(16 downto 0);
+            end if;
+            divError <= divError_7;
+         end if;
+         
+      end if;
+   end process;
+   end generate;
 
 end architecture;
 

@@ -6,10 +6,18 @@ use STD.textio.all;
 use work.pGTE.all;
 
 entity gte_mac0 is
+   generic
+   (
+      -- 3 = G-NET 100 MHz option: the product is registered from MACmul in the
+      -- cycle that writes the request (mul1/mul2 of MAC0req unused), so the
+      -- trigger cycle only adds. 0 = upstream.
+      NARROW_MUL     : integer := 0
+   );
    port 
    (
       clk2x          : in  std_logic;
       MAC0req        : in  tMAC0req;
+      MACmul         : in  tMAC0mul := MAC0mul_none;
       mac0_result    : out signed(34 downto 0);
       mac0_writeback : out std_logic := '0';
       mac0Last       : out signed(34 downto 0);
@@ -32,6 +40,8 @@ architecture arch of gte_mac0 is
    
    signal IRshift_1     : std_logic;
 
+   signal prod0         : signed(34 downto 0);  -- NARROW_MUL = 3
+
 begin 
 
    flagMac0UF <= '1' when (checkOvf = '1' and mac0Result_1 < MINVAL) else '0';
@@ -47,10 +57,17 @@ begin
          ir_writeback   <= '0';
          checkOvf       <= '0';
          
+         if (NARROW_MUL = 3 and MACmul.ena = '1') then
+            prod0 <= MACmul.mul1 * MACmul.mul2;
+         end if;
+         
          if (MAC0req.trigger = '1') then
             mac0Last   <= mac0Result_1;
          
             mac0Result := resize(MAC0req.mul1 * MAC0req.mul2, 35);
+            if (NARROW_MUL = 3) then
+               mac0Result := prod0;
+            end if;
          
             addVal := resize(MAC0req.add, 35);
             if (MAC0req.useResult = '1') then

@@ -5,7 +5,26 @@ use IEEE.numeric_std.all;
 entity psx_mister is
    generic
    (
-      is_simu               : std_logic := '0'
+      is_simu               : std_logic := '0';
+      -- G-NET trim switches, passed to psx_top (1 = upstream default)
+      HAS_CD                : integer := 1;
+      HAS_PADS              : integer := 1;
+      HAS_SAVESTATES        : integer := 1;
+      HAS_CHEATS            : integer := 1;
+      HAS_MDEC              : integer := 1;
+      VRAM_Y_BITS           : integer := 9;
+      GTE_NARROW_MUL        : integer := 0;
+      CLK_FAST_RATIO        : integer := 3;
+      CPU_CLK_SPLIT         : integer := 0;    -- psx_top: 1 = CPU group on clk_cpu/clk_cpu2x/clk_cpu3x
+      -- G-NET ZN-2 board (psx_top ZN2_BOARD), 0 = upstream
+      ZN2_BOARD             : integer := 0;
+      ZN2_FLASH_PRESET      : integer := 1;
+      ZN2_PS1_SIO           : integer := 0;
+      ZN2_SPU_STATUS        : integer := 0;
+      ZN2_WD_TIMEOUT_S      : integer := 8;    -- MB3773 watchdog period in seconds (gnet_ctrl.sv)
+      ZOOM_BOARD            : integer := 0;    -- psx_top ZOOM_BOARD: Taito Zoom sound board
+      ZOOM_INFL             : integer := 4;
+      ZN2_READ_OVERLAP      : integer := 0     -- psx_top: 1 = ZN-2 read request overlaps the read delay
    );
    port 
    (
@@ -13,6 +32,11 @@ entity psx_mister is
       clk2x                 : in  std_logic;  
       clk3x                 : in  std_logic;  
       clkvid                : in  std_logic;  
+      -- CPU group clocks (psx_top CPU_CLK_SPLIT): the clk1x, clk2x and clk3x
+      -- signals when CPU_CLK_SPLIT = 0
+      clk_cpu               : in  std_logic;
+      clk_cpu2x             : in  std_logic;
+      clk_cpu3x             : in  std_logic;
       reset                 : in  std_logic;
       isPaused              : out std_logic;
       -- commands 
@@ -281,7 +305,51 @@ entity psx_mister is
       Cheats_BusWriteData   : out    std_logic_vector(31 downto 0);
       Cheats_Bus_ena        : out    std_logic := '0';
       Cheats_BusReadData    : in     std_logic_vector(31 downto 0);
-      Cheats_BusDone        : in     std_logic
+      Cheats_BusDone        : in     std_logic;
+      -- G-NET (ZN2_BOARD = 1), see psx_top
+      zn_in_p1              : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_p2              : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_service         : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_system          : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_dsw                : in  std_logic_vector(3 downto 0) := x"F";
+      zn_jp1                : in  std_logic := '0';
+      zn_card_present       : in  std_logic := '0';
+      zn_key_valid          : in  std_logic := '0';
+      zn_coin               : out std_logic_vector(7 downto 0);
+      zn_wd_reset           : out std_logic;
+      zn_ld_wr              : in  std_logic := '0';
+      zn_ld_target          : in  std_logic_vector(1 downto 0) := "00";
+      zn_ld_addr            : in  unsigned(10 downto 0) := (others => '0');
+      zn_ld_data            : in  std_logic_vector(15 downto 0) := (others => '0');
+      zn_ld_busy            : out std_logic;
+      zn_card_dl_wr         : in  std_logic := '0';
+      zn_card_dl_addr       : in  unsigned(25 downto 0) := (others => '0');
+      zn_card_dl_data       : in  std_logic_vector(15 downto 0) := (others => '0');
+      zn_card_dl_busy       : out std_logic;
+      zn_fl_req             : out std_logic;
+      zn_fl_rnw             : out std_logic;
+      zn_fl_addr            : out std_logic_vector(26 downto 0);
+      zn_fl_din             : out std_logic_vector(31 downto 0);
+      zn_fl_be              : out std_logic_vector(3 downto 0);
+      zn_fl_ready           : in  std_logic := '0';
+      zn_fl_dout            : in  std_logic_vector(31 downto 0) := (others => '0');
+      zn_dbg_idx            : in  std_logic_vector(3 downto 0) := (others => '0');
+      zn_dbg_word           : out std_logic_vector(31 downto 0);
+      zn_nv_clk             : in  std_logic := '0';
+      zn_nv_addr            : in  unsigned(9 downto 0) := (others => '0');
+      zn_nv_q               : out std_logic_vector(15 downto 0);
+      zn_nv_wtog            : out std_logic;
+      -- Taito Zoom (ZOOM_BOARD = 1), see psx_top
+      zoom_m_req            : out std_logic;
+      zoom_m_line           : out std_logic_vector(20 downto 0);
+      zoom_m_ready          : in  std_logic := '0';
+      zoom_m_rvalid         : in  std_logic := '0';
+      zoom_m_rdata          : in  std_logic_vector(63 downto 0) := (others => '0');
+      zoom_rst              : out std_logic;
+      zoom_aud_l            : out std_logic_vector(15 downto 0);
+      zoom_aud_r            : out std_logic_vector(15 downto 0);
+      zoom_flags            : out std_logic_vector(7 downto 0);
+      zoom_hold             : in  std_logic := '0'   -- see psx_top
    );
 end entity;
 
@@ -298,7 +366,24 @@ begin
    ipsx_top : entity work.psx_top
    generic map
    (
-      is_simu               => is_simu
+      is_simu               => is_simu,
+      HAS_CD                => HAS_CD,
+      HAS_PADS              => HAS_PADS,
+      HAS_SAVESTATES        => HAS_SAVESTATES,
+      HAS_CHEATS            => HAS_CHEATS,
+      HAS_MDEC              => HAS_MDEC,
+      VRAM_Y_BITS           => VRAM_Y_BITS,
+      GTE_NARROW_MUL        => GTE_NARROW_MUL,
+      CLK_FAST_RATIO        => CLK_FAST_RATIO,
+      CPU_CLK_SPLIT         => CPU_CLK_SPLIT,
+      ZN2_BOARD             => ZN2_BOARD,
+      ZN2_FLASH_PRESET      => ZN2_FLASH_PRESET,
+      ZN2_PS1_SIO           => ZN2_PS1_SIO,
+      ZN2_SPU_STATUS        => ZN2_SPU_STATUS,
+      ZN2_WD_TIMEOUT_S      => ZN2_WD_TIMEOUT_S,
+      ZOOM_BOARD            => ZOOM_BOARD,
+      ZOOM_INFL             => ZOOM_INFL,
+      ZN2_READ_OVERLAP      => ZN2_READ_OVERLAP
    )
    port map
    (
@@ -306,6 +391,9 @@ begin
       clk2x                 => clk2x,          
       clk3x                 => clk3x,          
       clkvid                => clkvid,          
+      clk_cpu               => clk_cpu,
+      clk_cpu2x             => clk_cpu2x,
+      clk_cpu3x             => clk_cpu3x,
       reset                 => reset, 
       isPaused              => isPaused, 
       -- commands 
@@ -659,7 +747,49 @@ begin
       Cheats_BusWriteData   => Cheats_BusWriteData,
       Cheats_Bus_ena        => Cheats_Bus_ena,
       Cheats_BusReadData    => Cheats_BusReadData,
-      Cheats_BusDone        => Cheats_BusDone
+      Cheats_BusDone        => Cheats_BusDone,
+      zn_in_p1              => zn_in_p1,
+      zn_in_p2              => zn_in_p2,
+      zn_in_service         => zn_in_service,
+      zn_in_system          => zn_in_system,
+      zn_dsw                => zn_dsw,
+      zn_jp1                => zn_jp1,
+      zn_card_present       => zn_card_present,
+      zn_key_valid          => zn_key_valid,
+      zn_coin               => zn_coin,
+      zn_wd_reset           => zn_wd_reset,
+      zn_ld_wr              => zn_ld_wr,
+      zn_ld_target          => zn_ld_target,
+      zn_ld_addr            => zn_ld_addr,
+      zn_ld_data            => zn_ld_data,
+      zn_ld_busy            => zn_ld_busy,
+      zn_card_dl_wr         => zn_card_dl_wr,
+      zn_card_dl_addr       => zn_card_dl_addr,
+      zn_card_dl_data       => zn_card_dl_data,
+      zn_card_dl_busy       => zn_card_dl_busy,
+      zn_fl_req             => zn_fl_req,
+      zn_fl_rnw             => zn_fl_rnw,
+      zn_fl_addr            => zn_fl_addr,
+      zn_fl_din             => zn_fl_din,
+      zn_fl_be              => zn_fl_be,
+      zn_fl_ready           => zn_fl_ready,
+      zn_fl_dout            => zn_fl_dout,
+      zn_dbg_idx            => zn_dbg_idx,
+      zn_dbg_word           => zn_dbg_word,
+      zn_nv_clk             => zn_nv_clk,
+      zn_nv_addr            => zn_nv_addr,
+      zn_nv_q               => zn_nv_q,
+      zn_nv_wtog            => zn_nv_wtog,
+      zoom_m_req            => zoom_m_req,
+      zoom_m_line           => zoom_m_line,
+      zoom_m_ready          => zoom_m_ready,
+      zoom_m_rvalid         => zoom_m_rvalid,
+      zoom_m_rdata          => zoom_m_rdata,
+      zoom_rst              => zoom_rst,
+      zoom_aud_l            => zoom_aud_l,
+      zoom_aud_r            => zoom_aud_r,
+      zoom_flags            => zoom_flags,
+      zoom_hold             => zoom_hold
    );                          
 
 end architecture;

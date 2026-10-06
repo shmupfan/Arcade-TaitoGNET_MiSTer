@@ -254,6 +254,9 @@ begin
       clk2x                 => clk66, 
       clk3x                 => clk100, 
       clkvid                => clkvid,
+      clk_cpu               => clk33,   -- CPU group clocks: the same signals (CPU_CLK_SPLIT = 0)
+      clk_cpu2x             => clk66,
+      clk_cpu3x             => clk100,
       reset                 => reset,
       -- commands 
       pause                 => pause,

@@ -81,7 +81,9 @@ entity cpu is
       cpu_export            : out cpu_export_type := ((others => (others => '0')), (others => '0'), (others => '0'), (others => '0'));
 -- synthesis translate_on
       
-      debug_firstGTE        : in  std_logic
+      debug_firstGTE        : in  std_logic;
+      -- G-NET debug overlay (docs/hw_debug_overlay.md): the fetch PC register
+      debug_pc              : out unsigned(31 downto 0)
    );
 end entity;
 
@@ -757,6 +759,7 @@ begin
    end process;
    
    ss_out( 0) <= std_logic_vector(PC);
+   debug_pc   <= PC;
    ss_out(25)(0) <= fetchReady;
    
    process (clk1x)

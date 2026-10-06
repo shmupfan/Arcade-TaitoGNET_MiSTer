@@ -1,0 +1,9 @@
+system raycris
+emulated_seconds 40.0
+coin_at 20.0
+mdec_w 0 first -
+mdec_r 0 first -
+dma0 0 first -
+dma1 0 first -
+kon 0 first -
+spucnt 0 first -

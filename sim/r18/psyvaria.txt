@@ -1,0 +1,8 @@
+instance_end system psyvaria machine_seconds 532.8 coin_at 240.0 soft_resets 0
+  gpu_w 245556 first 0.00
+  mdec_w 0 first -
+  mdec_r 0 first -
+  dma0 0 first -
+  dma1 0 first -
+  kon 1482 first 133.79
+  spucnt 208 first 133.79

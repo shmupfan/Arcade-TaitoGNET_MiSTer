@@ -5,6 +5,10 @@ use IEEE.numeric_std.all;
 library mem;
 
 entity gpu_pixelpipeline is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -34,7 +38,7 @@ entity gpu_pixelpipeline is
       pipeline_rawTexture  : in  std_logic;
       pipeline_dithering   : in  std_logic;
       pipeline_x           : in  unsigned(9 downto 0);
-      pipeline_y           : in  unsigned(8 downto 0);
+      pipeline_y           : in  unsigned(VRAM_Y_BITS - 1 downto 0);
       pipeline_cr          : in  unsigned(7 downto 0);
       pipeline_cg          : in  unsigned(7 downto 0);
       pipeline_cb          : in  unsigned(7 downto 0);
@@ -48,7 +52,7 @@ entity gpu_pixelpipeline is
       
       requestVRAMEnable    : out std_logic;
       requestVRAMXPos      : out unsigned(9 downto 0);
-      requestVRAMYPos      : out unsigned(8 downto 0);
+      requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
       requestVRAMIdle      : in  std_logic;
       requestVRAMDone      : in  std_logic;
@@ -60,12 +64,12 @@ entity gpu_pixelpipeline is
       
       textPalInNew         : in  std_logic;
       textPalInX           : in  unsigned(9 downto 0);   
-      textPalInY           : in  unsigned(8 downto 0); 
+      textPalInY           : in  unsigned(VRAM_Y_BITS - 1 downto 0); 
       
       pixelStall           : in  std_logic;
       pixelColor           : out std_logic_vector(15 downto 0);
       pixelColor2          : out std_logic_vector(15 downto 0);
-      pixelAddr            : out unsigned(19 downto 0);
+      pixelAddr            : out unsigned(VRAM_Y_BITS + 10 downto 0);
       pixelWrite           : out std_logic
    );
 end entity;
@@ -84,10 +88,10 @@ architecture arch of gpu_pixelpipeline is
    type t_filterarray_u2  is array(0 to 3) of unsigned(1 downto 0);
    type t_filterarray_u8  is array(0 to 3) of unsigned(7 downto 0);
    type t_filterarray_u9  is array(0 to 3) of unsigned(8 downto 0);
-   type t_filterarray_u10 is array(0 to 3) of unsigned(9 downto 0);
-   type t_filterarray_u20 is array(0 to 3) of unsigned(19 downto 0);
+   type t_filterarray_u10 is array(0 to 3) of unsigned(VRAM_Y_BITS downto 0);   -- texture cache tag
+   type t_filterarray_u20 is array(0 to 3) of unsigned(VRAM_Y_BITS + 10 downto 0);   -- texture address
    type t_filterarray_b8  is array(0 to 3) of std_logic_vector(7 downto 0);
-   type t_filterarray_b10 is array(0 to 3) of std_logic_vector(9 downto 0);
+   type t_filterarray_b10 is array(0 to 3) of std_logic_vector(VRAM_Y_BITS downto 0);
    type t_filterarray_b16 is array(0 to 3) of std_logic_vector(15 downto 0);
    type t_filterarray_b64 is array(0 to 3) of std_logic_vector(63 downto 0);
    
@@ -101,7 +105,8 @@ architecture arch of gpu_pixelpipeline is
    signal tag_data_1          : t_filterarray_u10;
       
    signal tag_address_a       : unsigned(7 downto 0) := (others => '0');
-   signal tag_data_a          : std_logic_vector(9 downto 0) := (others => '0');
+   signal texPageY            : unsigned(VRAM_Y_BITS - 9 downto 0);
+   signal tag_data_a          : std_logic_vector(VRAM_Y_BITS downto 0) := (others => '0');
    signal tag_wren_a          : std_logic := '0';
    signal tag_q_b             : t_filterarray_b10;
       
@@ -124,11 +129,11 @@ architecture arch of gpu_pixelpipeline is
    
    signal textPalReq          : std_logic := '0';
    signal textPalReqX         : unsigned(9 downto 0) := (others => '0');  
-   signal textPalReqY         : unsigned(8 downto 0) := (others => '0'); 
+   signal textPalReqY         : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0'); 
   
    signal textPalFetched      : std_logic := '0';
    signal textPalX            : unsigned(9 downto 0) := (others => '0');   
-   signal textPalY            : unsigned(8 downto 0) := (others => '0'); 
+   signal textPalY            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0'); 
    signal textPalFetchNext    : integer range 0 to 3;
   
    type tState is
@@ -147,7 +152,7 @@ architecture arch of gpu_pixelpipeline is
    signal slowdown            : std_logic := '0';
    
    signal reqVRAMXPos         : unsigned(9 downto 0)  := (others => '0');
-   signal reqVRAMYPos         : unsigned(8 downto 0)  := (others => '0');
+   signal reqVRAMYPos         : unsigned(VRAM_Y_BITS - 1 downto 0)  := (others => '0');
    signal reqVRAMSize         : unsigned(10 downto 0) := (others => '0');
   
    signal stageS_valid        : std_logic := '0';
@@ -156,7 +161,7 @@ architecture arch of gpu_pixelpipeline is
    signal stageS_rawTexture   : std_logic := '0';
    signal stageS_dithering    : std_logic := '0';
    signal stageS_x            : unsigned(9 downto 0) := (others => '0');
-   signal stageS_y            : unsigned(8 downto 0) := (others => '0');
+   signal stageS_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stageS_cr           : unsigned(7 downto 0) := (others => '0');
    signal stageS_cg           : unsigned(7 downto 0) := (others => '0');
    signal stageS_cb           : unsigned(7 downto 0) := (others => '0');
@@ -176,7 +181,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage0_rawTexture   : std_logic := '0';
    signal stage0_dithering    : std_logic := '0';
    signal stage0_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage0_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage0_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage0_cr           : unsigned(7 downto 0) := (others => '0');
    signal stage0_cg           : unsigned(7 downto 0) := (others => '0');
    signal stage0_cb           : unsigned(7 downto 0) := (others => '0');
@@ -201,7 +206,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage1_rawTexture   : std_logic := '0';
    signal stage1_dithering    : std_logic := '0';
    signal stage1_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage1_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage1_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage1_cr           : unsigned(7 downto 0) := (others => '0');
    signal stage1_cg           : unsigned(7 downto 0) := (others => '0');
    signal stage1_cb           : unsigned(7 downto 0) := (others => '0');
@@ -221,7 +226,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage2_rawTexture   : std_logic := '0';
    signal stage2_dithering    : std_logic := '0';
    signal stage2_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage2_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage2_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage2_cr           : unsigned(7 downto 0) := (others => '0');
    signal stage2_cg           : unsigned(7 downto 0) := (others => '0');
    signal stage2_cb           : unsigned(7 downto 0) := (others => '0');
@@ -262,7 +267,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage3_rawTexture   : std_logic := '0';
    signal stage3_dithering    : std_logic := '0';
    signal stage3_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage3_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage3_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage3_cr           : unsigned(7 downto 0) := (others => '0');
    signal stage3_cg           : unsigned(7 downto 0) := (others => '0');
    signal stage3_cb           : unsigned(7 downto 0) := (others => '0');
@@ -280,7 +285,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage4_rawTexture   : std_logic := '0';
    signal stage4_dithering    : std_logic := '0';
    signal stage4_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage4_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage4_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage4_cr           : unsigned(7 downto 0) := (others => '0');
    signal stage4_cg           : unsigned(7 downto 0) := (others => '0');
    signal stage4_cb           : unsigned(7 downto 0) := (others => '0');
@@ -298,7 +303,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage5_alphacheck   : std_logic := '0';
    signal stage5_alphabit     : std_logic := '0';
    signal stage5_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage5_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage5_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage5_cr           : unsigned(7 downto 0) := (others => '0');
    signal stage5_cg           : unsigned(7 downto 0) := (others => '0');
    signal stage5_cb           : unsigned(7 downto 0) := (others => '0');
@@ -308,7 +313,7 @@ architecture arch of gpu_pixelpipeline is
    signal stage6_valid        : std_logic := '0';
    signal stage6_alphabit     : std_logic := '0';
    signal stage6_x            : unsigned(9 downto 0) := (others => '0');
-   signal stage6_y            : unsigned(8 downto 0) := (others => '0');
+   signal stage6_y            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal stage6_cr           : std_logic_vector(7 downto 0) := (others => '0');
    signal stage6_cg           : std_logic_vector(7 downto 0) := (others => '0');
    signal stage6_cb           : std_logic_vector(7 downto 0) := (others => '0');
@@ -332,13 +337,22 @@ begin
    stage0_v_array(2) <= stage0_v;
    stage0_v_array(3) <= stage0_v11;
 
+   -- texture page Y base: PS1 = tpage bit 4 (0 or 256); ZN-2 CXD8654Q = tpage bits
+   -- 11 and 4 (0, 256, 512, 768), as MAME 0.288 decode_tpage for GPU type 2
+   gtexpage9 : if VRAM_Y_BITS = 9 generate
+      texPageY <= drawMode(4 downto 4);
+   end generate;
+   gtexpage10 : if VRAM_Y_BITS = 10 generate
+      texPageY <= drawMode(11) & drawMode(4);
+   end generate;
+
    gfiltermemmult : for i in 0 to 3 generate
    begin
    
       itagram : entity mem.RamMLAB
       GENERIC MAP 
       (
-         width                               => 10,
+         width                               => VRAM_Y_BITS + 1,
          widthad                             => 8
       )
       PORT MAP (
@@ -355,10 +369,10 @@ begin
                   stage0_textaddr(i)(15 downto 11) & stage0_textaddr(i)(5 downto 3);
       
       
-      tag_data(i) <= drawMode(8) & stage0_textaddr(i)(19 downto 17) & stage0_textaddr(i)(10 downto 5) when drawMode(8) = '0' else
-                     drawMode(8) & stage0_textaddr(i)(19 downto 16) & stage0_textaddr(i)(10 downto 6);
+      tag_data(i) <= drawMode(8) & stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 17) & stage0_textaddr(i)(10 downto 5) when drawMode(8) = '0' else
+                     drawMode(8) & stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 16) & stage0_textaddr(i)(10 downto 6);
       
-      stage0_textaddr(i)(19 downto 11) <= drawMode(4) & stage0_v_array(i);
+      stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 11) <= texPageY & stage0_v_array(i);
       stage0_textaddr(i)(0)            <= '0';
       stage0_textaddr(i)(10 downto 1)  <= (drawMode(3 downto 0) & "000000") + stage0_u_array(i)(7 downto 2) when drawMode(8 downto 7) = "00" else
                                           (drawMode(3 downto 0) & "000000") + stage0_u_array(i)(7 downto 1) when drawMode(8 downto 7) = "01" else
@@ -570,7 +584,7 @@ begin
                      cache_address_a <= tag_addr(0);
                      
                      reqVRAMXPos <= stage0_textaddr(0)(10 downto 1);
-                     reqVRAMYPos <= stage0_textaddr(0)(19 downto 11);
+                     reqVRAMYPos <= stage0_textaddr(0)(VRAM_Y_BITS + 10 downto 11);
                      reqVRAMSize <= to_unsigned(1, 11);
                   end if;
                
@@ -588,7 +602,7 @@ begin
                   cache_address_a <= tag_addr_1(selectIndex);
                   
                   reqVRAMXPos <= stage0_textaddr_1(selectIndex)(10 downto 1);
-                  reqVRAMYPos <= stage0_textaddr_1(selectIndex)(19 downto 11);
+                  reqVRAMYPos <= stage0_textaddr_1(selectIndex)(VRAM_Y_BITS + 10 downto 11);
                   reqVRAMSize <= to_unsigned(1, 11);  
                
                when REQUESTTEXTURE =>

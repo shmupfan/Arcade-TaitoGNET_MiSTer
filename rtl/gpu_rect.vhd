@@ -5,6 +5,10 @@ use IEEE.numeric_std.all;
 library mem;
 
 entity gpu_rect is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -23,8 +27,8 @@ entity gpu_rect is
       drawingOffsetY       : in  signed(10 downto 0);
       drawingAreaLeft      : in  unsigned(9 downto 0);
       drawingAreaRight     : in  unsigned(9 downto 0);
-      drawingAreaTop       : in  unsigned(8 downto 0);
-      drawingAreaBottom    : in  unsigned(8 downto 0);
+      drawingAreaTop       : in  unsigned(VRAM_Y_BITS - 1 downto 0);
+      drawingAreaBottom    : in  unsigned(VRAM_Y_BITS - 1 downto 0);
       
       fifoOut_idle         : in  std_logic;
       pipeline_busy        : in  std_logic;
@@ -34,7 +38,7 @@ entity gpu_rect is
       pipeline_transparent : out std_logic := '0';
       pipeline_rawTexture  : out std_logic := '0';
       pipeline_x           : out unsigned(9 downto 0) := (others => '0');
-      pipeline_y           : out unsigned(8 downto 0) := (others => '0');
+      pipeline_y           : out unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
       pipeline_cr          : out unsigned(7 downto 0) := (others => '0');
       pipeline_cg          : out unsigned(7 downto 0) := (others => '0');
       pipeline_cb          : out unsigned(7 downto 0) := (others => '0');
@@ -50,14 +54,14 @@ entity gpu_rect is
       
       requestVRAMEnable    : out std_logic;
       requestVRAMXPos      : out unsigned(9 downto 0);
-      requestVRAMYPos      : out unsigned(8 downto 0);
+      requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
       requestVRAMIdle      : in  std_logic;
       requestVRAMDone      : in  std_logic;
       
       textPalNew           : out std_logic := '0';
       textPalX             : out unsigned(9 downto 0) := (others => '0');   
-      textPalY             : out unsigned(8 downto 0) := (others => '0'); 
+      textPalY             : out unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0'); 
       
       vramLineEna          : out std_logic;
       vramLineAddr         : out unsigned(9 downto 0)
@@ -93,14 +97,14 @@ architecture arch of gpu_rect is
       
    signal rec_posx            : signed(11 downto 0) := (others => '0');
    signal rec_sizex           : unsigned(9 downto 0) := (others => '0');   
-   signal rec_sizey           : unsigned(8 downto 0) := (others => '0');  
+   signal rec_sizey           : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');  
    
    signal rec_u               : unsigned(7 downto 0) := (others => '0');     
 
    signal xPos                : signed(11 downto 0) := (others => '0'); 
    signal yPos                : signed(11 downto 0) := (others => '0');    
    signal xCnt                : unsigned(9 downto 0) := (others => '0');   
-   signal yCnt                : unsigned(8 downto 0) := (others => '0');  
+   signal yCnt                : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');  
    signal uWork               : unsigned(7 downto 0) := (others => '0');   
    signal vWork               : unsigned(7 downto 0) := (others => '0');  
 
@@ -114,7 +118,7 @@ begin
    
    requestVRAMEnable <= '1'                        when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else '0';
    requestVRAMXPos   <= unsigned(xPos(9 downto 0)) when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
-   requestVRAMYPos   <= unsigned(yPos(8 downto 0)) when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
+   requestVRAMYPos   <= unsigned(yPos(VRAM_Y_BITS - 1 downto 0)) when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
    requestVRAMSize   <= '0' & rec_sizex            when (state = REQUESTLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
    
    vramLineEna  <= '1' when (state = PROCPIXELS) else '0';
@@ -199,15 +203,15 @@ begin
                   case (rec_size) is
                      when "01" =>
                         rec_sizex <= to_unsigned(1, 10);
-                        rec_sizey <= to_unsigned(1, 9);
+                        rec_sizey <= to_unsigned(1, VRAM_Y_BITS);
                         
                      when "10" =>
                         rec_sizex <= to_unsigned(8, 10);
-                        rec_sizey <= to_unsigned(8, 9);
+                        rec_sizey <= to_unsigned(8, VRAM_Y_BITS);
                         
                      when "11" =>
                         rec_sizex <= to_unsigned(16, 10);
-                        rec_sizey <= to_unsigned(16, 9);
+                        rec_sizey <= to_unsigned(16, VRAM_Y_BITS);
                         
                      when others => null;
                   end case;
@@ -234,7 +238,7 @@ begin
                      vWork         <= unsigned(fifo_data(15 downto  8));
                      rec_u         <= unsigned(fifo_data( 7 downto  0));
                      textPalX      <= unsigned(fifo_data(21 downto 16)) & "0000";
-                     textPalY      <= unsigned(fifo_data(30 downto 22));
+                     textPalY      <= unsigned(fifo_data(VRAM_Y_BITS + 21 downto 22));
                      textPalNew    <= '1';
                      if (rec_size = "00") then
                         state    <= REQUESTSIZE;  
@@ -247,7 +251,7 @@ begin
                when REQUESTSIZE =>
                   if (fifo_Valid = '1') then
                      rec_sizex   <= unsigned(fifo_data(9 downto  0));
-                     rec_sizey   <= unsigned(fifo_data(24 downto 16));
+                     rec_sizey   <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                      state       <= CHECKPOS;
                      CmdDone     <= '1'; 
                   end if;
@@ -284,7 +288,7 @@ begin
                   end if;
                   yPos      <= yPos + ydiff;
                   vWork     <= vWork + unsigned(ydiff(7 downto 0));
-                  rec_sizey <= unsigned(ysize(8 downto 0)); 
+                  rec_sizey <= unsigned(ysize(VRAM_Y_BITS - 1 downto 0)); 
                   
                   if (xsize < 1 or ysize < 1 or rec_posx > to_integer(drawingAreaRight) or yPos > to_integer(drawingAreaBottom)) then
                      if (REPRODUCIBLEGPUTIMING = '1') then
@@ -350,7 +354,7 @@ begin
                         pipeline_transparent <= rec_transparency;
                         pipeline_rawTexture  <= rec_rawTexture;
                         pipeline_x           <= unsigned(xPos(9 downto 0));
-                        pipeline_y           <= unsigned(yPos(8 downto 0));
+                        pipeline_y           <= unsigned(yPos(VRAM_Y_BITS - 1 downto 0));
                         pipeline_cr          <= unsigned(rec_color( 7 downto  0));
                         pipeline_cg          <= unsigned(rec_color(15 downto  8));
                         pipeline_cb          <= unsigned(rec_color(23 downto 16));

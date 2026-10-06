@@ -1,0 +1,4 @@
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu_gpu_bridge.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu_spu_bridge.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu_reset_fill.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu_split.vhd ]

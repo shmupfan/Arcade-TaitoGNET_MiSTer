@@ -1,0 +1,8 @@
+instance_end system nightrai machine_seconds 900.0 coin_at 240.0 soft_resets 0
+  gpu_w 2798557 first 0.00
+  mdec_w 0 first -
+  mdec_r 0 first -
+  dma0 0 first -
+  dma1 0 first -
+  kon 9958 first 143.11
+  spucnt 208 first 143.10

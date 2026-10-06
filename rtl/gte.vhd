@@ -6,6 +6,10 @@ use STD.textio.all;
 use work.pGTE.all;
 
 entity gte is
+   generic
+   (
+      NARROW_MUL           : integer := 0
+   );
    port 
    (
       clk1x                : in  std_logic;
@@ -262,6 +266,437 @@ architecture arch of gte is
    signal SSrden           : std_logic;
    signal SS_readData      : std_logic_vector(31 downto 0);
   
+   --##############################################################
+   -- NARROW_MUL = 3 (G-NET, GTE at 100 MHz): the MAC requests of each step are
+   -- decoded one step early into req3 (operand selects, one-hot). In the
+   -- request cycle the selected operands go straight into the multipliers,
+   -- whose products are registered in the MAC units, so the trigger cycle only
+   -- adds. Same requests, same steps, same results (sim/gte_equiv).
+   --##############################################################
+   type tReq3 is record
+      t                                                               : std_logic;  -- MAC1-3 request
+      aRT1, aRT2, aRT3, aOP0, aOP1, aIR, aM0, aM1, aM2                : std_logic;  -- 18 x 18 operand 1
+      aLL1, aLL2, aLL3, aLC1, aLC2, aLC3                              : std_logic;
+      bV0X, bV0Y, bV0Z, bV1X, bV1Y, bV1Z, bV2X, bV2Y, bV2Z            : std_logic;  -- 18 x 18 operand 2
+      bOP0, bOP1, bIR0, bIR1, bIR2, bIR3, bVec0, bVec1, bVec2, bRGBC  : std_logic;
+      bIRi                                                            : std_logic;
+      sh, wCol, wFC, wIR, wTR, wBK, wRes, wMAC                        : std_logic;  -- wide operand times 2^k
+      k0, k4, k12, k16, kGPL                                          : std_logic;
+      addTR, addLast                                                  : std_logic;
+      sub, swap, svSh, useIR, IRs, IRsF, sat, satF, r2, uRes          : std_logic;  -- svSh, IRs, IRsF: cmdShift; sat, satF: cmdsatIR
+      t0                                                              : std_logic;  -- MAC0 request
+      a0Asp, a0Asp1, a0Asp2, a0IR2, a0IR2_1, a0IR2_2, a0DQA           : std_logic;
+      a0SX0, a0SX1, a0SX2, a0SZ0, a0SZ1, a0SZ2, a0SZ3                 : std_logic;
+      b0Div, b0SY0, b0SY1, b0SY2, b0ZSF3, b0ZSF4                      : std_logic;
+      add0OFX, add0OFY, add0DQB, sub0, useIR0, IRs0, cOvf0, uRes0     : std_logic;
+      xA, xT, lp                                                      : std_logic;  -- step: exit, exit if turbo, next vertex (or exit if turbo after the last)
+   end record;
+   constant REQ3_NONE : tReq3 := (others => '0');
+
+   signal req3             : tReq3 := REQ3_NONE;
+   signal procEna3         : std_logic;
+   signal MAC0req3         : tMAC0req;
+   signal MAC1req3         : tMAC123req;
+   signal MAC2req3         : tMAC123req;
+   signal MAC3req3         : tMAC123req;
+   signal MAC0mul3         : tMAC0mul   := MAC0mul_none;
+   signal MAC1mul3         : tMAC123mul := MAC123mul_none;
+   signal MAC2mul3         : tMAC123mul := MAC123mul_none;
+   signal MAC3mul3         : tMAC123mul := MAC123mul_none;
+   signal MAC0req_u        : tMAC0req;
+   signal MAC1req_u        : tMAC123req;
+   signal MAC2req_u        : tMAC123req;
+   signal MAC3req_u        : tMAC123req;
+
+   function divRetime(n : integer) return integer is
+   begin
+      if (n = 3) then return 1; end if;
+      return 0;
+   end function;
+
+   procedure r3cmd(r : inout tReq3) is   -- svSh, IRs, IRsF = cmdShift, useIR = 1, satIR, satIRF = cmdsatIR
+   begin
+      r.svSh := '1'; r.useIR := '1'; r.IRs := '1'; r.IRsF := '1'; r.sat := '1'; r.satF := '1';
+   end procedure;
+
+   procedure r3RT(r : inout tReq3; j, v : integer) is   -- RTPS/RTPT: RTj1..3 x V(v)
+   begin
+      r.t := '1';
+      case (j) is
+         when 1      => r.aRT1 := '1'; r.addTR := '1';
+         when 2      => r.aRT2 := '1'; r.uRes  := '1';
+         when others => r.aRT3 := '1'; r.uRes  := '1'; r.r2 := '1'; r3cmd(r);
+      end case;
+      case (v * 3 + j) is
+         when 1      => r.bV0X := '1';
+         when 2      => r.bV0Y := '1';
+         when 3      => r.bV0Z := '1';
+         when 4      => r.bV1X := '1';
+         when 5      => r.bV1Y := '1';
+         when 6      => r.bV1Z := '1';
+         when 7      => r.bV2X := '1';
+         when 8      => r.bV2Y := '1';
+         when others => r.bV2Z := '1';
+      end case;
+   end procedure;
+
+   procedure r3shift(r : inout tReq3) is   -- wide operand times 1000h, no flags
+   begin
+      r.t := '1'; r.sh := '1'; r.k12 := '1';
+   end procedure;
+
+   procedure r3FC(r : inout tReq3) is   -- FC x 1000h, p - a, InterpolateColor
+   begin
+      r3shift(r); r.wFC := '1';
+      r.sub := '1'; r.swap := '1'; r.svSh := '1'; r.useIR := '1'; r.IRs := '1'; r.IRsF := '1'; r.uRes := '1';
+   end procedure;
+
+   procedure r3IR0(r : inout tReq3; last : boolean; uRes : std_logic) is   -- IR x IR0 (+ macLast)
+   begin
+      r.t := '1'; r.aIR := '1'; r.bIR0 := '1'; r3cmd(r); r.uRes := uRes;
+      if (last) then r.addLast := '1'; end if;
+   end procedure;
+
+   procedure r3LL(r : inout tReq3; j : integer) is   -- LLj1..3 x vector(j - 1)
+   begin
+      r.t := '1';
+      case (j) is
+         when 1      => r.aLL1 := '1'; r.bVec0 := '1';
+         when 2      => r.aLL2 := '1'; r.bVec1 := '1'; r.uRes := '1';
+         when others => r.aLL3 := '1'; r.bVec2 := '1'; r.uRes := '1'; r3cmd(r);
+      end case;
+   end procedure;
+
+   procedure r3LC(r : inout tReq3; j : integer) is   -- LCj1..3 x IRj
+   begin
+      r.t := '1'; r.uRes := '1';
+      case (j) is
+         when 1      => r.aLC1 := '1'; r.bIR1 := '1';
+         when 2      => r.aLC2 := '1'; r.bIR2 := '1';
+         when others => r.aLC3 := '1'; r.bIR3 := '1'; r3cmd(r);
+      end case;
+   end procedure;
+
+   procedure r3P(r : inout tReq3) is   -- IR x RGBC byte
+   begin
+      r.t := '1'; r.aIR := '1'; r.bRGBC := '1';
+   end procedure;
+
+   procedure r3S(r : inout tReq3; cmd : boolean) is   -- mac_result x 10h
+   begin
+      r.t := '1'; r.sh := '1'; r.k4 := '1'; r.wRes := '1';
+      if (cmd) then r3cmd(r); end if;
+   end procedure;
+
+   procedure r30(r : inout tReq3; uRes, cOvf : std_logic) is   -- MAC0 request, add 0
+   begin
+      r.t0 := '1'; r.uRes0 := uRes; r.cOvf0 := cOvf;
+   end procedure;
+
+   -- requests of state st at calcStep s (exactly the MACreq assignments of the case statement);
+   -- every row call has constant arguments, so this is a plain decode of st and s
+   function req3At(st : tstate; s : integer; tv : unsigned(1 downto 0)) return tReq3 is
+      variable r : tReq3;
+   begin
+      r := REQ3_NONE;
+      case (st) is
+         when CALC_RTPS =>
+            case (s) is
+               when 0         => r3RT(r, 1, 0);
+               when 1         => r3RT(r, 2, 0);
+               when 2         => r3RT(r, 3, 0);
+               when 12        => r30(r, '0', '1'); r.a0Asp := '1'; r.b0Div := '1'; r.add0OFX := '1';
+               when 13        => r30(r, '0', '1'); r.a0IR2 := '1'; r.b0Div := '1'; r.add0OFY := '1';
+               when 15        => r30(r, '0', '1'); r.a0DQA := '1'; r.b0Div := '1'; r.add0DQB := '1'; r.useIR0 := '1'; r.IRs0 := '1';
+               when others    => null;
+            end case;
+
+         when CALC_RTPT =>
+            case (s) is
+               when 0         => r3RT(r, 1, 0);
+               when 1         => r3RT(r, 2, 0);
+               when 2         => r3RT(r, 3, 0);
+               when 3         => r3RT(r, 1, 1);
+               when 4         => r3RT(r, 2, 1);
+               when 5         => r3RT(r, 3, 1);
+               when 6         => r3RT(r, 1, 2);
+               when 7         => r3RT(r, 2, 2);
+               when 8         => r3RT(r, 3, 2);
+               when 12        => r30(r, '0', '1'); r.a0Asp1  := '1'; r.b0Div := '1'; r.add0OFX := '1';
+               when 13        => r30(r, '0', '1'); r.a0IR2_1 := '1'; r.b0Div := '1'; r.add0OFY := '1';
+               when 15        => r30(r, '0', '1'); r.a0Asp2  := '1'; r.b0Div := '1'; r.add0OFX := '1';
+               when 16        => r30(r, '0', '1'); r.a0IR2_2 := '1'; r.b0Div := '1'; r.add0OFY := '1';
+               when 18        => r30(r, '0', '1'); r.a0Asp   := '1'; r.b0Div := '1'; r.add0OFX := '1';
+               when 19        => r30(r, '0', '1'); r.a0IR2   := '1'; r.b0Div := '1'; r.add0OFY := '1';
+               when 21        => r30(r, '0', '1'); r.a0DQA   := '1'; r.b0Div := '1'; r.add0DQB := '1'; r.useIR0 := '1'; r.IRs0 := '1';
+               when others    => null;
+            end case;
+
+         when CALC_NCLIP =>
+            case (s) is
+               when 0         => r30(r, '0', '0'); r.a0SX0 := '1'; r.b0SY1 := '1';
+               when 1         => r30(r, '1', '0'); r.a0SX1 := '1'; r.b0SY2 := '1';
+               when 2         => r30(r, '1', '0'); r.a0SX2 := '1'; r.b0SY0 := '1';
+               when 3         => r30(r, '1', '0'); r.a0SX0 := '1'; r.b0SY2 := '1'; r.sub0 := '1';
+               when 4         => r30(r, '1', '0'); r.a0SX1 := '1'; r.b0SY0 := '1'; r.sub0 := '1';
+               when 5         => r30(r, '1', '1'); r.a0SX2 := '1'; r.b0SY1 := '1'; r.sub0 := '1';
+               when others    => null;
+            end case;
+
+         when CALC_OP =>
+            case (s) is
+               when 0         => r.t := '1'; r.aOP0 := '1'; r.bOP0 := '1';
+               when 1         => r.t := '1'; r.aOP1 := '1'; r.bOP1 := '1'; r.sub := '1'; r3cmd(r); r.uRes := '1';
+               when others    => null;
+            end case;
+
+         when CALC_DPCS | CALC_DPCT =>
+            case (s) is
+               when 0         => r.t := '1'; r.sh := '1'; r.k16 := '1'; r.wCol := '1';
+               when 1         => r3FC(r);
+               when 4         => r3IR0(r, true, '0');
+               when others    => null;
+            end case;
+
+         when CALC_INTPL =>
+            case (s) is
+               when 0         => r3shift(r); r.wIR := '1';
+               when 1         => r3FC(r);
+               when 4         => r3IR0(r, true, '0');
+               when others    => null;
+            end case;
+
+         when CALC_MVMVA =>
+            case (s) is
+               when 1         => r3shift(r); r.wTR := '1';
+               when 2         =>
+                  r.t := '1'; r.aM0 := '1'; r.bVec0 := '1'; r.uRes := '1';
+                  if (tv = "10") then r.useIR := '1'; r.IRs := '1'; r.IRsF := '1'; end if;
+               when 3         =>
+                  r.t := '1'; r.aM1 := '1'; r.bVec1 := '1';
+                  if (tv /= "10") then r.uRes := '1'; end if;
+               when 4         => r.t := '1'; r.aM2 := '1'; r.bVec2 := '1'; r3cmd(r); r.uRes := '1';
+               when others    => null;
+            end case;
+
+         when CALC_NCDS | CALC_NCDT =>
+            case (s) is
+               when 1         => r3LL(r, 1);
+               when 2         => r3LL(r, 2);
+               when 3         => r3LL(r, 3);
+               when 4         => r3shift(r); r.wBK := '1';
+               when 6         => r3LC(r, 1);
+               when 7         => r3LC(r, 2);
+               when 8         => r3LC(r, 3);
+               when 11        => r3P(r);
+               when 13        => r3S(r, false);
+               when 14        => r3FC(r);
+               when 17        => r3IR0(r, true, '0');
+               when others    => null;
+            end case;
+
+         when CALC_CDP =>
+            case (s) is
+               when 0         => r3shift(r); r.wBK := '1';
+               when 1         => r3LC(r, 1);
+               when 2         => r3LC(r, 2);
+               when 3         => r3LC(r, 3);
+               when 6         => r3P(r);
+               when 8         => r3S(r, false);
+               when 9         => r3FC(r);
+               when 12        => r3IR0(r, true, '0');
+               when others    => null;
+            end case;
+
+         when CALC_NCCS | CALC_NCCT =>
+            case (s) is
+               when 1         => r3LL(r, 1);
+               when 2         => r3LL(r, 2);
+               when 3         => r3LL(r, 3);
+               when 4         => r3shift(r); r.wBK := '1';
+               when 6         => r3LC(r, 1);
+               when 7         => r3LC(r, 2);
+               when 8         => r3LC(r, 3);
+               when 11        => r3P(r);
+               when 13        => r3S(r, true);
+               when others    => null;
+            end case;
+
+         when CALC_CC =>
+            case (s) is
+               when 0         => r3shift(r); r.wBK := '1';
+               when 1         => r3LC(r, 1);
+               when 2         => r3LC(r, 2);
+               when 3         => r3LC(r, 3);
+               when 6         => r3P(r);
+               when 8         => r3S(r, true);
+               when others    => null;
+            end case;
+
+         when CALC_NCS | CALC_NCT =>
+            case (s) is
+               when 1         => r3LL(r, 1);
+               when 2         => r3LL(r, 2);
+               when 3         => r3LL(r, 3);
+               when 4         => r3shift(r); r.wBK := '1';
+               when 6         => r3LC(r, 1);
+               when 7         => r3LC(r, 2);
+               when 8         => r3LC(r, 3);
+               when others    => null;
+            end case;
+
+         when CALC_SQR =>
+            if (s = 0) then r.t := '1'; r.aIR := '1'; r.bIRi := '1'; r3cmd(r); end if;
+
+         when CALC_DPCL =>
+            case (s) is
+               when 0         => r3P(r);
+               when 2         => r3S(r, false);
+               when 3         => r3FC(r);
+               when 6         => r3IR0(r, true, '0');
+               when others    => null;
+            end case;
+
+         when CALC_AVSZ3 =>
+            case (s) is
+               when 0         => r30(r, '0', '1'); r.a0SZ1 := '1'; r.b0ZSF3 := '1';
+               when 1         => r30(r, '1', '1'); r.a0SZ2 := '1'; r.b0ZSF3 := '1';
+               when 2         => r30(r, '1', '1'); r.a0SZ3 := '1'; r.b0ZSF3 := '1';
+               when others    => null;
+            end case;
+
+         when CALC_AVSZ4 =>
+            case (s) is
+               when 0         => r30(r, '0', '1'); r.a0SZ0 := '1'; r.b0ZSF4 := '1';
+               when 1         => r30(r, '1', '1'); r.a0SZ1 := '1'; r.b0ZSF4 := '1';
+               when 2         => r30(r, '1', '1'); r.a0SZ2 := '1'; r.b0ZSF4 := '1';
+               when 3         => r30(r, '1', '1'); r.a0SZ3 := '1'; r.b0ZSF4 := '1';
+               when others    => null;
+            end case;
+
+         when CALC_GPF =>
+            if (s = 0) then r3IR0(r, false, '0'); end if;
+
+         when CALC_GPL =>
+            case (s) is
+               when 1         => r.t := '1'; r.sh := '1'; r.kGPL := '1'; r.wMAC := '1';
+               when 2         => r3IR0(r, false, '1');
+               when others    => null;
+            end case;
+
+         when others => null;
+      end case;
+
+      case (st) is
+         when CALC_RTPS             => if (s = 17) then r.xT := '1'; end if; if (s = 25) then r.xA := '1'; end if;
+         when CALC_RTPT             => if (s = 23) then r.xT := '1'; end if; if (s = 41) then r.xA := '1'; end if;
+         when CALC_NCLIP            => if (s =  7) then r.xT := '1'; end if; if (s = 11) then r.xA := '1'; end if;
+         when CALC_OP               => if (s =  3) then r.xT := '1'; end if; if (s =  7) then r.xA := '1'; end if;
+         when CALC_DPCS             => if (s =  8) then r.xT := '1'; end if; if (s = 10) then r.xA := '1'; end if;
+         when CALC_DPCT             => if (s =  8) then r.lp := '1'; end if; if (s = 10) then r.xA := '1'; end if;
+         when CALC_INTPL            => if (s =  8) then r.xT := '1'; end if; if (s = 10) then r.xA := '1'; end if;
+         when CALC_MVMVA            => if (s =  6) then r.xT := '1'; end if; if (s = 10) then r.xA := '1'; end if;
+         when CALC_NCDS             => if (s = 21) then r.xT := '1'; end if; if (s = 33 or s = 39) then r.xA := '1'; end if;
+         when CALC_NCDT             => if (s = 21) then r.lp := '1'; end if; if (s = 39) then r.xA := '1'; end if;
+         when CALC_CDP              => if (s = 16) then r.xT := '1'; end if; if (s = 20) then r.xA := '1'; end if;
+         when CALC_NCCS             => if (s = 17) then r.xT := '1'; end if; if (s = 29 or s = 37) then r.xA := '1'; end if;
+         when CALC_NCCT             => if (s = 17) then r.lp := '1'; end if; if (s = 37) then r.xA := '1'; end if;
+         when CALC_CC               => if (s = 12) then r.xT := '1'; end if; if (s = 16) then r.xA := '1'; end if;
+         when CALC_NCS              => if (s = 12) then r.xT := '1'; end if; if (s = 22 or s = 28) then r.xA := '1'; end if;
+         when CALC_NCT              => if (s = 12) then r.lp := '1'; end if; if (s = 28) then r.xA := '1'; end if;
+         when CALC_SQR              => if (s =  2) then r.xT := '1'; end if; if (s =  5) then r.xA := '1'; end if;
+         when CALC_DPCL             => if (s = 10) then r.xA := '1'; end if;
+         when CALC_AVSZ3            => if (s =  5) then r.xA := '1'; end if;
+         when CALC_AVSZ4            => if (s =  7) then r.xA := '1'; end if;
+         when CALC_GPF              => if (s =  4) then r.xA := '1'; end if;
+         when CALC_GPL              => if (s =  5) then r.xA := '1'; end if;
+         when IDLE                  => null;
+      end case;
+      return r;
+   end function;
+
+   function opState3(op : unsigned(5 downto 0)) return tstate is
+   begin
+      case (to_integer(op)) is
+         when 16#01# => return CALC_RTPS;
+         when 16#06# => return CALC_NCLIP;
+         when 16#0C# => return CALC_OP;
+         when 16#10# => return CALC_DPCS;
+         when 16#11# => return CALC_INTPL;
+         when 16#12# => return CALC_MVMVA;
+         when 16#13# => return CALC_NCDS;
+         when 16#14# => return CALC_CDP;
+         when 16#16# => return CALC_NCDT;
+         when 16#1B# => return CALC_NCCS;
+         when 16#1C# => return CALC_CC;
+         when 16#1E# => return CALC_NCS;
+         when 16#20# => return CALC_NCT;
+         when 16#28# => return CALC_SQR;
+         when 16#29# => return CALC_DPCL;
+         when 16#2A# => return CALC_DPCT;
+         when 16#2D# => return CALC_AVSZ3;
+         when 16#2E# => return CALC_AVSZ4;
+         when 16#30# => return CALC_RTPT;
+         when 16#3D# => return CALC_GPF;
+         when 16#3E# => return CALC_GPL;
+         when 16#3F# => return CALC_NCCT;
+         when others => return IDLE;
+      end case;
+   end function;
+
+   -- operand muxes (AND-OR from the one-hot selects)
+   function s18(s : std_logic; v : signed) return signed is
+      variable r : signed(17 downto 0) := (others => '0');
+   begin
+      if (s = '1') then r := resize(v, 18); end if;
+      return r;
+   end function;
+
+   function s32(s : std_logic; v : signed) return signed is
+      variable r : signed(31 downto 0) := (others => '0');
+   begin
+      if (s = '1') then r := resize(v, 32); end if;
+      return r;
+   end function;
+
+   function s45(s : std_logic; v : signed) return signed is
+      variable r : signed(44 downto 0) := (others => '0');
+   begin
+      if (s = '1') then r := resize(v, 45); end if;
+      return r;
+   end function;
+
+   function mulA3(r : tReq3; rt1, rt2, rt3, op0, op1, ir, m0, m1, m2, ll1, ll2, ll3, lc1, lc2, lc3 : signed(15 downto 0)) return signed is
+   begin
+      return s18(r.aRT1, rt1) or s18(r.aRT2, rt2) or s18(r.aRT3, rt3) or s18(r.aOP0, op0) or s18(r.aOP1, op1) or
+             s18(r.aIR, ir)   or s18(r.aM0, m0)   or s18(r.aM1, m1)   or s18(r.aM2, m2)   or
+             s18(r.aLL1, ll1) or s18(r.aLL2, ll2) or s18(r.aLL3, ll3) or s18(r.aLC1, lc1) or s18(r.aLC2, lc2) or s18(r.aLC3, lc3);
+   end function;
+
+   function mulB3(r : tReq3; v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z, op0, op1, ir0, ir1, ir2, ir3, vec0, vec1, vec2, iri : signed(15 downto 0); rgb : unsigned(7 downto 0)) return signed is
+   begin
+      return s18(r.bV0X, v0x)   or s18(r.bV0Y, v0y)   or s18(r.bV0Z, v0z)   or s18(r.bV1X, v1x) or s18(r.bV1Y, v1y) or s18(r.bV1Z, v1z) or
+             s18(r.bV2X, v2x)   or s18(r.bV2Y, v2y)   or s18(r.bV2Z, v2z)   or s18(r.bOP0, op0) or s18(r.bOP1, op1) or
+             s18(r.bIR0, ir0)   or s18(r.bIR1, ir1)   or s18(r.bIR2, ir2)   or s18(r.bIR3, ir3) or
+             s18(r.bVec0, vec0) or s18(r.bVec1, vec1) or s18(r.bVec2, vec2) or s18(r.bIRi, iri) or s18(r.bRGBC, signed('0' & rgb));
+   end function;
+
+   function shift3(r : tReq3; col : unsigned(7 downto 0); fc, tr, bk, res, mac : signed(31 downto 0); ir : signed(15 downto 0); gpl1000 : std_logic) return signed is
+      variable w : signed(31 downto 0);
+   begin
+      w := s32(r.wCol, signed('0' & col)) or s32(r.wFC, fc) or s32(r.wIR, ir) or s32(r.wTR, tr) or s32(r.wBK, bk) or s32(r.wRes, res) or s32(r.wMAC, mac);
+      -- as gte_mac123 NARROW_MUL = 1: resize(mul1 * mul2, 45) for mul2 = 2^k
+      return s45(r.k0 or (r.kGPL and not gpl1000), resize(resize(w, 64), 45)) or
+             s45(r.k4,                             resize(shift_left(resize(w, 64), 4), 45)) or
+             s45(r.k12 or (r.kGPL and gpl1000),    resize(shift_left(resize(w, 64), 12), 45)) or
+             s45(r.k16,                            resize(shift_left(resize(w, 64), 16), 45));
+   end function;
+
+   function add3(r : tReq3; tr : unsigned(31 downto 0); last : signed(44 downto 0)) return signed is
+   begin
+      return s45(r.addTR, resize(signed(tr), 33) & x"000") or s45(r.addLast, last);
+   end function;
+
 begin 
 
    gte_writeAddr <= SS_Adr                 when (loading_savestate = '1') else gte_writeAddr_in;
@@ -273,6 +708,12 @@ begin
       variable colorNewR     : unsigned(7 downto 0);
       variable colorNewG     : unsigned(7 downto 0);
       variable colorNewB     : unsigned(7 downto 0);
+      variable v3_state      : tstate;
+      variable v3_step       : integer range 0 to 64;
+      variable v3_first      : tReq3;
+      variable v3_next       : tReq3;
+      variable v3_exit       : boolean;
+      variable v3_loop       : boolean;
    begin
       if rising_edge(clk2x) then
       
@@ -375,6 +816,10 @@ begin
             REG_ZSF3 <= (others => '0');
             REG_ZSF4 <= (others => '0');
             REG_FLAG <= (others => '0');
+
+            if (NARROW_MUL = 3) then
+               req3 <= REQ3_NONE;
+            end if;
             
          elsif (ce = '1' or loading_savestate = '1') then
          
@@ -1239,6 +1684,64 @@ begin
             
             end case;
             
+            if (NARROW_MUL = 3) then
+               -- this step's requests (req3 was decoded one step early); the
+               -- operands go to the MAC units through MACxmul3 (see below)
+               MAC0req3.trigger <= '0';
+               MAC1req3.trigger <= '0';
+               MAC2req3.trigger <= '0';
+               MAC3req3.trigger <= '0';
+               if (req3.t = '1') then
+                  --             mul1              mul2              add                             sub       swap       svSh                   useIR       IRs                   IRsF                                 satIR                  satIRF                                    uRes       trigger
+                  MAC1req3 <= (to_signed(0, 32), to_signed(0, 32), add3(req3, REG_TR0, mac1Last), req3.sub, req3.swap, req3.svSh and cmdShift, req3.useIR, req3.IRs and cmdShift, req3.IRsF and cmdShift,                req3.sat and cmdsatIR, req3.satF and cmdsatIR,                   req3.uRes, '1');
+                  MAC2req3 <= (to_signed(0, 32), to_signed(0, 32), add3(req3, REG_TR1, mac2Last), req3.sub, req3.swap, req3.svSh and cmdShift, req3.useIR, req3.IRs and cmdShift, req3.IRsF and cmdShift,                req3.sat and cmdsatIR, req3.satF and cmdsatIR,                   req3.uRes, '1');
+                  MAC3req3 <= (to_signed(0, 32), to_signed(0, 32), add3(req3, REG_TR2, mac3Last), req3.sub, req3.swap, req3.svSh and cmdShift, req3.useIR, req3.IRs and cmdShift, (req3.IRsF and cmdShift) or req3.r2, req3.sat and cmdsatIR, req3.satF and cmdsatIR and not req3.r2, req3.uRes, '1');
+               end if;
+               if (req3.t0 = '1') then
+                  MAC0req3 <= (to_signed(0, 17), to_signed(0, 18),
+                               s32(req3.add0OFX, signed(REG_OFX)) or s32(req3.add0OFY, signed(REG_OFY)) or s32(req3.add0DQB, signed(REG_DQB)),
+                               req3.sub0, '0', req3.useIR0, req3.IRs0, req3.cOvf0, req3.uRes0, '1');
+               end if;
+
+               -- steps: exits and loops of the case statement above, from the
+               -- flags decoded one step early; overrides its state, calcStep
+               -- and batchCount assignments outside IDLE
+               v3_exit  := req3.xA = '1' or (turbomode = '1' and (req3.xT = '1' or (req3.lp = '1' and batchCount = 2)));
+               v3_loop  := req3.lp = '1' and batchCount /= 2;
+               v3_state := state;
+               if (v3_exit) then
+                  v3_state := IDLE;
+               end if;
+               v3_step := calcStep + 1;
+               if (v3_loop) then
+                  v3_step := 0;
+               end if;
+               if (state /= IDLE) then
+                  if (v3_loop) then
+                     batchCount <= batchCount + 1;
+                  else
+                     batchCount <= batchCount;
+                  end if;
+                  state    <= v3_state;
+                  calcStep <= v3_step;
+               end if;
+               -- first step of a new command and next step of the running one
+               -- are decoded separately; state = IDLE only selects between them
+               v3_first := req3At(opState3(gte_cmdData(5 downto 0)), 0, gte_cmdData(14 downto 13));
+               if (gte_cmdEna = '0' or clk2xIndex = '0') then
+                  v3_first := REQ3_NONE;
+               end if;
+               v3_next := req3At(state, v3_step, cmdTV);
+               if (v3_exit) then
+                  v3_next := REQ3_NONE;
+               end if;
+               if (state = IDLE) then
+                  req3 <= v3_first;
+               else
+                  req3 <= v3_next;
+               end if;
+            end if;
+
             -- push RGB from MAC
             if (pushRGBfromMAC = '1') then
                if (mac1_result < 0) then
@@ -1368,12 +1871,54 @@ begin
       end if;
    end process;
    
+   -- NARROW_MUL = 3: operands of the request being written, straight from the
+   -- registers selected by req3 into the MAC units' multipliers
+   g3mul : if NARROW_MUL = 3 generate
+   begin
+      procEna3 <= '1' when ((reset = '0' or loading_savestate = '1') and (ce = '1' or loading_savestate = '1')) else '0';
+
+      MAC0mul3.mul1 <= resize(s18(req3.a0Asp,  IR1aspect)   or s18(req3.a0Asp1,  IR1aspect_1) or s18(req3.a0Asp2,  IR1aspect_2) or
+                              s18(req3.a0IR2,  REG_IR2)     or s18(req3.a0IR2_1, REG_IR2_1)   or s18(req3.a0IR2_2, REG_IR2_2)   or s18(req3.a0DQA, REG_DQA) or
+                              s18(req3.a0SX0,  REG_SX0)     or s18(req3.a0SX1,   REG_SX1)     or s18(req3.a0SX2,   REG_SX2)     or
+                              s18(req3.a0SZ0,  signed('0' & REG_SZ0)) or s18(req3.a0SZ1, signed('0' & REG_SZ1)) or
+                              s18(req3.a0SZ2,  signed('0' & REG_SZ2)) or s18(req3.a0SZ3, signed('0' & REG_SZ3)), 17);
+      MAC0mul3.mul2 <= s18(req3.b0Div, signed('0' & div_result)) or s18(req3.b0SY0, REG_SY0) or s18(req3.b0SY1, REG_SY1) or s18(req3.b0SY2, REG_SY2) or
+                       s18(req3.b0ZSF3, REG_ZSF3) or s18(req3.b0ZSF4, REG_ZSF4);
+      MAC0mul3.ena  <= procEna3 and req3.t0;
+
+      --                            RTx1      RTx2      RTx3      OP0       OP1       IR       matrix                        LL                            LC
+      MAC1mul3.mul1    <= mulA3(req3, REG_RT11, REG_RT12, REG_RT13, REG_RT22, REG_RT33, REG_IR1, matrix00, matrix01, matrix02, REG_LL11, REG_LL12, REG_LL13, REG_LC11, REG_LC12, REG_LC13);
+      MAC2mul3.mul1    <= mulA3(req3, REG_RT21, REG_RT22, REG_RT23, REG_RT33, REG_RT11, REG_IR2, matrix10, matrix11, matrix12, REG_LL21, REG_LL22, REG_LL23, REG_LC21, REG_LC22, REG_LC23);
+      MAC3mul3.mul1    <= mulA3(req3, REG_RT31, REG_RT32, REG_RT33, REG_RT11, REG_RT22, REG_IR3, matrix20, matrix21, matrix22, REG_LL31, REG_LL32, REG_LL33, REG_LC31, REG_LC32, REG_LC33);
+      --                            V0, V1, V2                                                                               OP0      OP1      IR0      IR1      IR2      IR3      vector                     IRi      RGBC byte
+      MAC1mul3.mul2    <= mulB3(req3, REG_V0X, REG_V0Y, REG_V0Z, REG_V1X, REG_V1Y, REG_V1Z, REG_V2X, REG_V2Y, REG_V2Z, REG_IR3, REG_IR2, REG_IR0, REG_IR1, REG_IR2, REG_IR3, vector0, vector1, vector2, REG_IR1, REG_RGBC( 7 downto  0));
+      MAC2mul3.mul2    <= mulB3(req3, REG_V0X, REG_V0Y, REG_V0Z, REG_V1X, REG_V1Y, REG_V1Z, REG_V2X, REG_V2Y, REG_V2Z, REG_IR1, REG_IR3, REG_IR0, REG_IR1, REG_IR2, REG_IR3, vector0, vector1, vector2, REG_IR2, REG_RGBC(15 downto  8));
+      MAC3mul3.mul2    <= mulB3(req3, REG_V0X, REG_V0Y, REG_V0Z, REG_V1X, REG_V1Y, REG_V1Z, REG_V2X, REG_V2Y, REG_V2Z, REG_IR2, REG_IR1, REG_IR0, REG_IR1, REG_IR2, REG_IR3, vector0, vector1, vector2, REG_IR3, REG_RGBC(23 downto 16));
+      --                             colour                     FC               translate   BK               mac_result   MAC       IR       GPL x 1000h
+      MAC1mul3.shifted <= shift3(req3, calcColor( 7 downto  0), signed(REG_FC0), translate0, signed(REG_BK0), mac1_result, REG_MAC1, REG_IR1, shiftvalue(12));
+      MAC2mul3.shifted <= shift3(req3, calcColor(15 downto  8), signed(REG_FC1), translate1, signed(REG_BK1), mac2_result, REG_MAC2, REG_IR2, shiftvalue(12));
+      MAC3mul3.shifted <= shift3(req3, calcColor(23 downto 16), signed(REG_FC2), translate2, signed(REG_BK2), mac3_result, REG_MAC3, REG_IR3, shiftvalue(12));
+      MAC1mul3.isShift <= req3.sh;
+      MAC2mul3.isShift <= req3.sh;
+      MAC3mul3.isShift <= req3.sh;
+      MAC1mul3.ena     <= procEna3 and req3.t;
+      MAC2mul3.ena     <= procEna3 and req3.t;
+      MAC3mul3.ena     <= procEna3 and req3.t;
+   end generate;
+
+   MAC0req_u <= MAC0req3 when (NARROW_MUL = 3) else MAC0req;
+   MAC1req_u <= MAC1req3 when (NARROW_MUL = 3) else MAC1req;
+   MAC2req_u <= MAC2req3 when (NARROW_MUL = 3) else MAC2req;
+   MAC3req_u <= MAC3req3 when (NARROW_MUL = 3) else MAC3req;
+
    -- processing units
    igte_mac0 : entity work.gte_mac0
+   generic map (NARROW_MUL => NARROW_MUL)
    port map
    (
       clk2x          => clk2x,         
-      MAC0req        => MAC0req,       
+      MAC0req        => MAC0req_u,
+      MACmul         => MAC0mul3,       
       mac0_result    => mac0_result,   
       mac0_writeback => mac0_writeback,
       ir_result      => ir0_result,   
@@ -1385,10 +1930,12 @@ begin
    );
    
    igte_mac1 : entity work.gte_mac123
+   generic map (NARROW_MUL => NARROW_MUL)
    port map
    (
       clk2x          => clk2x,         
-      MACreq         => MAC1req,       
+      MACreq         => MAC1req_u,
+      MACmul         => MAC1mul3,       
       mac_result     => mac1_result,   
       mac_writeback  => mac1_writeback,
       ir_result      => ir1_result,   
@@ -1400,10 +1947,12 @@ begin
    );
    
    igte_mac2 : entity work.gte_mac123
+   generic map (NARROW_MUL => NARROW_MUL)
    port map
    (
       clk2x          => clk2x,         
-      MACreq         => MAC2req,       
+      MACreq         => MAC2req_u,
+      MACmul         => MAC2mul3,       
       mac_result     => mac2_result,   
       mac_writeback  => mac2_writeback,
       ir_result      => ir2_result,   
@@ -1415,10 +1964,12 @@ begin
    );
    
    igte_mac3 : entity work.gte_mac123
+   generic map (NARROW_MUL => NARROW_MUL)
    port map
    (
       clk2x          => clk2x,         
-      MACreq         => MAC3req,       
+      MACreq         => MAC3req_u,
+      MACmul         => MAC3mul3,       
       mac_result     => mac3_result,   
       mac_writeback  => mac3_writeback,
       ir_result      => ir3_result,   
@@ -1431,6 +1982,7 @@ begin
    );
    
    igte_UNRDivide : entity work.gte_UNRDivide
+   generic map (RETIME => divRetime(NARROW_MUL))
    port map
    (
       clk2x          => clk2x,        
@@ -1540,6 +2092,17 @@ begin
    end process;
    
    -- synthesis translate_off
+
+   -- NARROW_MUL = 3: the early decode must always equal the decode of the current step
+   gcheck3 : if NARROW_MUL = 3 generate
+   begin
+      process (clk2x)
+      begin
+         if falling_edge(clk2x) then
+            assert (req3 = req3At(state, calcStep, cmdTV)) report "gte: req3 differs from the current step's requests" severity failure;
+         end if;
+      end process;
+   end generate;
    
    goutput : if 1 = 1 generate
       signal outputCount         : integer := 0;

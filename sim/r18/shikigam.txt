@@ -1,0 +1,8 @@
+instance_end system shikigam machine_seconds 900.0 coin_at 240.0 soft_resets 0
+  gpu_w 3399308 first 0.00
+  mdec_w 0 first -
+  mdec_r 0 first -
+  dma0 0 first -
+  dma1 0 first -
+  kon 2286 first 146.29
+  spucnt 227 first 146.29

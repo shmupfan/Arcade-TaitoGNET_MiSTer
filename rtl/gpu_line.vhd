@@ -6,6 +6,10 @@ library mem;
 use work.pGPU.all;
 
 entity gpu_line is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -24,8 +28,8 @@ entity gpu_line is
       drawingOffsetY       : in  signed(10 downto 0);
       drawingAreaLeft      : in  unsigned(9 downto 0);
       drawingAreaRight     : in  unsigned(9 downto 0);
-      drawingAreaTop       : in  unsigned(8 downto 0);
-      drawingAreaBottom    : in  unsigned(8 downto 0);
+      drawingAreaTop       : in  unsigned(VRAM_Y_BITS - 1 downto 0);
+      drawingAreaBottom    : in  unsigned(VRAM_Y_BITS - 1 downto 0);
       
       div1                 : inout div_type; 
       div2                 : inout div_type; 
@@ -40,7 +44,7 @@ entity gpu_line is
       pipeline_new         : out std_logic := '0';
       pipeline_transparent : out std_logic := '0';
       pipeline_x           : out unsigned(9 downto 0) := (others => '0');
-      pipeline_y           : out unsigned(8 downto 0) := (others => '0');
+      pipeline_y           : out unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
       pipeline_cr          : out unsigned(7 downto 0) := (others => '0');
       pipeline_cg          : out unsigned(7 downto 0) := (others => '0');
       pipeline_cb          : out unsigned(7 downto 0) := (others => '0');
@@ -54,7 +58,7 @@ entity gpu_line is
       
       requestVRAMEnable    : out std_logic;
       requestVRAMXPos      : out unsigned(9 downto 0);
-      requestVRAMYPos      : out unsigned(8 downto 0);
+      requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
       requestVRAMIdle      : in  std_logic;
       requestVRAMDone      : in  std_logic;
@@ -160,7 +164,7 @@ begin
    
    requestVRAMEnable <= '1'                           when (procstate = PROCREADLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else '0';
    requestVRAMXPos   <= unsigned(workx(41 downto 32)) when (procstate = PROCREADLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
-   requestVRAMYPos   <= unsigned(worky(40 downto 32)) when (procstate = PROCREADLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
+   requestVRAMYPos   <= unsigned(worky(VRAM_Y_BITS + 31 downto 32)) when (procstate = PROCREADLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
    requestVRAMSize   <= yPerLine                      when (procstate = PROCREADLINE and requestVRAMIdle = '1' and pipeline_stall = '0') else (others => '0');
    
    vramLineEna  <= '1' when (procstate = PROCPIXELS) else '0';
@@ -516,7 +520,7 @@ begin
                      nexty := worky + stepDy;
                      if (pixelCnt >= points) then
                         procstate <= PROCIDLE;
-                     elsif ((proc_transparency = '1' or DrawPixelsMask = '1') and nexty(40 downto 32) /= worky(40 downto 32)) then
+                     elsif ((proc_transparency = '1' or DrawPixelsMask = '1') and nexty(VRAM_Y_BITS + 31 downto 32) /= worky(VRAM_Y_BITS + 31 downto 32)) then
                         procstate <= PROCREADLINE;
                      end if;
                      
@@ -528,7 +532,7 @@ begin
                            pipeline_new         <= '1';
                            pipeline_transparent <= proc_transparency;
                            pipeline_x           <= unsigned(drawx(9 downto 0));
-                           pipeline_y           <= unsigned(drawy(8 downto 0));
+                           pipeline_y           <= unsigned(drawy(VRAM_Y_BITS - 1 downto 0));
                            if (proc_shading = '0') then
                               pipeline_cr       <= unsigned(proc_color1( 7 downto  0));
                               pipeline_cg       <= unsigned(proc_color1(15 downto  8));

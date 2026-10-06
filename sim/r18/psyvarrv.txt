@@ -1,0 +1,8 @@
+instance_end system psyvarrv machine_seconds 900.0 coin_at 240.0 soft_resets 0
+  gpu_w 2711574 first 0.00
+  mdec_w 0 first -
+  mdec_r 0 first -
+  dma0 0 first -
+  dma1 0 first -
+  kon 6180 first 136.76
+  spucnt 222 first 136.76

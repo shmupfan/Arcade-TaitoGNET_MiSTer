@@ -6,6 +6,10 @@ library mem;
 use work.pGPU.all;
 
 entity gpu_videoout is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk1x                      : in  std_logic;
@@ -54,7 +58,7 @@ entity gpu_videoout is
       requestVRAMEnable          : out std_logic := '0';
       requestVRAMMirror          : out std_logic := '0';
       requestVRAMXPos            : out unsigned(9 downto 0);
-      requestVRAMYPos            : out unsigned(8 downto 0);
+      requestVRAMYPos            : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize            : out unsigned(10 downto 0);
       requestVRAMIdle            : in  std_logic;
       requestVRAMDone            : in  std_logic;
@@ -72,7 +76,7 @@ end entity;
 architecture arch of gpu_videoout is
 
    signal DisplayOffsetX            : unsigned( 9 downto 0) := (others => '0'); 
-   signal DisplayOffsetY            : unsigned( 8 downto 0) := (others => '0'); 
+   signal DisplayOffsetY            : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0'); 
    signal vDisplayStart             : unsigned( 9 downto 0) := (others => '0'); 
          
    -- muxing      
@@ -115,7 +119,7 @@ architecture arch of gpu_videoout is
    signal waitcnt             : integer range 0 to 3;
    
    signal reqPosX             : unsigned(9 downto 0) := (others => '0');
-   signal reqPosY             : unsigned(8 downto 0) := (others => '0');
+   signal reqPosY             : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
    signal reqSize             : unsigned(10 downto 0) := (others => '0');
    signal lineAct             : unsigned(8 downto 0) := (others => '0');
    signal fillAddr            : unsigned(8 downto 0) := (others => '0');
@@ -238,21 +242,21 @@ begin
       if rising_edge(clk2x) then
          
          -- display offset is adjusted if display start is below typical line for CRTs
-         DisplayOffsetY <= videoout_settings.vramRange(18 downto 10);
+         DisplayOffsetY <= videoout_settings.vramRange(VRAM_Y_BITS + 9 downto 10);
          if (videoout_settings.GPUSTAT_PalVideoMode = '1' and videoout_settings.pal60 = '0') then
             if (vDisplayStart < 19) then
                if (videoout_settings.GPUSTAT_VerRes = '1' and videoout_settings.GPUSTAT_VertInterlace = '1') then
-                  DisplayOffsetY <= resize(videoout_settings.vramRange(18 downto 10) + ((19 - vDisplayStart) * 2), 9);
+                  DisplayOffsetY <= resize(videoout_settings.vramRange(VRAM_Y_BITS + 9 downto 10) + ((19 - vDisplayStart) * 2), VRAM_Y_BITS);
                else
-                  DisplayOffsetY <= resize(videoout_settings.vramRange(18 downto 10) + (19 - vDisplayStart), 9);
+                  DisplayOffsetY <= resize(videoout_settings.vramRange(VRAM_Y_BITS + 9 downto 10) + (19 - vDisplayStart), VRAM_Y_BITS);
                end if;
             end if;
          else
             if (vDisplayStart < 16) then
                if (videoout_settings.GPUSTAT_VerRes = '1' and videoout_settings.GPUSTAT_VertInterlace = '1') then
-                  DisplayOffsetY <= resize(videoout_settings.vramRange(18 downto 10) + ((16 - vDisplayStart) * 2), 9);
+                  DisplayOffsetY <= resize(videoout_settings.vramRange(VRAM_Y_BITS + 9 downto 10) + ((16 - vDisplayStart) * 2), VRAM_Y_BITS);
                else
-                  DisplayOffsetY <= resize(videoout_settings.vramRange(18 downto 10) + (16 - vDisplayStart), 9);
+                  DisplayOffsetY <= resize(videoout_settings.vramRange(VRAM_Y_BITS + 9 downto 10) + (16 - vDisplayStart), VRAM_Y_BITS);
                end if;
             end if;
          end if;
@@ -300,7 +304,7 @@ begin
                      state     <= REQUEST;
                      lineAct   <= videoout_request_clk2x.lineInNext;
                      reqPosX   <= DisplayOffsetX;
-                     reqPosY   <= videoout_request_clk2x.lineInNext + DisplayOffsetY;
+                     reqPosY   <= resize(videoout_request_clk2x.lineInNext, VRAM_Y_BITS) + DisplayOffsetY;
                      fillAddr  <= videoout_request_clk2x.lineInNext(0) & x"00";
                      fillAddr2 <= videoout_request_clk2x.lineInNext(0) & x"00";
                      if (videoout_settings.GPUSTAT_VerRes = '1') then

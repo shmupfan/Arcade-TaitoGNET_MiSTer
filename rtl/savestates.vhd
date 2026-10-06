@@ -7,7 +7,12 @@ entity savestates is
    (
       FASTSIM                : std_logic;
       SAVETYPESCOUNT         : integer := 17;
-      Softmap_SaveState_ADDR : integer
+      Softmap_SaveState_ADDR : integer;
+      -- 1 = CPU on its own clock (psx_top CPU_CLK_SPLIT = 1, savestates off):
+      -- types 12 and 16 (scratchpad and RAM zero fill at reset) are written by
+      -- a CPU-side filler; the engine toggles ext_fill_req and waits for
+      -- ext_fill_done to follow, and reads no CPU-group savestate data
+      CPU_FILL_EXT           : integer := 0
    );
    port 
    (
@@ -81,7 +86,10 @@ entity savestates is
       SS_SPURAM_request       : out std_logic := '0';
       SS_SPURAM_rnw           : out std_logic := '0';
       SS_SPURAM_dataRead      : in  std_logic_vector(15 downto 0);
-      SS_SPURAM_done          : in  std_logic
+      SS_SPURAM_done          : in  std_logic;
+      
+      ext_fill_req            : out std_logic := '0';
+      ext_fill_done           : in  std_logic := '0'
    );
 end entity;
 
@@ -197,10 +205,15 @@ architecture arch of savestates is
    signal reset_in_1          : std_logic := '0';
    
    signal exeMode             : std_logic := '0';
+   
+   signal ext_fill_req_r      : std_logic := '0';
+   signal ext_fill_wait       : std_logic := '0';
 
 begin 
 
    savestate_busy <= '0' when state = IDLE else '1';
+   
+   ext_fill_req   <= ext_fill_req_r;
 
    ddr3_BURSTCNT <= x"01";
    
@@ -251,6 +264,9 @@ begin
             when 16 => SS_DataRead <= ram_data;
             when others => SS_DataRead <= (others => '0');
          end case;
+         if (CPU_FILL_EXT = 1) then
+            SS_DataRead <= (others => '0');
+         end if;
          
          SPURAM_done1X <= '0';
          if (SS_SPURAM_done = '1') then
@@ -308,6 +324,7 @@ begin
                savestate_pause   <= '0';
                ddr3_savestate    <= '0';
                unstallwait       <= 1023;
+               ext_fill_wait     <= '0';
                if (reset_in_1 = '1' and reset_in = '0') then
                   state                <= WAITPAUSE;
                   reset_2x             <= '1';
@@ -585,7 +602,22 @@ begin
                end if;
             
             when LOADMEMORY_NEXT =>
-               if ((FASTSIM = '0' and ((exeMode = '0' and savetype_counter < SAVETYPESCOUNT) or (exeMode = '1' and savetype_counter < 16))) or 
+               if (CPU_FILL_EXT = 1 and savetype_counter = 12) then
+                  -- scratchpad and RAM zero fill by the CPU-side filler
+                  if (ext_fill_wait = '0') then
+                     ext_fill_req_r <= not ext_fill_req_r;
+                     ext_fill_wait  <= '1';
+                  elsif (ext_fill_done = ext_fill_req_r) then
+                     ext_fill_wait    <= '0';
+                     if (resetMode = '1') then
+                        savetype_counter <= 14;
+                     else
+                        savetype_counter <= 13;
+                     end if;
+                  end if;
+               elsif (CPU_FILL_EXT = 1 and savetype_counter = 16) then
+                  savetype_counter <= 17;
+               elsif ((FASTSIM = '0' and ((exeMode = '0' and savetype_counter < SAVETYPESCOUNT) or (exeMode = '1' and savetype_counter < 16))) or 
                    (FASTSIM = '1' and savetype_counter < 14 and resetMode = '1') or 
                    (FASTSIM = '1' and savetype_counter < 15 and resetMode = '0')) then
                   ddr3_ADDR      <= std_logic_vector(to_unsigned(savestate_address + savetypes(savetype_counter).offset, 26));

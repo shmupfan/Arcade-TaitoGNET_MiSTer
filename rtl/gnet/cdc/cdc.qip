@@ -1,0 +1,8 @@
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_pkg.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_sync.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_capture.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_pulse.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_handshake.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_bus_sync.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cdc_fifo.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) tick_accum.vhd ]

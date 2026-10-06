@@ -1,0 +1,10 @@
+system raycris
+emulated_seconds 300.0
+coin_at 400.0
+gpu_w 414936 first 0.00
+mdec_w 0 first -
+mdec_r 0 first -
+dma0 0 first -
+dma1 0 first -
+kon 1110 first 155.00
+spucnt 535 first 155.00

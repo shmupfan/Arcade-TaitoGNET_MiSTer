@@ -48,12 +48,53 @@ wire [11:0] DisplayHeight;
 wire [ 9:0] DisplayOffsetX;
 wire [ 8:0] DisplayOffsetY;
 
+`ifdef GNET_DDR3_ARB
+// core client of gnet_ddr3_arb (psx_mister's DDRAM side)
+wire        core_ddr_busy, core_ddr_dout_ready, core_ddr_rd, core_ddr_we;
+wire  [7:0] core_ddr_burstcnt, core_ddr_be;
+wire [28:0] core_ddr_addr;
+wire [63:0] core_ddr_din, arb_rdata;
+// flash mirror stall to zn2_ch3_arb
+wire        gnet_ch3_stall;
+`endif
+
+`ifdef GNET_SHELL
+// Rotation option wires of the release shell, declared here, before their
+// first use in the FB_* mux below; driven in the shell's status block
+// (Orientation and Rotate Direction OSD items, docs/m4_shell.md).
+wire        gnet_rot_en, gnet_rot_ccw;
+`endif
+
+`ifdef GNET_DDR3_ARB
+// G-NET rotation (docs/ddr3_arbiter.md 4): with gnet_rot_en the frame buffer
+// is screen_rotate's (DDR3 0x24000000), shown by the scaler; otherwise the
+// core's own FB mode as below. gnet_rot_en and gnet_rot_ccw come from the
+// release shell (GNET_SHELL: declared above, driven in its status block);
+// without the shell they are declared here and tied off in the DDR3 block.
+`ifndef GNET_SHELL
+wire        gnet_rot_en, gnet_rot_ccw;
+`endif
+// screen_rotate active (to hps_io, as the MiSTer template)
+wire        video_rotated;
+wire        rot_fb_en;
+wire  [4:0] rot_fb_format;
+wire [11:0] rot_fb_width, rot_fb_height;
+wire [31:0] rot_fb_base;
+wire [13:0] rot_fb_stride;
+assign FB_BASE    = gnet_rot_en ? rot_fb_base   : status[11] ? 32'h30000000 : {8'h30, frameindex, DisplayOffsetY, DisplayOffsetX, 1'b0};
+assign FB_EN      = gnet_rot_en ? rot_fb_en     : (status[14] || video_fbmode);
+assign FB_FORMAT  = gnet_rot_en ? rot_fb_format : (status[10] || video_fb24) ? 5'b00101 : 5'b01100;
+assign FB_WIDTH   = gnet_rot_en ? rot_fb_width  : status[11] ? 12'd1024 : DisplayWidth;
+assign FB_HEIGHT  = gnet_rot_en ? rot_fb_height : status[11] ? 12'd512  : DisplayHeight;
+assign FB_STRIDE  = gnet_rot_en ? rot_fb_stride : 14'd2048;
+`else
 assign FB_BASE    = status[11] ? 32'h30000000 : {8'h30, frameindex, DisplayOffsetY, DisplayOffsetX, 1'b0};
 assign FB_EN      = (status[14] || video_fbmode);
 assign FB_FORMAT  = (status[10] || video_fb24) ? 5'b00101 : 5'b01100;
 assign FB_WIDTH   = status[11] ? 12'd1024 : DisplayWidth;
 assign FB_HEIGHT  = status[11] ? 12'd512  : DisplayHeight;
 assign FB_STRIDE  = 14'd2048;
+`endif
 assign FB_FORCE_BLANK = 0;
 
 
@@ -65,6 +106,40 @@ wire clk_2x;
 wire clk_3x;
 wire clk_vid;
 
+`ifdef GNET_CPU50
+// R1 (docs/r1_cpu_domain_design.md): CPU group at exactly 50.000 MHz with its
+// 2x clock at 100.000 MHz from a second PLL (rtl/gnet/pll_cpu.v); clk_1x and
+// clk_2x keep the emu PLL for the GPU, SPU, DDR3 and framework blocks.
+wire clk_cpu;
+wire clk_cpu2x;
+wire pll_cpu_locked;
+
+// The reference goes over the global clock network, not the pin's dedicated
+// path: FPGA_CLK2_50 (PIN_Y13) reaches only the three fractional PLLs at the
+// bottom of the die, and pll_hdmi, the emu PLL and pll_vid_fixed occupy them
+// (first GNET_CPU50_B1 fit, Error 175001/11238). From the global network the
+// fitter can place pll_cpu in a free fractional PLL elsewhere. Still exactly
+// the 50 MHz crystal, so 50.000 / 100.000 MHz stay exact.
+wire clk_50m_gclk;
+
+cyclonev_clkena #(.clock_type("Global Clock"), .ena_register_mode("always enabled")) pll_cpu_refclk
+(
+	.inclk(CLK_50M),
+	.ena(1'b1),
+	.enaout(),
+	.outclk(clk_50m_gclk)
+);
+
+pll_cpu pll_cpu
+(
+	.refclk(clk_50m_gclk),
+	.rst(0),
+	.outclk_0(clk_cpu),
+	.outclk_1(clk_cpu2x),
+	.locked(pll_cpu_locked)
+);
+`endif
+
 pll pll
 (
 	.refclk(CLK_50M),
@@ -75,6 +150,20 @@ pll pll
 	.locked(pll_locked)
 );
 
+`ifdef GNET_LEAN
+// G-NET: fixed 53.693175 MHz video clock, no runtime PLL reconfiguration
+// (rtl/gnet/pll_vid_fixed.v). FFrequest is kept so the code below compiles.
+pll_vid_fixed pll2
+(
+	.refclk(CLK_50M),
+	.rst(0),
+	.outclk_0(clk_vid),
+	.locked()
+);
+
+wire FFrequest = joy[17] && ~FB_LL && ~DIRECT_VIDEO;
+wire syncVideoOut = 0;
+`else
 pll2 pll2
 (
 	.refclk(CLK_50M),
@@ -155,6 +244,8 @@ always @(posedge CLK_50M) begin : cfg_block
 	end
 end
 
+`endif
+
 reg fast_forward;
 reg ff_latch;
 
@@ -185,7 +276,44 @@ always @(posedge clk_1x) begin : ffwd
 	fast_forward <= (FFrequest | ff_latch);
 end
 
+`ifdef GNET_CPU50
+reg [1:0] pll_cpu_locked_s = 0;
+always @(posedge clk_1x) pll_cpu_locked_s <= {pll_cpu_locked_s[0], pll_cpu_locked};
+`endif
+// MB3773 watchdog period in seconds (gnet_ctrl.sv WD_TIMEOUT_S), passed
+// to zn2_board through psx_mister and psx_top; the pause grace below
+// follows it
+localparam GNET_WD_TIMEOUT_S = 8;
+`ifdef GNET_ZN2
+// G-NET: the MB3773 watchdog (gnet_ctrl, GNET_WD_TIMEOUT_S) resets the
+// board unless disabled in the OSD; every G-NET download also holds reset
+wire       zn_wd_reset;
+wire       gnet_download;
+reg  [7:0] zn_wd_hold = 0;
+`ifdef GNET_SHELL
+// The MB3773 model (gnet_ctrl) counts on the raw clock, so a pause longer
+// than its period would let it expire. Its reset is ignored while paused
+// and for the period plus 0.5 s after (8.5 s): the game kicks it within a
+// frame once running, and a hung game still resets one period later
+// (docs/m4_shell.md).
+wire       zn_wd_mask;
+`else
+wire       zn_wd_mask = 1'b0;
+`endif
+always @(posedge clk_1x) begin
+	if (zn_wd_reset & ~status[100] & ~zn_wd_mask) zn_wd_hold <= 8'hFF;
+	else if (zn_wd_hold) zn_wd_hold <= zn_wd_hold - 1'd1;
+end
+`ifdef GNET_CPU50
+wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | gnet_download | (zn_wd_hold != 0) | ~pll_cpu_locked_s[1];
+`else
+wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | gnet_download | (zn_wd_hold != 0);
+`endif
+`elsif GNET_CPU50
+wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | ~pll_cpu_locked_s[1];
+`else
 wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset;
+`endif
 
 ////////////////////////////  HPS I/O  //////////////////////////////////
 
@@ -196,6 +324,64 @@ wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | 
 //  XXXX XXXXXX XXXXXX XXXXX  XX XX XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 `include "build_id.v"
+`ifdef GNET_ZN2
+// G-NET (docs/zn2_layer_design.md 13.5, 13.6): arcade menu; DIP switches
+// S551 and JP1 come from the MRA (ioctl index 254). Video option bits keep
+// their PSX numbers.
+`ifdef GNET_SHELL
+// Release shell (docs/m4_shell.md, minimum standard). New bits: 102
+// Orientation, 103 Rotate direction, 104 Flip, 106:105 Volume, 110:107 CRT H
+// position, 113:111 CRT V position, 116:114 Scandoubler Fx, 119:117 SFX
+// level (GNET_ZOOM: SPU gain in zoom_mix); 64 keeps its
+// PSX meaning (Pause when OSD open). Also: 100 Watchdog, 101 debug overlay
+// (docs/hw_debug_overlay.md). Menu mask: H0 direct_video, H1
+// horizontal set, H2 no rotation available, H3 H2 or Orientation Horizontal.
+parameter CONF_STR = {
+	"GNET;;",
+	"-;",
+	"H0O[33:32],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"H0O[35:34],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"H2O[102],Orientation,Vertical,Horizontal;",
+	"H3O[103],Rotate Direction,CCW,CW;",
+	"H1O[104],Flip Screen,Off,On;",
+	"O[116:114],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"O[110:107],CRT H Position,0,+2,+4,+6,+8,+10,+12,+14,-16,-14,-12,-10,-8,-6,-4,-2;",
+	"O[113:111],CRT V Position,0,+1,+2,+3,-4,-3,-2,-1;",
+	"-;",
+	"O[64],Pause when OSD is open,On,Off;",
+	"O[106:105],Volume,Normal,+6 dB,-6 dB,-12 dB;",
+`ifdef GNET_ZOOM
+	"O[119:117],SFX Level,0.7 (PCB est.),0.3 (MAME),0.45,0.6,0.9,1.2,1.5;",
+`endif
+	"-;",
+	"DIP;",
+	"-;",
+	"O[100],Watchdog,On,Off;",
+	"O[101],Debug overlay,Off,On;",
+	"R0,Reset;",
+	"J1,Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause;",
+	"jn,A,B,X,Start,Select,L,R;",
+	"V,v",`BUILD_DATE
+};
+`else
+parameter CONF_STR = {
+	"GNET;;",
+	"-;",
+	"DIP;",
+	"-;",
+	"O[100],Watchdog,On,Off;",
+	"O[101],Debug overlay,Off,On;",
+	"O[33:32],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"O[35:34],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"O[41],Deinterlacing,Weave,Bob;",
+	"-;",
+	"R0,Reset;",
+	"J1,Button 1,Button 2,Button 3,Start,Coin,Service,Test;",
+	"jn,A,B,X,Start,Select,L,R;",
+	"V,v",`BUILD_DATE
+};
+`endif
+`else
 parameter CONF_STR = {
 	"PSX;SS3E000000:400000;",
 	"H7S1,CUECHD,Load CD;",
@@ -325,11 +511,45 @@ parameter CONF_STR = {
 	"Unsafe option used!;",
 	"V,v",`BUILD_DATE
 };
+`endif
 
 reg dbg_enabled = 0;
 wire  [1:0] buttons;
 wire [127:0] status;
+`ifdef GNET_SHELL
+// Game configuration from the MRA (ioctl index 7, one byte): bit 0 = the set
+// is vertical (ROT270 in MAME taitogn.cpp: psyvaria, psyvarij, psyvarrv,
+// xiistag, shikigam, shikigama). Default horizontal.
+reg  gnet_vertical = 1'b0;
+wire DIRECT_VIDEO;
+// EEPROM NVRAM save (MRA <nvram index="6" size="2048"/>), see the loader
+wire        ioctl_upload;
+reg         nv_upload_req = 1'b0;
+wire [15:0] nv_din;
+// Rotation interface to the DDR3 arbiter branch (ddr3-arb-int,
+// docs/ddr3_arbiter.md): that branch owns screen_rotate, its FB_* and
+// video_rotated outputs and the DDRAM FIFO, and takes exactly these two
+// wires. gnet_rot_en: rotate the picture (vertical set, Orientation
+// Vertical, HDMI only); gnet_rot_ccw: direction (ROT270 sets stand upright
+// with CCW). Flip Screen is not part of it: it turns the picture 180
+// degrees in the GPU's video out (rotate180) before any rotation, so it
+// applies on CRT and HDMI alike.
+// (declared near the top of the module, before the FB_* mux uses them)
+assign gnet_rot_en  = gnet_vertical & ~status[102] & ~DIRECT_VIDEO;
+assign gnet_rot_ccw = ~status[103];
+// The Orientation and Rotate Direction items stay hidden until rotation is
+// built in: the arbiter branch defines GNET_ROT_DDR where it connects
+// screen_rotate.
+`ifdef GNET_ROT_DDR
+localparam GNET_ROT_READY = 1'b1;
+`else
+localparam GNET_ROT_READY = 1'b0;
+`endif
+wire gnet_rot_hide = DIRECT_VIDEO | ~gnet_vertical | ~GNET_ROT_READY;
+wire [15:0] status_menumask = {12'd0, (gnet_rot_hide | status[102]), gnet_rot_hide, ~gnet_vertical, DIRECT_VIDEO};
+`else
 wire [15:0] status_menumask = {(PadPortNeGcon1 | PadPortNeGcon2), hack_480p, filter_on, saving_memcard, (bk_pending | saving_memcard), bk_pending, status[59], multitap, biosMod, ~TURBO_MEM, (status[55] && ~hack_480p), (PadPortDS1 | PadPortDS2), dbg_enabled, (PadPortGunCon1 | PadPortGunCon2 | PadPortJustif1 | PadPortJustif2), SDRAM2_EN, (snacPort1 | snacPort2)};
+`endif
 wire        forced_scandoubler;
 reg  [31:0] sd_lba0 = 0;
 reg  [31:0] sd_lba1;
@@ -390,7 +610,9 @@ assign HDMI_BLACKOUT = ~status[61];
 wire [127:0] status_in = {status[127:39],ss_slot,status[36:19], 2'b00, status[16:0]};
 
 wire bk_pending;
+`ifndef GNET_SHELL
 wire DIRECT_VIDEO;
+`endif
 
 hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
 (
@@ -420,6 +642,12 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
 	.ioctl_download(ioctl_download),
 	.ioctl_index(ioctl_index),
 	.ioctl_wait(ioctl_wait),
+`ifdef GNET_SHELL
+	.ioctl_upload(ioctl_upload),
+	.ioctl_upload_req(nv_upload_req),
+	.ioctl_upload_index(8'd6),
+	.ioctl_din(nv_din),
+`endif
 
 	.sd_lba('{sd_lba0, sd_lba1, sd_lba2, sd_lba3}),
 	.sd_blk_cnt('{0,0, 0, 0}),
@@ -439,6 +667,9 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
 
 	.sdram_sz(sdram_sz),
 	.gamma_bus(gamma_bus),
+`ifdef GNET_DDR3_ARB
+	.video_rotated(video_rotated),
+`endif
 
    .joystick_l_analog_0(joystick_analog_l0),
    .joystick_r_analog_0(joystick_analog_r0),
@@ -485,6 +716,190 @@ always @(posedge clk_1x) begin
 	code_download    <= ioctl_download & (ioctl_index == 255);
 end
 
+`ifdef GNET_ZN2
+// G-NET loader (docs/zn2_layer_design.md 13.5). ioctl is 16 bits wide.
+//   2   CAT702 keys, tt10.ic652 then tt16.u17 (16 bytes)
+//   3   flash images as SDRAM 0x1000000-0x19FFFFF: U30 at 0, U27 at 0x200000,
+//       U56 0x400000, U55 0x600000, U29 0x800000 (little-endian 16-bit words)
+//   4   card metadata: IDNT 000h, CIS 200h, KEY 300h (1 KB)
+//   5   card image (40,960,000 bytes) to DDR3
+//   6   EEPROM (2 KB)
+//   254 DIP switches: byte 0 bits 3-0 S551 (1 = off), bit 4 JP1
+reg flash_download, keys_download, meta_download, card_download, ee_download, dip_download;
+always @(posedge clk_1x) begin
+	flash_download <= ioctl_download & (ioctl_index == 3);
+	keys_download  <= ioctl_download & (ioctl_index == 2);
+	meta_download  <= ioctl_download & (ioctl_index == 4);
+	card_download  <= ioctl_download & (ioctl_index == 5);
+	ee_download    <= ioctl_download & (ioctl_index == 6);
+	dip_download   <= ioctl_download & (ioctl_index == 254);
+end
+assign gnet_download = flash_download | keys_download | meta_download | card_download | ee_download;
+
+reg  [7:0] zn_sw0 = 8'h0F;
+reg        zn_card_loaded = 0;
+reg        zn_ld_wr = 0;
+reg  [1:0] zn_ld_target;
+reg [10:0] zn_ld_addr;
+reg [15:0] zn_ld_data;
+reg        zn_card_dl_wr = 0;
+reg [25:0] zn_card_dl_addr;
+reg [15:0] zn_card_dl_data;
+reg        zn_card_wait = 0;
+wire       zn_card_dl_busy;
+wire       zn_ld_busy;      // loader FIFO nearly full (GNET_CPU50: zn2_board on clk_cpu); 0 otherwise
+wire        zn_fl_req, zn_fl_rnw;
+wire [26:0] zn_fl_addr;
+wire [31:0] zn_fl_din, zn_fl_dout;
+wire  [3:0] zn_fl_be;
+`ifdef GNET_CPU50
+wire        zn_fl_ready_c;   // flash port ready on clk_cpu (zn2_ch3_arb)
+`endif
+// debug overlay (docs/hw_debug_overlay.md): word index and word on the CPU
+// group clock (clk_cpu with GNET_CPU50, else clk_1x)
+wire  [3:0] zn_dbg_idx;
+wire [31:0] zn_dbg_word;
+`ifdef GNET_ZOOM
+// Taito Zoom sound board (docs/zoom_board_design.md 14; needs GNET_ZN2 and
+// GNET_CPU50, psx_top asserts it). zoom_m_*: zoom_board's flash area line
+// port exactly as zoom_memarb drives it, on clk_1x (m_req and m_line held
+// until an edge with m_ready, m_line = flash area byte offset / 8, one
+// m_rvalid per line in order with m_rdata, flash byte 8L in bits 7:0, up to
+// 8 lines open). Memory behind it:
+//   GNET_DDR3_ARB    the DDR3 arbiter (branch ddr3-arb-int), flash area
+//                    mirrored at DDR3 0x31000000; ZSG-2 INFL 8
+//   GNET_ZOOM_SDRAM  temporary path for the first test build: the SDRAM
+//                    flash area (0x1000000) through rtl/gnet/zoom_sdram_link
+//                    and zn2_ch3_arb port c, one line at a time
+// The two are exclusive: with GNET_DDR3_ARB the arbiter drives zoom_m_ready,
+// zoom_m_rvalid and zoom_m_rdata and GNET_ZOOM_SDRAM is ignored. With neither
+// nothing answers the line port and the Zoom stays silent.
+// Audio on clk_1x, mixed with the SPU below.
+`ifdef GNET_ZOOM_SDRAM
+`ifndef GNET_DDR3_ARB
+`define GNET_ZOOM_SDRAM_PATH 1
+`endif
+`endif
+wire        zoom_m_req;
+wire [20:0] zoom_m_line;
+wire        zoom_m_ready;
+wire        zoom_m_rvalid;
+wire [63:0] zoom_m_rdata;
+wire        zoom_rst;        // zoom_board's reset (psx_top reset_intern_p): drop answers to lines from before it
+`ifdef GNET_ZOOM_SDRAM_PATH
+wire        zoom_fl_req;
+wire [26:0] zoom_fl_addr;
+wire        zoom_fl_ready;
+`endif
+wire [15:0] zoom_aud_l, zoom_aud_r;
+wire  [7:0] zoom_flags;      // zoom_board dbg_flags (clk_1x), for a debug overlay
+wire [15:0] spu_aud_l, spu_aud_r;
+`endif
+always @(posedge clk_1x) begin
+	zn_ld_wr      <= 0;
+	zn_card_dl_wr <= 0;
+	if (ioctl_wr) begin
+		if (keys_download | meta_download | ee_download) begin
+			zn_ld_wr     <= 1;
+			zn_ld_target <= keys_download ? 2'd0 : meta_download ? 2'd1 : 2'd2;
+			zn_ld_addr   <= ioctl_addr[10:0];
+			zn_ld_data   <= ioctl_dout;
+		end
+		if (meta_download) zn_card_loaded <= 1;
+		if (card_download) begin
+			zn_card_dl_wr   <= 1;
+			zn_card_dl_addr <= ioctl_addr[25:0];
+			zn_card_dl_data <= ioctl_dout;
+		end
+		if (dip_download && ioctl_addr[24:1] == 0) zn_sw0 <= ioctl_dout[7:0];
+	end
+	// hold ioctl while the card word is collected and its DDR3 line written
+	// (zn2_cardmem dl_busy rises within this clock after the fourth word)
+	zn_card_wait <= zn_card_dl_wr | zn_card_dl_busy;
+end
+
+`ifdef GNET_SHELL
+// game configuration byte (ioctl index 7), see gnet_vertical
+always @(posedge clk_1x)
+	if (ioctl_download & ioctl_wr & (ioctl_index == 7) & (ioctl_addr == 0)) gnet_vertical <= ioctl_dout[0];
+
+// Keyboard, MAME default keys (ps2_key: [10] toggles per event, [9] pressed,
+// [8] extended, [7:0] set-2 scancode)
+//   P1: arrows, LCtrl = B1, LAlt = B2, Space = B3, 1 = Start, 5 = Coin
+//   P2: R/F/D/G, A = B1, S = B2, Q = B3, 2 = Start, 6 = Coin
+//   9 = Service, F2 = Test, P = Pause
+reg k_up = 0, k_dn = 0, k_lt = 0, k_rt = 0, k_b1 = 0, k_b2 = 0, k_b3 = 0;
+reg k_st1 = 0, k_co1 = 0, k_svc = 0, k_test = 0, k_p = 0;
+reg k2_up = 0, k2_dn = 0, k2_lt = 0, k2_rt = 0, k2_b1 = 0, k2_b2 = 0, k2_b3 = 0;
+reg k_st2 = 0, k_co2 = 0;
+reg ps2_last = 1'b0;
+always @(posedge clk_1x) begin
+	ps2_last <= ps2_key[10];
+	if (ps2_key[10] != ps2_last) begin
+		case ({ps2_key[8], ps2_key[7:0]})
+			9'h175: k_up   <= ps2_key[9];
+			9'h172: k_dn   <= ps2_key[9];
+			9'h16B: k_lt   <= ps2_key[9];
+			9'h174: k_rt   <= ps2_key[9];
+			9'h014: k_b1   <= ps2_key[9];   // left ctrl
+			9'h011: k_b2   <= ps2_key[9];   // left alt
+			9'h029: k_b3   <= ps2_key[9];   // space
+			9'h016: k_st1  <= ps2_key[9];   // 1
+			9'h01E: k_st2  <= ps2_key[9];   // 2
+			9'h02E: k_co1  <= ps2_key[9];   // 5
+			9'h036: k_co2  <= ps2_key[9];   // 6
+			9'h046: k_svc  <= ps2_key[9];   // 9
+			9'h006: k_test <= ps2_key[9];   // F2
+			9'h04D: k_p    <= ps2_key[9];   // P
+			9'h02D: k2_up  <= ps2_key[9];   // R
+			9'h02B: k2_dn  <= ps2_key[9];   // F
+			9'h023: k2_lt  <= ps2_key[9];   // D
+			9'h034: k2_rt  <= ps2_key[9];   // G
+			9'h01C: k2_b1  <= ps2_key[9];   // A
+			9'h01B: k2_b2  <= ps2_key[9];   // S
+			9'h015: k2_b3  <= ps2_key[9];   // Q
+			default: ;
+		endcase
+	end
+end
+// joystick bits: 0 R, 1 L, 2 D, 3 U, then the J1 list: 4 B1, 5 B2, 6 B3,
+// 7 Start, 8 Coin, 9 Service, 10 Test, 11 Pause
+wire [19:0] zj1 = joy  | {9'd0, k_test, k_svc, k_co1, k_st1, k_b3,  k_b2,  k_b1,  k_up,  k_dn,  k_lt,  k_rt};
+wire [19:0] zj2 = joy2 | {9'd0, 1'b0,   1'b0,  k_co2, k_st2, k2_b3, k2_b2, k2_b1, k2_up, k2_dn, k2_lt, k2_rt};
+wire        pause_btn = zj1[11] | zj2[11] | k_p;
+
+// EEPROM NVRAM save (docs/m4_shell.md 4). Main_MiSTer loads the MRA's
+// <nvram index="6" size="2048"/> file on index 6 (the loader above) and
+// saves it by an upload of index 6: hps_io steps ioctl_addr by 2 and takes
+// ioctl_din, the 16-bit word at that address (low byte = even address), from
+// zn2_io's EEPROM copy, read on clk_1x. A CPU write to the EEPROM toggles
+// zn_nv_wtog (clk_cpu); it is synchronised here and marks the copy dirty.
+// When the OSD opens with the copy dirty, ioctl_upload_req asks Main to save
+// it (the core pauses on OSD open by default, so the EEPROM is still).
+wire       zn_nv_wtog;
+wire [0:0] zn_nv_wtog_s;
+cdc_sync #(.WIDTH(1)) nv_tog_sync (.clk(clk_1x), .rst(1'b0), .d(zn_nv_wtog), .q(zn_nv_wtog_s));
+reg nv_tog_q = 1'b0, nv_dirty = 1'b0, nv_osd_q = 1'b0;
+always @(posedge clk_1x) begin
+	nv_tog_q      <= zn_nv_wtog_s[0];
+	nv_osd_q      <= OSD_STATUS;
+	nv_upload_req <= 1'b0;
+	if (zn_nv_wtog_s[0] != nv_tog_q) nv_dirty <= 1'b1;
+	if (OSD_STATUS & ~nv_osd_q & nv_dirty) begin
+		nv_upload_req <= 1'b1;
+		nv_dirty      <= 1'b0;
+	end
+end
+`else
+wire [19:0] zj1 = joy;
+wire [19:0] zj2 = joy2;
+wire        pause_btn = joy[18];
+`endif
+`else
+wire gnet_download = 0;
+wire        pause_btn = joy[18];
+`endif
+
 reg cart_loaded = 0;
 always @(posedge clk_1x) begin
 	if (exe_download || img_mounted[1]) begin
@@ -496,6 +911,11 @@ localparam EXE_START = 16777216;
 localparam BIOS_START = 8388608;
 
 reg [26:0] ramdownload_wraddr;
+`ifdef GNET_ZN2
+wire gnet_flash_dl = flash_download;
+`else
+wire gnet_flash_dl = 0;
+`endif
 reg [31:0] ramdownload_wrdata;
 reg        ramdownload_wr;
 
@@ -542,11 +962,12 @@ reg [31:0] exe_stackpointer;
 
 always @(posedge clk_1x) begin
 	ramdownload_wr <= 0;
-	if(exe_download | bios_download | cdinfo_download) begin
+	if(exe_download | bios_download | cdinfo_download | gnet_flash_dl) begin
       if (ioctl_wr) begin
          if(~ioctl_addr[1]) begin
             ramdownload_wrdata[15:0] <= ioctl_dout;
-            if (bios_download)         ramdownload_wraddr  <= {4'd1, 2'b00, ioctl_index[7:6], ioctl_addr[18:0]};
+            if (gnet_flash_dl)         ramdownload_wraddr  <= 27'h1000000 + ioctl_addr[23:0];
+            else if (bios_download)    ramdownload_wraddr  <= {4'd1, 2'b00, ioctl_index[7:6], ioctl_addr[18:0]};
             else if (exe_download)     ramdownload_wraddr  <= ioctl_addr[22:0] + EXE_START[26:0];
             else if (cdinfo_download)  ramdownload_wraddr  <= ioctl_addr[26:0];
          end else begin
@@ -557,6 +978,12 @@ always @(posedge clk_1x) begin
          end
       end
       if(sdramCh3_done) ioctl_wait <= 0;
+`ifdef GNET_ZN2
+   end else if (card_download) begin
+      ioctl_wait <= zn_card_wait;
+   end else if (keys_download | meta_download | ee_download) begin
+      ioctl_wait <= zn_ld_busy;
+`endif
    end else begin
       ioctl_wait <= 0;
 	end
@@ -849,8 +1276,8 @@ always @(posedge clk_1x) begin
    end
 
    // pause from button
-   buttonpause_1 <= joy[18];
-   if (joy[18] & ~buttonpause_1) begin
+   buttonpause_1 <= pause_btn;
+   if (pause_btn & ~buttonpause_1) begin
       button_paused <= ~button_paused;
    end
    if (button_paused) begin
@@ -895,15 +1322,154 @@ always @(posedge clk_1x) begin
 
 end
 
+`ifdef GNET_SHELL
+// watchdog mask: while paused and GNET_WD_TIMEOUT_S + 0.5 s after, in
+// clk_1x cycles (33,868,800 Hz): (2 x period + 1) x 16,934,400, 287,884,800
+// for 8 s
+localparam [29:0] GNET_WD_GRACE = (2 * GNET_WD_TIMEOUT_S + 1) * 16934400;
+reg [29:0] zn_wd_grace = 0;
+always @(posedge clk_1x) begin
+   if (paused)
+      zn_wd_grace <= GNET_WD_GRACE;
+   else if (zn_wd_grace != 0)
+      zn_wd_grace <= zn_wd_grace - 1'd1;
+end
+assign zn_wd_mask = paused | (zn_wd_grace != 0);
+`endif
+
 ////////////////////////////  SYSTEM  ///////////////////////////////////
 
+// GNET_LEAN: console-only OSD options fixed to constants so their logic is
+// removed (docs/f0_budget.md). Without the macro every option stays live.
+`ifdef GNET_LEAN
+`define GNET_OPT(live, fixed) (fixed)
+`else
+`define GNET_OPT(live, fixed) (live)
+`endif
+
+// G-NET trim switches (docs/f0_budget.md); upstream builds define none of
+// these macros, so every block stays in.
+`ifdef GNET_NO_CD
+localparam GNET_HAS_CD = 0;
+`else
+localparam GNET_HAS_CD = 1;
+`endif
+`ifdef GNET_NO_PADS
+localparam GNET_HAS_PADS = 0;
+`else
+localparam GNET_HAS_PADS = 1;
+`endif
+`ifdef GNET_NO_SAVESTATES
+localparam GNET_HAS_SAVESTATES = 0;
+`else
+localparam GNET_HAS_SAVESTATES = 1;
+`endif
+`ifdef GNET_NO_CHEATS
+localparam GNET_HAS_CHEATS = 0;
+`else
+localparam GNET_HAS_CHEATS = 1;
+`endif
+`ifdef GNET_NO_MDEC
+localparam GNET_HAS_MDEC = 0;
+`else
+localparam GNET_HAS_MDEC = 1;
+`endif
+`ifdef GNET_VRAM_2MB
+localparam GNET_VRAM_Y_BITS = 10;   // ZN-2 CXD8654Q, 1024 x 1024 VRAM
+`else
+localparam GNET_VRAM_Y_BITS = 9;
+`endif
+`ifdef GNET_GTE_NARROW_MUL
+localparam GNET_GTE_NARROW_MUL = `GNET_GTE_NARROW_MUL;   // 1, 2 or 3, see rtl/gte_mac123.vhd and rtl/gte.vhd
+`else
+localparam GNET_GTE_NARROW_MUL = 0;
+`endif
+`ifdef GNET_ZOOM
+localparam GNET_ZOOM_BOARD = 1;  // Taito Zoom sound board (rtl/zoom, rtl/gnet/zoom_cdc.vhd)
+`else
+localparam GNET_ZOOM_BOARD = 0;
+`endif
+`ifdef GNET_DDR3_ARB
+localparam GNET_ZOOM_INFL = 8;   // ZSG-2 reads outstanding behind the DDR3 arbiter (ddr3_bandwidth.md 4.4)
+`else
+localparam GNET_ZOOM_INFL = 4;
+`endif
+`ifdef GNET_ZN2
+localparam GNET_ZN2_BOARD = 1;   // ZN-2 board and G-NET FC PCB (rtl/gnet/zn2_board.vhd)
+`else
+localparam GNET_ZN2_BOARD = 0;
+`endif
+// Fast clock (clk_3x) edges per CPU clock cycle for the request strobes in
+// sdram.sv and psx_top.vhd (docs/r1_cpu_domain_design.md). Selects logic
+// only: the PLL still makes 3:1, so a GNET_CLK_RATIO2 build checks synthesis
+// and area, it does not run correctly until the CPU clock changes.
+`ifdef GNET_CLK_RATIO2
+localparam GNET_CLK_FAST_RATIO = 2;
+`else
+localparam GNET_CLK_FAST_RATIO = 3;
+`endif
+// R1 option B: main SDRAM plain reads ready one fast edge earlier at 2:1
+// (sdram.sv EARLY_READY; docs/r1_cpu_domain_design.md, throughput section)
+`ifdef GNET_EARLY_READY
+localparam GNET_EARLY_READY_P = 1;
+`else
+localparam GNET_EARLY_READY_P = 0;
+`endif
+// R1 read overlap: a ZN-2 expansion read step issues its request when its
+// read delay starts (memorymux ZN2_READ_OVERLAP; docs/r1_cpu_domain_design.md)
+`ifdef GNET_READ_OVERLAP
+localparam GNET_READ_OVERLAP_P = 1;
+`else
+localparam GNET_READ_OVERLAP_P = 0;
+`endif
+// R1: CPU group on clk_cpu/clk_cpu2x (needs GNET_CLK_RATIO2 and the LEAN trims)
+`ifdef GNET_CPU50
+localparam GNET_CPU_CLK_SPLIT = 1;
+`else
+localparam GNET_CPU_CLK_SPLIT = 0;
+`endif
+
+`ifdef GNET_SHELL
+// core video before gnet_sync_keeper, core sound before gnet_volume
+wire        hs_c, vs_c, hbl_c, vbl_c, ce_pix_c;
+wire  [7:0] r_c, g_c, b_c;
+wire  [2:0] video_hResMode_c;
+wire [15:0] snd_l, snd_r;
+wire        hs_k, vs_k;   // gnet_sync_keeper to gnet_crt_pos
+`endif
+
 psx_mister
+#(
+   .HAS_CD(GNET_HAS_CD),
+   .HAS_PADS(GNET_HAS_PADS),
+   .HAS_SAVESTATES(GNET_HAS_SAVESTATES),
+   .HAS_CHEATS(GNET_HAS_CHEATS),
+   .HAS_MDEC(GNET_HAS_MDEC),
+   .VRAM_Y_BITS(GNET_VRAM_Y_BITS),
+   .GTE_NARROW_MUL(GNET_GTE_NARROW_MUL),
+   .CLK_FAST_RATIO(GNET_CLK_FAST_RATIO),
+   .CPU_CLK_SPLIT(GNET_CPU_CLK_SPLIT),
+   .ZN2_BOARD(GNET_ZN2_BOARD),
+   .ZN2_WD_TIMEOUT_S(GNET_WD_TIMEOUT_S),
+   .ZOOM_BOARD(GNET_ZOOM_BOARD),
+   .ZOOM_INFL(GNET_ZOOM_INFL),
+   .ZN2_READ_OVERLAP(GNET_READ_OVERLAP_P)
+)
 psx
 (
    .clk1x(clk_1x),
    .clk2x(clk_2x),
    .clk3x(clk_3x),
    .clkvid(clk_vid),
+`ifdef GNET_CPU50
+   .clk_cpu(clk_cpu),
+   .clk_cpu2x(clk_cpu2x),
+   .clk_cpu3x(clk_cpu2x),
+`else
+   .clk_cpu(clk_1x),
+   .clk_cpu2x(clk_2x),
+   .clk_cpu3x(clk_3x),
+`endif
    .reset(reset),
    .isPaused(isPaused),
    // commands
@@ -915,50 +1481,63 @@ psx
    .exe_load_address(exe_load_address),
    .exe_file_size(exe_file_size),
    .exe_stackpointer(exe_stackpointer),
+`ifdef GNET_ZN2
+   .fastboot(1'b0),
+   .ram8mb(1'b1),                // ZN-2: 4 MB main RAM (docs/zn2_layer_design.md 3)
+`else
    .fastboot(status[16] && hasCD),
    .ram8mb(status[85]),
-   .TURBO_MEM(TURBO_MEM),
-   .TURBO_COMP(TURBO_COMP),
-   .TURBO_CACHE(TURBO_CACHE),
-   .TURBO_CACHE50(TURBO_CACHE50),
+`endif
+   .TURBO_MEM(`GNET_OPT(TURBO_MEM, 1'b0)),
+   .TURBO_COMP(`GNET_OPT(TURBO_COMP, 1'b0)),
+   .TURBO_CACHE(`GNET_OPT(TURBO_CACHE, 1'b0)),
+   .TURBO_CACHE50(`GNET_OPT(TURBO_CACHE50, 1'b0)),
    .REPRODUCIBLEGPUTIMING(0),
-   .INSTANTSEEK(status[21]),
-   .FORCECDSPEED(status[77:75]),
-   .LIMITREADSPEED(status[78]),
-   .IGNORECDDMATIMING(status[88]),
-   .ditherOff(status[22]),
-   .interlaced480pHack(status[89]),
-   .showGunCrosshairs(status[9]),
-   .enableNeGconRumble(status[91]),
-   .fpscountOn(status[28]),
-   .cdslowOn(status[59]),
-   .testSeek(status[70]),
-   .pauseOnCDSlow(~status[72]),
-   .errorOn(status[74]),
-   .LBAOn(status[69]),
+   .INSTANTSEEK(`GNET_OPT(status[21], 1'b0)),
+   .FORCECDSPEED(`GNET_OPT(status[77:75], 3'b000)),
+   .LIMITREADSPEED(`GNET_OPT(status[78], 1'b0)),
+   .IGNORECDDMATIMING(`GNET_OPT(status[88], 1'b0)),
+   .ditherOff(`GNET_OPT(status[22], 1'b0)),
+   .interlaced480pHack(`GNET_OPT(status[89], 1'b0)),
+   .showGunCrosshairs(`GNET_OPT(status[9], 1'b0)),
+   .enableNeGconRumble(`GNET_OPT(status[91], 1'b0)),
+   .fpscountOn(`GNET_OPT(status[28], 1'b0)),
+   .cdslowOn(`GNET_OPT(status[59], 1'b0)),
+   .testSeek(`GNET_OPT(status[70], 1'b0)),
+   .pauseOnCDSlow(`GNET_OPT(~status[72], 1'b0)),
+   .errorOn(`GNET_OPT(status[74], 1'b0)),
+   .LBAOn(`GNET_OPT(status[69], 1'b0)),
    .PATCHSERIAL(0), //.PATCHSERIAL(status[54]),
-   .noTexture(status[27]),
-   .textureFilter(status[82:81]),
-   .textureFilterStrength(status[87:86]),
-   .textureFilter2DOff(status[83]),
-   .dither24(status[73]),
-   .render24(status[84] && ~hack_480p),
-   .drawSlow(status[90]),
+   .noTexture(`GNET_OPT(status[27], 1'b0)),
+   .textureFilter(`GNET_OPT(status[82:81], 2'b00)),
+   .textureFilterStrength(`GNET_OPT(status[87:86], 2'b00)),
+   .textureFilter2DOff(`GNET_OPT(status[83], 1'b0)),
+   .dither24(`GNET_OPT(status[73], 1'b0)),
+   .render24(`GNET_OPT(status[84] && ~hack_480p, 1'b0)),
+   .drawSlow(`GNET_OPT(status[90], 1'b0)),
    .syncVideoOut(syncVideoOut),
    .syncInterlace(status[60]),
-   .rotate180(status[24]),
-   .fixedVBlank(status[55] && ~hack_480p),
+`ifdef GNET_SHELL
+   .rotate180(status[104] & gnet_vertical),   // OSD Flip Screen, vertical sets only (renderer 180, all outputs)
+`else
+   .rotate180(`GNET_OPT(status[24], 1'b0)),
+`endif
+   .fixedVBlank(`GNET_OPT(status[55] && ~hack_480p, 1'b0)),
    .vCrop(hack_480p ? 2'b00 : status[4:3]),
    .hCrop(status[67]),
-   .SPUon(~status[30]),
+   .SPUon(`GNET_OPT(~status[30], 1'b1)),
    .SPUIRQTrigger(status[2]),
-   .SPUSDRAM(status[44] & SDRAM2_EN),
+   .SPUSDRAM(`GNET_OPT(status[44] & SDRAM2_EN, 1'b0)),
    .REVERBOFF(0),
-   .REPRODUCIBLESPUDMA(status[43]),
-   .WIDESCREEN(status[54:53]),
-   .oldGPU(status[92]),   
+   .REPRODUCIBLESPUDMA(`GNET_OPT(status[43], 1'b0)),
+   .WIDESCREEN(`GNET_OPT(status[54:53], 2'b00)),
+   .oldGPU(`GNET_OPT(status[92], 1'b0)),   
    // RAM/BIOS interface
+`ifdef GNET_ZN2
+   .biosregion(2'b00),
+`else
    .biosregion(biosregion),
+`endif
    .ram_refresh(sdr_refresh),
    .ram_dataWrite(sdr_sdram_din),
    .ram_dataRead32(sdr_sdram_dout32),
@@ -981,6 +1560,18 @@ psx
    .dma_reqprocessed(dma_reqprocessed),
    .dma_data(dma_data),
    // vram/ddr3
+`ifdef GNET_DDR3_ARB
+   // through gnet_ddr3_arb as its core client (DDR3 block below)
+   .DDRAM_BUSY      (core_ddr_busy   ),
+   .DDRAM_BURSTCNT  (core_ddr_burstcnt),
+   .DDRAM_ADDR      (core_ddr_addr   ),
+   .DDRAM_DOUT      (arb_rdata       ),
+   .DDRAM_DOUT_READY(core_ddr_dout_ready),
+   .DDRAM_RD        (core_ddr_rd     ),
+   .DDRAM_DIN       (core_ddr_din    ),
+   .DDRAM_BE        (core_ddr_be     ),
+   .DDRAM_WE        (core_ddr_we     ),
+`else
    .DDRAM_BUSY      (DDRAM_BUSY      ),
    .DDRAM_BURSTCNT  (DDRAM_BURSTCNT  ),
    .DDRAM_ADDR      (DDRAM_ADDR      ),
@@ -990,6 +1581,7 @@ psx
    .DDRAM_DIN       (DDRAM_DIN       ),
    .DDRAM_BE        (DDRAM_BE        ),
    .DDRAM_WE        (DDRAM_WE        ),
+`endif
    // cd
    .region          (region),
    .region_out      (region_out),
@@ -1041,28 +1633,48 @@ psx
    .memcard2_dataOut(sd_buff_din3),
    // video
    .videoout_on     (~status[14]),
-   .isPal           (isPal),
-   .pal60           (status[15]),
+   .isPal           (`GNET_OPT(isPal, 1'b0)),
+   .pal60           (`GNET_OPT(status[15], 1'b0)),
+`ifdef GNET_SHELL
+   // through gnet_sync_keeper (VIDEO section)
+   .hsync           (hs_c),
+   .vsync           (vs_c),
+   .hblank          (hbl_c),
+   .vblank          (vbl_c),
+`else
    .hsync           (hs),
    .vsync           (vs),
    .hblank          (hbl),
    .vblank          (vbl),
+`endif
    .DisplayWidth    (DisplayWidth),
    .DisplayHeight   (DisplayHeight),
    .DisplayOffsetX  (DisplayOffsetX),
    .DisplayOffsetY  (DisplayOffsetY),
+`ifdef GNET_SHELL
+   .video_ce        (ce_pix_c),
+   .video_interlace (video_interlace),
+   .video_r         (r_c),
+   .video_g         (g_c),
+   .video_b         (b_c),
+`else
    .video_ce        (ce_pix),
    .video_interlace (video_interlace),
    .video_r         (r),
    .video_g         (g),
    .video_b         (b),
+`endif
    .video_isPal     (video_isPal),
    .video_fbmode    (video_fbmode),
    .video_fb24      (video_fb24),
+`ifdef GNET_SHELL
+   .video_hResMode  (video_hResMode_c),
+`else
    .video_hResMode  (video_hResMode),
+`endif
    .video_frameindex(frameindex),
    //Keys
-   .DSAltSwitchMode(status[31]),
+   .DSAltSwitchMode(`GNET_OPT(status[31], 1'b0)),
    .PadPortEnable1 (PadPortEnable1),
    .PadPortDigital1(PadPortDigital1),
    .PadPortAnalog1 (PadPortAnalog1),
@@ -1123,17 +1735,17 @@ psx
    .RumbleDataP3(joystick3_rumble),
    .RumbleDataP4(joystick4_rumble),
    .padMode(padMode),
-   .MouseEvent(mouse[24]),
+   .MouseEvent(`GNET_OPT(mouse[24], 1'b0)),
    .MouseLeft(mouse[0]),
    .MouseRight(mouse[1]),
    .MouseX({mouse[4],mouse[15:8]}),
    .MouseY({mouse[5],mouse[23:16]}),
-   .multitap(multitap),
-   .multitapDigital(multitapDigital),
-   .multitapAnalog(multitapAnalog),
+   .multitap(`GNET_OPT(multitap, 1'b0)),
+   .multitapDigital(`GNET_OPT(multitapDigital, 1'b0)),
+   .multitapAnalog(`GNET_OPT(multitapAnalog, 1'b0)),
    //snac
-   .snacPort1(snacPort1),
-   .snacPort2(snacPort2),
+   .snacPort1(`GNET_OPT(snacPort1, 1'b0)),
+   .snacPort2(`GNET_OPT(snacPort2, 1'b0)),
    .selectedPort1Snac(selectedPort1Snac),
    .selectedPort2Snac(selectedPort2Snac),
    .irq10Snac(irq10Snac),
@@ -1147,8 +1759,16 @@ psx
    .snacMC(status[66]),
 
    //sound
+`ifdef GNET_ZOOM
+	.sound_out_left(spu_aud_l),    // to zoom_mix (after this instance)
+	.sound_out_right(spu_aud_r),
+`elsif GNET_SHELL
+	.sound_out_left(snd_l),    // to gnet_volume (VIDEO section end)
+	.sound_out_right(snd_r),
+`else
 	.sound_out_left(AUDIO_L),
 	.sound_out_right(AUDIO_R),
+`endif
    //savestates
    .increaseSSHeaderCount (!status[36]),
    .save_state            (ss_save),
@@ -1172,7 +1792,100 @@ psx
    .Cheats_Bus_ena(cheats_ena),
    .Cheats_BusReadData(cheats_din),
    .Cheats_BusDone(sdramCh3_done)
+`ifdef GNET_ZN2
+   ,
+   // G-NET: inputs active low (MAME zn/taitogn input ports, docs/zn2_layer_design.md 7.1)
+   // zj1/zj2: joysticks, with the MAME keyboard keys in GNET_SHELL builds
+   .zn_in_p1       (~{1'b0, zj1[6], zj1[5], zj1[4], zj1[0], zj1[1], zj1[2], zj1[3]}),
+   .zn_in_p2       (~{1'b0, zj2[6], zj2[5], zj2[4], zj2[0], zj2[1], zj2[2], zj2[3]}),
+   .zn_in_service  (~{6'b000000, zj1[9], zj1[10]}),
+   .zn_in_system   (~{2'b00, zj2[8], zj1[8], 2'b00, zj2[7], zj1[7]}),
+   .zn_dsw         (zn_sw0[3:0]),
+   .zn_jp1         (zn_sw0[4]),
+   .zn_card_present(zn_card_loaded),
+   .zn_key_valid   (zn_card_loaded),
+   .zn_coin        (),
+   .zn_wd_reset    (zn_wd_reset),
+   .zn_ld_wr       (zn_ld_wr),
+   .zn_ld_target   (zn_ld_target),
+   .zn_ld_addr     (zn_ld_addr),
+   .zn_ld_data     (zn_ld_data),
+   .zn_card_dl_wr  (zn_card_dl_wr),
+   .zn_card_dl_addr(zn_card_dl_addr),
+   .zn_card_dl_data(zn_card_dl_data),
+   .zn_card_dl_busy(zn_card_dl_busy),
+   .zn_ld_busy     (zn_ld_busy),
+   .zn_fl_req      (zn_fl_req),
+   .zn_fl_rnw      (zn_fl_rnw),
+   .zn_fl_addr     (zn_fl_addr),
+   .zn_fl_din      (zn_fl_din),
+   .zn_fl_be       (zn_fl_be),
+`ifdef GNET_CPU50
+   .zn_fl_ready    (zn_fl_ready_c),   // clk_cpu: zn2_board is in the CPU group
+`else
+   .zn_fl_ready    (sdramCh3_done),
+`endif
+   .zn_fl_dout     (zn_fl_dout),
+   .zn_dbg_idx     (zn_dbg_idx),
+   .zn_dbg_word    (zn_dbg_word)
+`ifdef GNET_SHELL
+   ,
+   .zn_nv_clk      (clk_1x),
+   .zn_nv_addr     (ioctl_addr[10:1]),
+   .zn_nv_q        (nv_din),
+   .zn_nv_wtog     (zn_nv_wtog)
+`endif
+`ifdef GNET_ZOOM
+   ,
+   .zoom_m_req     (zoom_m_req),
+   .zoom_m_line    (zoom_m_line),
+   .zoom_m_ready   (zoom_m_ready),
+   .zoom_m_rvalid  (zoom_m_rvalid),
+   .zoom_m_rdata   (zoom_m_rdata),
+   .zoom_rst       (zoom_rst),
+   .zoom_aud_l     (zoom_aud_l),
+   .zoom_aud_r     (zoom_aud_r),
+   .zoom_flags     (zoom_flags),
+   .zoom_hold      (paused)          // MN10200 held at an instruction boundary while the core is paused
+`endif
+`endif
 );
+
+`ifdef GNET_ZOOM
+// MAME taitogn.cpp 441-448: SPU to the speakers at 0.3, Zoom at 1.0, both
+// 16-bit full scale (rtl/zoom/zoom_mix.sv; the PCB balance is open, R13).
+// The SPU gain is the OSD SFX Level in shell builds (default 0.7, from a
+// real Psyvariar Revision board's attract audio; 0.3 is MAME's route):
+// MAME's spu.cpp ignores the SPU main volume the games set (Ray Crisis
+// 0x1125, about 0.27), spu.vhd applies it (docs/m4_shell.md 4).
+// Both inputs are clk_1x registers (spu.vhd, zoom_out.sv). With the
+// release shell the mix goes to snd_l/snd_r, ahead of the OSD volume stage
+// (gnet_volume); otherwise straight to AUDIO_L/R.
+// Silent pause: while the core is paused the SPU (ce held) and the Zoom
+// output stage (zoom_hold, docs/zoom_board_design.md 14.12) each repeat
+// their last sample; both inputs are forced to 0 instead, so the pause is
+// silent rather than a held DC level.
+zoom_mix zoom_mix
+(
+	.clk   (clk_1x),
+`ifdef GNET_SHELL
+	.spu_lvl(status[119:117]),   // OSD SFX Level: 0.7 (default), 0.3 (MAME) ... 1.5
+`else
+	.spu_lvl(3'd0),              // 0.7, the default
+`endif
+	.spu_l (paused ? 16'sd0 : spu_aud_l),
+	.spu_r (paused ? 16'sd0 : spu_aud_r),
+	.zoom_l(paused ? 16'sd0 : zoom_aud_l),
+	.zoom_r(paused ? 16'sd0 : zoom_aud_r),
+`ifdef GNET_SHELL
+	.out_l (snd_l),
+	.out_r (snd_r)
+`else
+	.out_l (AUDIO_L),
+	.out_r (AUDIO_R)
+`endif
+);
+`endif
 
 ////////////////////////////  MEMORY  ///////////////////////////////////
 
@@ -1219,7 +1932,128 @@ wire sdramCh3_done;
 
 assign sdram_ack = sdram_readack | sdram_writeack;
 
-sdram sdram
+`ifdef GNET_CPU50
+// R1: the SDRAM controller runs with the CPU group (clk_base clk_cpu, clk
+// clk_cpu2x). Channel 3 is driven from clk_1x (HPS downloads, cheats), so its
+// requests cross in a cdc_handshake (rtl/gnet/cdc): address, data, rnw and
+// byte enables held, ch3_dout and the done pulse back.
+wire [26:0] ch3c_addr;
+wire [31:0] ch3c_din;
+wire        ch3c_rnw;
+wire  [3:0] ch3c_be;
+wire        ch3c_req;
+wire [31:0] ch3c_dout;
+wire        ch3c_ready;
+
+`ifdef GNET_ZN2
+// G-NET with the CPU group: zn2_board (and its flash storage port) runs on
+// clk_cpu next to the SDRAM controller, so only the downloads (BIOS, flash
+// images) cross from clk_1x. rtl/gnet/zn2_ch3_arb.vhd shares channel 3
+// between the download handshake and the flash port, one request at a time.
+wire [26:0] ch3h_addr;
+wire [31:0] ch3h_din;
+wire        ch3h_rnw;
+wire  [3:0] ch3h_be;
+wire        ch3h_req;
+wire        ch3h_ack;
+
+cdc_handshake #(.REQ_W(64), .RSP_W(32)) ch3_cdc
+(
+	.src_clk     (clk_1x),
+	.src_rst     (1'b0),
+	.src_start   ((exe_download | bios_download | gnet_flash_dl) & ramdownload_wr),
+	.src_req_data({ramdownload_wraddr, ramdownload_wrdata, 1'b0, 4'b1111}),
+	.src_busy    (),
+	.src_done    (sdramCh3_done),
+	.src_rsp_data(),
+	.dst_clk     (clk_cpu),
+	.dst_rst     (1'b0),
+	.dst_valid   (ch3h_req),
+	.dst_req_data({ch3h_addr, ch3h_din, ch3h_rnw, ch3h_be}),
+	.dst_pending (),
+	.dst_ack     (ch3h_ack),
+	.dst_rsp_data(ch3c_dout)
+);
+
+zn2_ch3_arb ch3_arb
+(
+	.clk      (clk_cpu),
+`ifdef GNET_DDR3_ARB
+	.stall    (gnet_ch3_stall),
+`endif
+	.a_req    (ch3h_req),
+	.a_addr   (ch3h_addr),
+	.a_din    (ch3h_din),
+	.a_rnw    (ch3h_rnw),
+	.a_be     (ch3h_be),
+	.a_ready  (ch3h_ack),
+	.b_req    (zn_fl_req),
+	.b_addr   (zn_fl_addr),
+	.b_din    (zn_fl_din),
+	.b_rnw    (zn_fl_rnw),
+	.b_be     (zn_fl_be),
+	.b_ready  (zn_fl_ready_c),
+`ifdef GNET_ZOOM_SDRAM_PATH
+	// Taito Zoom flash area reads (rtl/gnet/zoom_sdram_link.vhd): 32-bit
+	// reads, byte enables 1111 (read DQM, 13b6e1d)
+	.c_req    (zoom_fl_req),
+	.c_addr   (zoom_fl_addr),
+	.c_din    (32'd0),
+	.c_rnw    (1'b1),
+	.c_be     (4'b1111),
+	.c_ready  (zoom_fl_ready),
+`endif
+	.ch3_req  (ch3c_req),
+	.ch3_addr (ch3c_addr),
+	.ch3_din  (ch3c_din),
+	.ch3_rnw  (ch3c_rnw),
+	.ch3_be   (ch3c_be),
+	.ch3_ready(ch3c_ready)
+);
+assign zn_fl_dout = ch3c_dout;
+`ifdef GNET_ZOOM_SDRAM_PATH
+// temporary SDRAM path of the Zoom flash area (see the zoom_m_* wires)
+zoom_sdram_link zoom_sdram_link
+(
+	.clk_cpu    (clk_cpu),
+	.clk1x      (clk_1x),
+	.p_board_rst(zoom_rst),
+	.p_m_req    (zoom_m_req),
+	.p_m_line   (zoom_m_line),
+	.p_m_ready  (zoom_m_ready),
+	.p_m_rvalid (zoom_m_rvalid),
+	.p_m_rdata  (zoom_m_rdata),
+	.c_fl_req   (zoom_fl_req),
+	.c_fl_addr  (zoom_fl_addr),
+	.c_fl_ready (zoom_fl_ready),
+	.c_fl_dout  (ch3c_dout)
+);
+`endif
+`else
+cdc_handshake #(.REQ_W(64), .RSP_W(32)) ch3_cdc
+(
+	.src_clk     (clk_1x),
+	.src_rst     (1'b0),
+	.src_start   ((exe_download | bios_download) ? ramdownload_wr : cheats_ena),
+	.src_req_data({((exe_download | bios_download) ? ramdownload_wraddr : cheats_addr),
+	               ((exe_download | bios_download) ? ramdownload_wrdata : cheats_dout),
+	               ((exe_download | bios_download) ? 1'b0 : cheats_rnw),
+	               ((exe_download | bios_download) ? 4'b1111 : cheats_be)}),
+	.src_busy    (),
+	.src_done    (sdramCh3_done),
+	.src_rsp_data(cheats_din),
+	.dst_clk     (clk_cpu),
+	.dst_rst     (1'b0),
+	.dst_valid   (ch3c_req),
+	.dst_req_data({ch3c_addr, ch3c_din, ch3c_rnw, ch3c_be}),
+	.dst_pending (),
+	.dst_ack     (ch3c_ready),
+	.dst_rsp_data(ch3c_dout)
+);
+`endif
+`endif
+
+sdram #(.CLK_FAST_RATIO(GNET_CLK_FAST_RATIO), .EARLY_READY(GNET_EARLY_READY_P)) sdram
 (
    .SDRAM_DQ   (SDRAM_DQ),
    .SDRAM_A    (SDRAM_A),
@@ -1234,9 +2068,15 @@ sdram sdram
    .SDRAM_CLK  (SDRAM_CLK),
 
    .SDRAM_EN(1),
+`ifdef GNET_CPU50
+	.init(~pll_cpu_locked),
+	.clk(clk_cpu2x),
+	.clk_base(clk_cpu),
+`else
 	.init(~pll_locked),
 	.clk(clk_3x),
 	.clk_base(clk_1x),
+`endif
 
 	.refreshForce(sdr_refresh),
 
@@ -1265,6 +2105,24 @@ sdram sdram
 	.ch2_be   (sdram_be),
 	.ch2_ready(sdram_writeack),
 
+`ifdef GNET_CPU50
+	.ch3_addr (ch3c_addr),
+	.ch3_din  (ch3c_din),
+	.ch3_dout (ch3c_dout),
+	.ch3_req  (ch3c_req),
+	.ch3_rnw  (ch3c_rnw),
+	.ch3_be   (ch3c_be),
+	.ch3_ready(ch3c_ready),
+`elsif GNET_ZN2
+	// G-NET: downloads, then the flash storage port of zn2_board
+	.ch3_addr ((exe_download | bios_download | gnet_flash_dl) ? ramdownload_wraddr : zn_fl_addr),
+	.ch3_din  ((exe_download | bios_download | gnet_flash_dl) ? ramdownload_wrdata : zn_fl_din),
+	.ch3_dout (zn_fl_dout),
+	.ch3_req  ((exe_download | bios_download | gnet_flash_dl) ? ramdownload_wr     : zn_fl_req),
+	.ch3_rnw  ((exe_download | bios_download | gnet_flash_dl) ? 1'b0               : zn_fl_rnw),
+	.ch3_be   ((exe_download | bios_download | gnet_flash_dl) ? 4'b1111            : zn_fl_be),
+	.ch3_ready(sdramCh3_done),
+`else
 	.ch3_addr ((exe_download | bios_download) ? ramdownload_wraddr : cheats_addr),
 	.ch3_din  ((exe_download | bios_download) ? ramdownload_wrdata : cheats_dout),
 	.ch3_dout (cheats_din),
@@ -1272,6 +2130,7 @@ sdram sdram
 	.ch3_rnw  (cheats_rnw),
 	.ch3_be   ((exe_download | bios_download) ? 4'b1111            : cheats_be),
 	.ch3_ready(sdramCh3_done),
+`endif
 
 	.dmafifo_adr  (sdram_dmafifo_adr),
 	.dmafifo_data (sdram_dmafifo_data),
@@ -1358,6 +2217,7 @@ assign sdram_writeack2 = '0;
 
 assign DDRAM_CLK = clk_2x;
 
+
 ////////////////////////////  VIDEO  ////////////////////////////////////
 
 assign CLK_VIDEO = clk_vid;
@@ -1370,6 +2230,67 @@ wire ce_pix;
 wire [7:0] r,g,b;
 
 wire hack_480p = status[89];
+
+`ifdef GNET_SHELL
+// Black picture with running sync while the core's video timing is held in
+// reset (downloads, reset sequencer): rtl/gnet/gnet_sync_keeper.sv
+gnet_sync_keeper sync_keeper
+(
+	.clk     (clk_vid),
+	.c_ce    (ce_pix_c),
+	.c_hs    (hs_c),
+	.c_vs    (vs_c),
+	.c_hbl   (hbl_c),
+	.c_vbl   (vbl_c),
+	.c_r     (r_c),
+	.c_g     (g_c),
+	.c_b     (b_c),
+	.c_hres  (video_hResMode_c),
+	.o_ce    (ce_pix),
+	.o_hs    (hs_k),
+	.o_vs    (vs_k),
+	.o_hbl   (hbl),
+	.o_vbl   (vbl),
+	.o_r     (r),
+	.o_g     (g),
+	.o_b     (b),
+	.o_hres  (video_hResMode),
+	.o_substitute()
+);
+
+// OSD CRT H/V position: moves hsync and vsync only (rtl/gnet/gnet_crt_pos.sv)
+gnet_crt_pos crt_pos
+(
+	.clk  (clk_vid),
+	.hs   (hs_k),
+	.vs   (vs_k),
+	.hres (video_hResMode),
+	.crt_h(status[110:107]),
+	.crt_v(status[113:111]),
+	.hs_o (hs),
+	.vs_o (vs)
+);
+
+// OSD volume at the final mix (rtl/gnet/gnet_volume.sv): snd_l/snd_r is the
+// SPU alone, or with GNET_ZOOM the SPU and Taito Zoom mix (zoom_mix).
+gnet_volume volume
+(
+	.clk  (clk_1x),
+	.vol  (status[106:105]),
+	.in_l (snd_l),
+	.in_r (snd_r),
+	.out_l(AUDIO_L),
+	.out_r(AUDIO_R)
+);
+
+// G-NET draws exactly 256/320/512/640 dots in every mode it uses (GP1(06h)
+// X1..X2 = 2560 clocks), so the game's own hblank is the active area and the
+// HDMI aspect is 4:3 for it (3:4 rotated), as an arcade monitor adjusted to
+// fill the tube shows it (docs/m4_shell.md).
+localparam GNET_GAME_HBLANK = 1'b1;
+`else
+localparam GNET_GAME_HBLANK = 1'b0;
+`endif
 
 typedef struct {
 	logic [7:0] red;
@@ -1385,6 +2306,7 @@ typedef struct {
 vid_info video_aspect;
 vid_info video_gamma;
 
+`ifndef GNET_SHELL
 assign CE_PIXEL = ce_pix;
 assign VGA_R    = video_gamma.red;
 assign VGA_G    = video_gamma.green;
@@ -1392,8 +2314,194 @@ assign VGA_B    = video_gamma.blue;
 assign VGA_VS   = video_gamma.vs;
 assign VGA_HS   = video_gamma.hs;
 assign VGA_DE   = ~(video_gamma.vb | video_gamma.hb);
-assign VGA_F1   =  status[14] ? 1'b0 : video_aspect.interlace;
 assign VGA_SL = 0;
+`endif
+// GNET_SHELL: CE_PIXEL, VGA_R/G/B/HS/VS/DE and VGA_SL come from arcade_video
+assign VGA_F1   =  status[14] ? 1'b0 : video_aspect.interlace;
+
+`ifdef GNET_DDR3_ARB
+////////////////////////////  DDR3 ARBITER  /////////////////////////////
+// docs/ddr3_arbiter.md: rotation, Taito Zoom, glue and the core share the
+// emu DDRAM port through rtl/gnet/gnet_ddr3_arb.sv, all on clk_2x. Needs
+// GNET_ZN2 and GNET_CPU50 (the flash mirror taps the CPU-group channel 3).
+
+// Without the release shell rotation is off; with it (GNET_SHELL) the
+// shell drives gnet_rot_en and gnet_rot_ccw from the Orientation and Rotate
+// Direction OSD items.
+`ifndef GNET_SHELL
+assign gnet_rot_en  = 1'b0;
+assign gnet_rot_ccw = 1'b0;
+`endif
+// Zoom line port: with GNET_ZOOM, psx_top's zoom_board drives zoom_m_req,
+// zoom_m_line and zoom_rst (clk_1x, declared with the loader wires) and the
+// arbiter answers on zoom_m_ready/rvalid/rdata from the flash mirror at DDR3
+// 0x31000000 (GNET_ZOOM_SDRAM is ignored, ZSG-2 INFL 8). Without the Zoom
+// board: no requests.
+`ifndef GNET_ZOOM
+wire        zoom_m_req   = 1'b0;
+wire [20:0] zoom_m_line  = 21'd0;
+wire        zoom_rst     = 1'b0;   // Zoom-side reset (clk_1x)
+wire        zoom_m_ready, zoom_m_rvalid;
+wire [63:0] zoom_m_rdata;
+`endif
+
+// screen_rotate (sys/arcade_video.v) on the core's video; its DDRAM writes
+// go to the arbiter's rotation FIFO, never straight to the port. It takes
+// the gamma-corrected video before any scandoubler, with the core's dot
+// enable, on clk_vid: in GNET_SHELL builds from a second gamma_corr on the
+// overlay output (rot_gamma, VIDEO section), otherwise from video_gamma.
+// Taking arcade_video's outputs instead (the MiSTer template's way) would
+// feed it the scandoubler Fx: scanlines double and HQ2x quadruples the
+// writes (one per clk_vid at 640 dots), which overflows the rotation FIFO
+// once DDR3 BUSY reaches about 40% or holds for 20 us (sim/rotfx). The Fx
+// still apply to the unrotated output; the rotated picture is the scaler's.
+`ifdef GNET_SHELL
+wire        rotv_hs, rotv_vs, rotv_hb, rotv_vb;
+wire [23:0] rotv_rgb;
+`endif
+wire        rot_we;
+wire [28:0] rot_addr;
+wire [63:0] rot_din;
+wire  [7:0] rot_be;
+screen_rotate screen_rotate
+(
+	.CLK_VIDEO(clk_vid),
+`ifdef GNET_SHELL
+	.CE_PIXEL(ce_pix),
+	.VGA_R(rotv_rgb[23:16]),
+	.VGA_G(rotv_rgb[15:8]),
+	.VGA_B(rotv_rgb[7:0]),
+	.VGA_HS(rotv_hs),
+	.VGA_VS(rotv_vs),
+	.VGA_DE(~(rotv_vb | rotv_hb)),
+`else
+	.CE_PIXEL(ce_pix),
+	.VGA_R(video_gamma.red),
+	.VGA_G(video_gamma.green),
+	.VGA_B(video_gamma.blue),
+	.VGA_HS(video_gamma.hs),
+	.VGA_VS(video_gamma.vs),
+	.VGA_DE(~(video_gamma.vb | video_gamma.hb)),
+`endif
+	.rotate_ccw(gnet_rot_ccw),
+	.no_rotate(~gnet_rot_en),
+	.flip(1'b0),
+	.video_rotated(video_rotated),
+	.FB_EN(rot_fb_en),
+	.FB_FORMAT(rot_fb_format),
+	.FB_WIDTH(rot_fb_width),
+	.FB_HEIGHT(rot_fb_height),
+	.FB_BASE(rot_fb_base),
+	.FB_STRIDE(rot_fb_stride),
+	.FB_VBL(FB_VBL),
+	.FB_LL(FB_LL),
+	.DDRAM_CLK(),
+	.DDRAM_BUSY(1'b0),
+	.DDRAM_BURSTCNT(),
+	.DDRAM_ADDR(rot_addr),
+	.DDRAM_DIN(rot_din),
+	.DDRAM_BE(rot_be),
+	.DDRAM_WE(rot_we),
+	.DDRAM_RD()
+);
+
+// Zoom line port, clk_1x to clk_2x
+wire        arb_z_req, arb_z_ready, arb_z_rvalid;
+wire [20:0] arb_z_line;
+gnet_ddr3_zport zport
+(
+	.clk2x(clk_2x),
+	.clk1x(clk_1x),
+	.zrst(zoom_rst),
+	.m_req(zoom_m_req),
+	.m_line(zoom_m_line),
+	.m_ready(zoom_m_ready),
+	.m_rvalid(zoom_m_rvalid),
+	.m_rdata(zoom_m_rdata),
+	.z_req(arb_z_req),
+	.z_line(arb_z_line),
+	.z_ready(arb_z_ready),
+	.z_rvalid(arb_z_rvalid),
+	.z_rdata(arb_rdata)
+);
+
+// flash area writes on channel 3 (clk_cpu) mirrored into DDR3 for the Zoom
+wire        mir_we, mir_busy, mir_ovf;
+wire [28:0] mir_addr;
+wire [63:0] mir_din;
+wire  [7:0] mir_be;
+gnet_ddr3_mirror mirror
+(
+	.clk_src(clk_cpu),
+	.w_req(ch3c_req && !ch3c_rnw),
+	.w_addr(ch3c_addr),
+	.w_din(ch3c_din),
+	.w_be(ch3c_be),
+	.stall(gnet_ch3_stall),
+	.clk2x(clk_2x),
+	.g_we(mir_we),
+	.g_addr(mir_addr),
+	.g_din(mir_din),
+	.g_be(mir_be),
+	.g_busy(mir_busy),
+	.ovf(mir_ovf)
+);
+
+// reset only at power-up: the core keeps reads in flight across its own
+// resets, and the owner FIFO must keep matching them
+reg [2:0] arb_rst_s = 3'b111;
+always @(posedge clk_2x) arb_rst_s <= {arb_rst_s[1:0], ~pll_locked};
+
+// status for a debug page (all clk_2x): rotation FIFO overflowed (sticky),
+// its highest fill level (of 512), owner FIFO overflow (protocol error,
+// sticky), flash mirror FIFO overflow (sticky; the stall prevents it)
+wire        gnet_ddr3_rot_ovf, gnet_ddr3_own_ovf, gnet_ddr3_mirror_ovf;
+wire  [9:0] gnet_ddr3_rot_hiwater;
+assign gnet_ddr3_mirror_ovf = mir_ovf;
+gnet_ddr3_arb ddr3_arb
+(
+	.clk(clk_2x),
+	.rst(arb_rst_s[2]),
+	.ddr_busy(DDRAM_BUSY),
+	.ddr_burstcnt(DDRAM_BURSTCNT),
+	.ddr_addr(DDRAM_ADDR),
+	.ddr_dout(DDRAM_DOUT),
+	.ddr_dout_ready(DDRAM_DOUT_READY),
+	.ddr_rd(DDRAM_RD),
+	.ddr_din(DDRAM_DIN),
+	.ddr_be(DDRAM_BE),
+	.ddr_we(DDRAM_WE),
+	.rot_clk(clk_vid),
+	.rot_we(rot_we),
+	.rot_addr(rot_addr),
+	.rot_din(rot_din),
+	.rot_be(rot_be),
+	.z_req(arb_z_req),
+	.z_line(arb_z_line),
+	.z_ready(arb_z_ready),
+	.z_rvalid(arb_z_rvalid),
+	.g_rd(1'b0),
+	.g_we(mir_we),
+	.g_addr(mir_addr),
+	.g_burstcnt(8'd1),
+	.g_din(mir_din),
+	.g_be(mir_be),
+	.g_busy(mir_busy),
+	.g_dout_ready(),
+	.c_rd(core_ddr_rd),
+	.c_we(core_ddr_we),
+	.c_addr(core_ddr_addr),
+	.c_burstcnt(core_ddr_burstcnt),
+	.c_din(core_ddr_din),
+	.c_be(core_ddr_be),
+	.c_busy(core_ddr_busy),
+	.c_dout_ready(core_ddr_dout_ready),
+	.rdata(arb_rdata),
+	.rot_ovf(gnet_ddr3_rot_ovf),
+	.rot_hiwater(gnet_ddr3_rot_hiwater),
+	.own_ovf(gnet_ddr3_own_ovf)
+);
+`endif
 logic [11:0] aspect_x, aspect_y;
 
 wire [1:0] ar = status[33:32];
@@ -1403,8 +2511,13 @@ video_freak video_freak
 	.VGA_DE_IN(VGA_DE),
 	.VGA_DE(),
 
+`ifdef GNET_SHELL
+	.ARX((!ar) ? (gnet_rot_en ? 12'd3 : 12'd4) : {10'd0, ar - 2'd1}),
+	.ARY((!ar) ? (gnet_rot_en ? 12'd4 : 12'd3) : 12'd0),
+`else
 	.ARX((!ar) ? ((status[54:53] == 1) ? 3 : (status[54:53] == 2) ? 5 : (status[54:53] == 3) ? 16 : status[11] ? 12'd2 : aspect_x) : (ar - 1'd1)),
 	.ARY((!ar) ? ((status[54:53] == 1) ? 2 : (status[54:53] == 2) ? 3 : (status[54:53] == 3) ?  9 : status[11] ? 12'd1 : aspect_y) : 12'd0),
+`endif
 	.CROP_SIZE(0),
 	.CROP_OFF(0),
 	.SCALE(status[35:34])
@@ -1473,7 +2586,9 @@ always_comb begin
 	hb_end = hb_end_lut[video_hResMode];
 end
 
-always_ff @(posedge CLK_VIDEO) if (CE_PIXEL) begin
+// steps on the core's dot enable ce_pix (equal to CE_PIXEL except in
+// GNET_SHELL builds, where CE_PIXEL comes from arcade_video's mixer)
+always_ff @(posedge CLK_VIDEO) if (ce_pix) begin
 	logic old_vb;
 	old_vb <= vbl;
 	video_aspect.hs <= hs;
@@ -1519,11 +2634,107 @@ always_ff @(posedge CLK_VIDEO) if (CE_PIXEL) begin
 		video_aspect.hb <= 0;
 	if (h_pos == hb_end)
 		video_aspect.hb <= 1;
-	if (status[62] || hack_480p || (status[54:53] > 0))
+	if (status[62] || hack_480p || (status[54:53] > 0) || GNET_GAME_HBLANK)
 		video_aspect.hb <= hbl;
 
 end
 
+`ifdef GNET_ZN2
+// G-NET debug overlay (docs/hw_debug_overlay.md, OSD status[101]): hex text
+// mixed into the RGB between video_aspect and gamma_corr, stepped by
+// CE_PIXEL. With the option off rgb_dbg is video_aspect's RGB unchanged.
+wire [23:0] rgb_dbg;
+
+// DR row (GNET_DDR3_ARB builds only): the DDR3 arbiter status, all clk_2x,
+// fetched by the overlay over its own cdc_handshake into clk_2x. Digits:
+// rotation FIFO overflow | owner FIFO overflow | flash mirror overflow | 0,
+// then the rotation FIFO high-water mark (of 512). Without the arbiter the
+// row is not built (DR_ROW 0) and the word is tied to 0.
+`ifdef GNET_DDR3_ARB
+localparam GNET_DBG_DR_ROW = 1;
+wire [31:0] gnet_dbg_dr_word = {3'd0, gnet_ddr3_rot_ovf, 3'd0, gnet_ddr3_own_ovf,
+                                3'd0, gnet_ddr3_mirror_ovf, 4'd0, 6'd0, gnet_ddr3_rot_hiwater};
+`else
+localparam GNET_DBG_DR_ROW = 0;
+wire [31:0] gnet_dbg_dr_word = 32'd0;
+`endif
+
+zn_dbg_overlay #(.DR_ROW(GNET_DBG_DR_ROW)) dbg_ovl
+(
+	.clk_cfg (clk_1x),
+	.cfg_en  (status[101]),
+`ifdef GNET_CPU50
+	.clk_src (clk_cpu),
+`else
+	.clk_src (clk_1x),
+`endif
+	.src_idx (zn_dbg_idx),
+	.src_word(zn_dbg_word),
+	.clk_dr  (clk_2x),
+	.dr_word (gnet_dbg_dr_word),
+	.clk_vid (CLK_VIDEO),
+	.ce_pix  (ce_pix),
+	.hres_dbl(video_hResMode[2:1] == 2'b00),   // 640 or 512 dots per line
+	.hb      (video_aspect.hb),
+	.vb      (video_aspect.vb),
+	.rgb_in  ({video_aspect.red,video_aspect.green,video_aspect.blue}),
+	.rgb_out (rgb_dbg)
+);
+`endif
+
+`ifdef GNET_SHELL
+// Scandoubler Fx and gamma through the framework's arcade_video (as Lee's
+// other cores): HQ2x or CRT scanlines when Fx is set or the scandoubler is
+// forced (31 kHz VGA). With Fx None and no forced scandoubler CE_PIXEL is the
+// core's dot enable, one dot every 10/8/5/4 clocks (DV1, docs/m4_shell.md 2).
+arcade_video #(.WIDTH(640), .DW(24)) arcade_video
+(
+	.clk_video(CLK_VIDEO),
+	.ce_pix   (ce_pix),
+	.RGB_in   (rgb_dbg),
+	.HBlank   (video_aspect.hb),
+	.VBlank   (video_aspect.vb),
+	.HSync    (video_aspect.hs),
+	.VSync    (video_aspect.vs),
+	.CLK_VIDEO(),
+	.CE_PIXEL (CE_PIXEL),
+	.VGA_R    (VGA_R),
+	.VGA_G    (VGA_G),
+	.VGA_B    (VGA_B),
+	.VGA_HS   (VGA_HS),
+	.VGA_VS   (VGA_VS),
+	.VGA_DE   (VGA_DE),
+	.VGA_SL   (VGA_SL),
+	.fx       (status[116:114]),
+	.forced_scandoubler(forced_scandoubler),
+	.gamma_bus(gamma_bus)
+);
+`ifdef GNET_DDR3_ARB
+// The rotation feed (see screen_rotate): the same gamma table as
+// arcade_video's (gamma_bus is only read here; video_mixer drives bit 21),
+// on the pre-scandoubler video.
+gamma_corr rot_gamma
+(
+	.clk_sys(gamma_bus[20]),
+	.clk_vid(CLK_VIDEO),
+	.ce_pix(ce_pix),
+	.gamma_en(gamma_bus[19]),
+	.gamma_wr(gamma_bus[18]),
+	.gamma_wr_addr(gamma_bus[17:8]),
+	.gamma_value(gamma_bus[7:0]),
+	.HSync(video_aspect.hs),
+	.VSync(video_aspect.vs),
+	.HBlank(video_aspect.hb),
+	.VBlank(video_aspect.vb),
+	.RGB_in(rgb_dbg),
+	.HSync_out(rotv_hs),
+	.VSync_out(rotv_vs),
+	.HBlank_out(rotv_hb),
+	.VBlank_out(rotv_vb),
+	.RGB_out(rotv_rgb)
+);
+`endif
+`else
 assign gamma_bus[21] = 1;
 gamma_corr gamma(
 	.clk_sys(gamma_bus[20]),
@@ -1539,7 +2750,11 @@ gamma_corr gamma(
 	.VSync(video_aspect.vs),
 	.HBlank(video_aspect.hb),
 	.VBlank(video_aspect.vb),
+`ifdef GNET_ZN2
+	.RGB_in(rgb_dbg),
+`else
 	.RGB_in({video_aspect.red,video_aspect.green,video_aspect.blue}),
+`endif
 
 	.HSync_out(video_gamma.hs),
 	.VSync_out(video_gamma.vs),
@@ -1547,6 +2762,7 @@ gamma_corr gamma(
 	.VBlank_out(video_gamma.vb),
 	.RGB_out({video_gamma.red,video_gamma.green,video_gamma.blue})
 );
+`endif
 
 
 

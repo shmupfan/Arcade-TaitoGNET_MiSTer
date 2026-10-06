@@ -1,3 +1,12 @@
+roms/
+*.chd
+*.zip
+*.rbf
+sim/build/
+obj_dir/
+.DS_Store
+
+# PSX_MiSTer upstream
 db
 greybox_tmp
 incremental_db
@@ -36,3 +45,76 @@ c5_pin_model_dump.txt
 *~
 *.xml
 *.cdf
+
+# G-NET F0
+builds/
+reference/xelanotpu/
+# MAME traces: NVRAM holds flash copied from the game card (copyrighted), never commit
+sim/r18/nv*
+sim/r18/cfg*
+sim/r18/*.log
+diff/
+sim/cards/
+# M0 oracle runs: NVRAM, snapshots and logs are game-derived data, never commit
+sim/oracle/
+snap/
+sim/flash/
+# R1 speed study: PCB footage frames and MAME captures are copyrighted or game-derived, never commit
+sim/r1/
+sim/m1/work/
+sim/m1/out/
+sim/m1/patched/
+sim/m1/ps1t/
+sim/gte_narrow/work/
+__pycache__/
+reference/ps1-tests/
+# M2 glue testbench work data: traces, NVRAM, card writes are game-derived, never commit
+sim/gnet/work/
+sim/gnet/obj_*/
+sim/gnet/probe/
+sim/gnet/obj_*.build.log
+# ZN-2 layer testbench work data: vectors from MAME traces and BIOS keys are game-derived, never commit
+sim/zn2/work/
+sim/m1/gtime/
+# G-NET per-game zips from tools/gnet/make_game_zip.py: card images are game data, never commit
+gnet_games/
+sim/cdc/work/
+sim/cpu50/work/
+sim/zn2cpu50/work/
+# debug overlay benches (frames are written here, never commit)
+sim/dbg/work/
+# DDR3 arbiter simulation outputs
+sim/ddr3arb/obj/
+sim/ddr3arb/obj_build.log
+sim/ddr3arb/obj_*/
+sim/ddr3arb/obj*.log
+# tools/lint_psx.py output
+sim/lint_psx/
+# M3 Zoom: MAME MN10200 traces, bus logs and testbench builds are game-derived, never commit
+sim/zoom/
+sim/zsg2/work/
+# Zoom integration benches: work data, Verilator builds and logs (game-derived when the firmware runs), never commit
+sim/zoomlink/work/
+# DDR3-path Zoom bench builds and runs (game-derived), never commit
+sim/zoomddr3/work/
+# rotation bench builds (sim/rotfx)
+sim/rotfx/work/
+# Release hygiene: game-derived data in any bench folder, never commit
+sim/**/work/
+sim/**/runs/
+sim/fullsys/work/
+sim/gpuinfl/work/
+sim/gpuinfl/patched/
+sim/gpuinfl/runs/
+sim/gpuinfl/queue*
+*.img
+*.flash
+*.nv
+*.nvram
+*.meta
+*.wav
+*.ppm
+*.zst
+ckpt_*
+# released bitstreams are tracked on purpose (the *.rbf rule above keeps build output out)
+!releases/Arcade-TaitoGNET_*.rbf

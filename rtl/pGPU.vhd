@@ -21,7 +21,7 @@ package pGPU is
       GPUSTAT_HorRes1         : std_logic_vector(1 downto 0);
       GPUSTAT_ColorDepth24    : std_logic;
       GPUSTAT_DisplayDisable  : std_logic;
-      vramRange               : unsigned(18 downto 0);
+      vramRange               : unsigned(19 downto 0);   -- display start: X 9..0, Y 18..10 (PS1) or 19..10 (ZN-2)
       hDisplayRange           : unsigned(23 downto 0);
       vDisplayRange           : unsigned(19 downto 0);
       pal60                   : std_logic;

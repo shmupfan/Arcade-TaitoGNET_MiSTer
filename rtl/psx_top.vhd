@@ -9,7 +9,38 @@ use work.pJoypad.all;
 entity psx_top is
    generic
    (
-      is_simu               : std_logic := '0'
+      is_simu               : std_logic := '0';
+      -- G-NET trim switches: 1 = upstream block present (default), 0 = removed
+      -- and its outputs tied to idle. See docs/f0_budget.md.
+      HAS_CD                : integer := 1;
+      HAS_PADS              : integer := 1;
+      HAS_SAVESTATES        : integer := 1;
+      HAS_CHEATS            : integer := 1;
+      HAS_MDEC              : integer := 1;
+      VRAM_Y_BITS           : integer := 9;   -- 9 = PS1 1 MB VRAM, 10 = ZN-2 2 MB (gpu.vhd)
+      GTE_NARROW_MUL        : integer := 0;   -- 1, 2 = 18x18 GTE multipliers plus shifts (gte_mac123.vhd); 3 = GTE at 100 MHz (gte.vhd)
+      CLK_FAST_RATIO        : integer := 3;   -- clk3x edges per clk1x cycle: 3 = upstream, 2 = CPU domain at 2:1 (clk3xIndex, sdram.sv)
+      -- R1 (docs/r1_cpu_domain_design.md): 0 = upstream clocking, every block on
+      -- clk1x/clk2x/clk3x. 1 = CPU group (cpu, gte, memorymux, memctrl, dma,
+      -- irq, timer, sio, exp2) on clk_cpu/clk_cpu2x/clk_cpu3x, crossings to the
+      -- GPU, SPU and reset sequencer in rtl/gnet/cpu_split (needs the G-NET
+      -- trims HAS_CD, HAS_PADS, HAS_SAVESTATES, HAS_CHEATS, HAS_MDEC = 0 and
+      -- CLK_FAST_RATIO = 2)
+      CPU_CLK_SPLIT         : integer := 0;
+      -- G-NET: 1 = ZN-2 board and G-NET FC PCB (rtl/gnet/zn2_board.vhd) on
+      -- the expansion bus and SIO0, card image client on DDR3; needs
+      -- HAS_PADS = 0. 0 = PS1 (upstream). docs/zn2_layer_design.md 13
+      ZN2_BOARD             : integer := 0;
+      ZN2_FLASH_PRESET      : integer := 1;   -- gnet_flash timing: 1 = MAME, 2 = 28F160S3 2.7 V, 3 = 28F160S5 (FC PCB part)
+      ZN2_PS1_SIO           : integer := 0;   -- zn_sio0: 0 = MAME bit timing, 1 = joypad.vhd rule
+      ZN2_SPU_STATUS        : integer := 0;   -- zn2_io 0x1FA60000: 0 = MAME toggle, 1 = bit 3 set
+      ZN2_WD_TIMEOUT_S      : integer := 8;   -- MB3773 watchdog period in seconds (zn2_board, gnet_ctrl.sv)
+      -- G-NET: 1 = Taito Zoom sound board (rtl/zoom/zoom_board.sv) on clk1x
+      -- and clk2x, crossings in rtl/gnet/zoom_cdc.vhd; needs ZN2_BOARD = 1
+      -- and CPU_CLK_SPLIT = 1. docs/zoom_board_design.md 14
+      ZOOM_BOARD            : integer := 0;
+      ZOOM_INFL             : integer := 4;   -- ZSG-2 wave reads outstanding: 4, or 8 behind the DDR3 arbiter
+      ZN2_READ_OVERLAP      : integer := 0    -- memorymux: 1 = a ZN-2 read step's request overlaps its read delay (docs/r1_cpu_domain_design.md)
    );
    port 
    (
@@ -17,6 +48,12 @@ entity psx_top is
       clk2x                 : in  std_logic;   
       clk3x                 : in  std_logic;   
       clkvid                : in  std_logic;   
+      -- CPU group clocks: with CPU_CLK_SPLIT = 0 connect the same signals as
+      -- clk1x, clk2x and clk3x; with 1 the CPU PLL's 50 MHz (clk_cpu) and
+      -- 100 MHz (clk_cpu2x and clk_cpu3x)
+      clk_cpu               : in  std_logic;
+      clk_cpu2x             : in  std_logic;
+      clk_cpu3x             : in  std_logic;
       reset                 : in  std_logic; 
       isPaused              : out std_logic;
       -- commands 
@@ -236,7 +273,69 @@ entity psx_top is
       Cheats_BusWriteData   : out    std_logic_vector(31 downto 0);
       Cheats_Bus_ena        : out    std_logic := '0';
       Cheats_BusReadData    : in     std_logic_vector(31 downto 0);
-      Cheats_BusDone        : in     std_logic
+      Cheats_BusDone        : in     std_logic;
+      
+      -- G-NET (ZN2_BOARD = 1 only; defaults keep the upstream instantiation)
+      zn_in_p1              : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_p2              : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_service         : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_system          : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_dsw                : in  std_logic_vector(3 downto 0) := x"F";
+      zn_jp1                : in  std_logic := '0';
+      zn_card_present       : in  std_logic := '0';
+      zn_key_valid          : in  std_logic := '0';
+      zn_coin               : out std_logic_vector(7 downto 0);
+      zn_wd_reset           : out std_logic;
+      zn_ld_wr              : in  std_logic := '0';
+      zn_ld_target          : in  std_logic_vector(1 downto 0) := "00";
+      zn_ld_addr            : in  unsigned(10 downto 0) := (others => '0');
+      zn_ld_data            : in  std_logic_vector(15 downto 0) := (others => '0');
+      zn_ld_busy            : out std_logic;   -- hold the loader (ioctl_wait); CPU_CLK_SPLIT = 1 only
+      zn_card_dl_wr         : in  std_logic := '0';
+      zn_card_dl_addr       : in  unsigned(25 downto 0) := (others => '0');
+      zn_card_dl_data       : in  std_logic_vector(15 downto 0) := (others => '0');
+      zn_card_dl_busy       : out std_logic;
+      -- flash storage port: clk1x, or clk_cpu with CPU_CLK_SPLIT = 1 (the
+      -- SDRAM controller's clk_base); every other zn_* port is on clk1x
+      zn_fl_req             : out std_logic;
+      zn_fl_rnw             : out std_logic;
+      zn_fl_addr            : out std_logic_vector(26 downto 0);
+      zn_fl_din             : out std_logic_vector(31 downto 0);
+      zn_fl_be              : out std_logic_vector(3 downto 0);
+      zn_fl_ready           : in  std_logic := '0';
+      zn_fl_dout            : in  std_logic_vector(31 downto 0) := (others => '0');
+      -- debug overlay (docs/hw_debug_overlay.md), on clk_cpu: word index in,
+      -- word out (combinational from rtl/gnet/zn_dbg_regs.vhd)
+      zn_dbg_idx            : in  std_logic_vector(3 downto 0) := (others => '0');
+      zn_dbg_word           : out std_logic_vector(31 downto 0);
+      -- NVRAM save (docs/m4_shell.md 4): EEPROM copy read on zn_nv_clk
+      -- (hps_io's clock); zn_nv_wtog toggles on CPU writes (zn2_board's clock)
+      zn_nv_clk             : in  std_logic := '0';
+      zn_nv_addr            : in  unsigned(9 downto 0) := (others => '0');
+      zn_nv_q               : out std_logic_vector(15 downto 0);
+      zn_nv_wtog            : out std_logic;
+      -- Taito Zoom (ZOOM_BOARD = 1), all on clk1x: zoom_board's flash area
+      -- line port as it is (zoom_memarb m_*: req and line held until an edge
+      -- with ready, rvalid one cycle per line in order, up to 8 open; line =
+      -- flash area byte offset / 8, flash byte 8L in rdata bits 7:0), for
+      -- the DDR3 arbiter or the temporary SDRAM path in PSX.sv; audio
+      -- (16-bit signed, volume applied, held per sample); board flags
+      -- (zoom_board dbg_flags)
+      zoom_m_req            : out std_logic;
+      zoom_m_line           : out std_logic_vector(20 downto 0);
+      zoom_m_ready          : in  std_logic := '0';
+      zoom_m_rvalid         : in  std_logic := '0';
+      zoom_m_rdata          : in  std_logic_vector(63 downto 0) := (others => '0');
+      zoom_rst              : out std_logic;   -- zoom_board's reset (reset_intern_p, clk1x), for the memory side
+      zoom_aud_l            : out std_logic_vector(15 downto 0);
+      zoom_aud_r            : out std_logic_vector(15 downto 0);
+      zoom_flags            : out std_logic_vector(7 downto 0);
+      -- '1' holds the Zoom board's MN10200 at its next instruction boundary
+      -- (zoom_board dbg_hold): its time base then stops, so the ZSG-2, the
+      -- TMS57002 and the output stage stop too (the output repeats its last
+      -- sample). PSX.sv drives it with the core pause (clk1x level, taken on
+      -- clk2x, same PLL).
+      zoom_hold             : in  std_logic := '0'
    );
 end entity;
 
@@ -307,6 +406,36 @@ architecture arch of psx_top is
    signal memDDR3card2_RD        : std_logic := '0';
    
    signal memSPU_request         : std_logic;
+   -- G-NET card image client (ZN2_BOARD = 1)
+   signal memZN_request          : std_logic;
+   signal memZN_ack              : std_logic := '0';
+   signal memZN_acknext          : std_logic := '0';
+   signal memZN_BURSTCNT         : std_logic_vector(7 downto 0) := (others => '0'); 
+   signal memZN_ADDR             : std_logic_vector(27 downto 0) := (others => '0');                       
+   signal memZN_DIN              : std_logic_vector(63 downto 0) := (others => '0');
+   signal memZN_BE               : std_logic_vector(7 downto 0) := (others => '0'); 
+   signal memZN_WE               : std_logic := '0';
+   signal memZN_RD               : std_logic := '0';
+   -- G-NET expansion bus (memorymux ZN2_MAP)
+   signal zn_req                 : std_logic;
+   signal zn_we                  : std_logic;
+   signal zn_addr                : unsigned(23 downto 0);
+   signal zn_be                  : std_logic_vector(3 downto 0);
+   signal zn_wdata               : std_logic_vector(31 downto 0);
+   signal zn_ack                 : std_logic;
+   signal zn_rdata               : std_logic_vector(31 downto 0);
+   signal zn_cm_req              : std_logic;
+   signal zn_cm_we               : std_logic;
+   signal zn_cm_addr             : std_logic_vector(24 downto 0);
+   signal zn_cm_wdata            : std_logic_vector(15 downto 0);
+   signal zn_cm_ack              : std_logic;
+   signal zn_cm_rdata            : std_logic_vector(15 downto 0);
+   -- debug overlay taps (CPU group clock)
+   signal zn_dbg_wd              : std_logic;
+   signal zn_dbg_kick            : std_logic;
+   signal zn_dbg_ctrl            : std_logic_vector(7 downto 0);
+   signal zn_dbg_sec             : std_logic;
+   signal cpu_debug_pc           : unsigned(31 downto 0);
    signal memSPU_ack             : std_logic := '0';
    signal memSPU_BURSTCNT        : std_logic_vector(7 downto 0) := (others => '0'); 
    signal memSPU_ADDR            : std_logic_vector(19 downto 0) := (others => '0');                       
@@ -616,6 +745,8 @@ architecture arch of psx_top is
    signal SS_Adr                 : unsigned(18 downto 0);
    signal SS_wren                : std_logic_vector(16 downto 0);
    signal SS_rden                : std_logic_vector(16 downto 0);
+   signal SS_wren_eng            : std_logic_vector(16 downto 0);
+   signal SS_rden_eng            : std_logic_vector(16 downto 0);
    signal SS_DataRead_CPU        : std_logic_vector(31 downto 0);
    signal SS_DataRead_GPU        : std_logic_vector(31 downto 0);
    signal SS_DataRead_GPUTiming  : std_logic_vector(31 downto 0);
@@ -679,13 +810,86 @@ architecture arch of psx_top is
    
    signal debug_firstGTE         : std_logic;
    
+   -- CPU_CLK_SPLIT: PS1-group (_p) copies of signals that cross, CPU-group
+   -- copies (_c) of top-level inputs; with CPU_CLK_SPLIT = 0 plain copies
+   signal reset_c                : std_logic;
+   signal pause_c                : std_logic;
+   signal loadExe_c              : std_logic;
+   signal reset_in_c             : std_logic;
+   signal reset_exe_p            : std_logic;
+   signal clk2xIndex_c           : std_logic;
+   signal clk3xIndex_c           : std_logic;
+   signal sys_tick               : std_logic;
+   signal ce_p                   : std_logic;
+   signal pausing_p              : std_logic;
+   signal pausingSS_p            : std_logic;
+   signal cpuPaused_p            : std_logic;
+   signal dmaOn_p                : std_logic;
+   signal reset_intern_p         : std_logic;
+   signal SS_reset_p             : std_logic;
+   signal loading_savestate_p    : std_logic;
+   signal savestate_pause_p      : std_logic;
+   signal allowunpause_p         : std_logic;
+   signal SS_Idle_gpu_p          : std_logic;
+   signal SS_idle_spu_p          : std_logic;
+   signal SS_idle_p              : std_logic;
+   signal SS_DataWrite_p         : std_logic_vector(31 downto 0);
+   signal SS_Adr_p               : unsigned(18 downto 0);
+   signal SS_wren_p              : std_logic_vector(16 downto 0);
+   signal ram_done_p             : std_logic;
+   signal ram_cpu_done_p         : std_logic;
+   signal ram_dataRead32_p       : std_logic_vector(31 downto 0);
+   signal ext_fill_req           : std_logic;
+   signal ext_fill_done          : std_logic;
+   signal errorEna_p             : std_logic;
+   signal errorCode_p            : unsigned(3 downto 0);
+   signal debugmodeOn_p          : std_logic;
+   signal errorLINE_p            : std_logic;
+   signal errorRECT_p            : std_logic;
+   signal errorPOLY_p            : std_logic;
+   signal errorGPU_p             : std_logic;
+   signal errorMASK_p            : std_logic;
+   signal errorGPUFIFO_p         : std_logic;
+   signal errorSPUTIME_p         : std_logic;
+   signal bus_gpu_addr_p         : unsigned(3 downto 0);
+   signal bus_gpu_dataWrite_p    : std_logic_vector(31 downto 0);
+   signal bus_gpu_read_p         : std_logic;
+   signal bus_gpu_write_p        : std_logic;
+   signal bus_gpu_dataRead_p     : std_logic_vector(31 downto 0);
+   signal bus_gpu_stall_p        : std_logic;
+   signal gpu_dmaRequest_p       : std_logic;
+   signal DMA_GPU_waiting_p      : std_logic;
+   signal DMA_GPU_writeEna_p     : std_logic;
+   signal DMA_GPU_readEna_p      : std_logic;
+   signal DMA_GPU_write_p        : std_logic_vector(31 downto 0);
+   signal DMA_GPU_read_p         : std_logic_vector(31 downto 0);
+   signal irq_VBLANK_p           : std_logic;
+   signal irq_GPU_p              : std_logic;
+   signal irq_SPU_p              : std_logic;
+   signal hblank_tmr_p           : std_logic;
+   signal vblank_tmr_p           : std_logic;
+   signal dotclock_p             : std_logic;
+   signal bus_spu_addr_p         : unsigned(9 downto 0);
+   signal bus_spu_dataWrite_p    : std_logic_vector(15 downto 0);
+   signal bus_spu_read_p         : std_logic;
+   signal bus_spu_write_p        : std_logic;
+   signal bus_spu_dataRead_p     : std_logic_vector(15 downto 0);
+   signal bus_spu_stall          : std_logic;
+   signal spu_dmaRequest_p       : std_logic;
+   signal DMA_SPU_writeEna_p     : std_logic;
+   signal DMA_SPU_readEna_p      : std_logic;
+   signal DMA_SPU_write_p        : std_logic_vector(15 downto 0);
+   signal DMA_SPU_read_p         : std_logic_vector(15 downto 0);
+   signal DMA_SPU_readStall      : std_logic;
+   signal DMA_SPU_readReq        : std_logic;
+
 begin 
    
    -- reset
    process (clk1x)
    begin
       if rising_edge(clk1x) then
-         reset_in <= reset or reset_exe;
+         reset_in <= reset or reset_exe_p;
       end if;
    end process;
    
@@ -709,22 +913,31 @@ begin
       end if;
    end process;
    
+   -- clk3xIndex: '1' on the first clk3x edge after each clk1x edge (DMA FIFO
+   -- write strobe, dma.vhd). The compare depth depends on the clock ratio:
+   -- the copy two clk3x cycles old at 3:1 (upstream), one cycle old at 2:1.
+   assert CLK_FAST_RATIO = 2 or CLK_FAST_RATIO = 3 report "psx_top: CLK_FAST_RATIO must be 2 or 3" severity failure;
+
    process (clk3x)
    begin
       if rising_edge(clk3x) then
          clk1xToggle3x   <= clk1xToggle;
          clk1xToggle3X_1 <= clk1xToggle3X;
          clk3xIndex    <= '0';
-         if (clk1xToggle3X_1 = clk1xToggle) then
+         if (CLK_FAST_RATIO = 2) then
+            if (clk1xToggle3X = clk1xToggle) then
+               clk3xIndex <= '1';
+            end if;
+         elsif (clk1xToggle3X_1 = clk1xToggle) then
             clk3xIndex <= '1';
          end if;
       end if;
    end process;
 
    -- busses
-   process (clk1x)
+   process (clk_cpu)
    begin
-      if rising_edge(clk1x) then
+      if rising_edge(clk_cpu) then
       
          bus_exp1_dataRead <= (others => '0');
          if (bus_exp1_read = '1') then
@@ -748,22 +961,22 @@ begin
    
    isPaused <= pausing;
    
-   process (clk1x)
+   process (clk_cpu)
    begin
-      if rising_edge(clk1x) then
+      if rising_edge(clk_cpu) then
       
-         if (reset = '1' or pausing = '1') then
+         if (reset_c = '1' or pausing = '1') then
          
             ce        <= '0';
             if (reset_intern = '1') then
                cpuPaused <= '0';
             end if;
             
-            if (pause = '1') then
+            if (pause_c = '1') then
                pausing   <= '1';
             end if;
             
-            if (pause = '0' and savestate_pause = '0' and memcard1_pause = '0' and memcard2_pause = '0' and pauseCD = '0' and allowunpause = '1') then
+            if (pause_c = '0' and savestate_pause = '0' and memcard1_pause = '0' and memcard2_pause = '0' and pauseCD = '0' and allowunpause = '1') then
                pausing   <= '0';
                pausingSS <= '0';
             end if;
@@ -785,7 +998,7 @@ begin
                   pausing   <= '1';
                   ce        <= '0';
                -- switch to pause/savestate pausing
-               elsif ((pause = '1' or savestate_pause = '1' or memcard1_pause = '1' or memcard2_pause = '1') and cpuPaused = '0' and dmaRequest = '0' and canDMA = '1' and stallNext = '0' and SS_idle = '1') then
+               elsif ((pause_c = '1' or savestate_pause = '1' or memcard1_pause = '1' or memcard2_pause = '1') and cpuPaused = '0' and dmaRequest = '0' and canDMA = '1' and stallNext = '0' and SS_idle = '1') then
                   pausing   <= '1';
                   pausingSS <= '1';
                   ce        <= '0';
@@ -799,7 +1012,7 @@ begin
             
          end if;   
          
-         if (reset_in = '1') then
+         if (reset_in_c = '1') then
             pausing   <= '0';
             pausingSS <= '0';
          end if;
@@ -808,9 +1021,9 @@ begin
    end process;
    
    -- error codes
-   process (clk1x)
+   process (clk_cpu)
    begin
-      if rising_edge(clk1x) then
+      if rising_edge(clk_cpu) then
          if (reset_intern = '1') then
             errorEna  <= '0';
             errorCode <= x"0";
@@ -860,8 +1073,9 @@ begin
          memHPScard1_ack     <= '0';
          memHPScard2_ack     <= '0';
          memSPU_ack          <= '0';
+         memZN_ack           <= '0';
       
-         if (reset_intern = '1') then
+         if (reset_intern_p = '1') then
             arbiter_active    <= '0';
             vram_pause        <= '0';
             ddr3state         <= ARBITERIDLE;
@@ -871,6 +1085,7 @@ begin
             memHPScard1_acknext   <= '0';
             memHPScard2_acknext   <= '0';
             memSPU_acknext        <= '0';
+            memZN_acknext         <= '0';
          else
          
             case (ddr3state) is
@@ -881,7 +1096,8 @@ begin
                   memHPScard1_acknext   <= '0';
                   memHPScard2_acknext   <= '0';
                   memSPU_acknext        <= '0';
-                  if (memDDR3card1_request = '1' or memDDR3card2_request = '1' or memHPScard1_request = '1' or memHPScard2_request = '1' or memSPU_request = '1') then
+                  memZN_acknext         <= '0';
+                  if (memDDR3card1_request = '1' or memDDR3card2_request = '1' or memHPScard1_request = '1' or memHPScard2_request = '1' or memSPU_request = '1' or memZN_request = '1') then
                      vram_pause <= '1';
                      ddr3state  <= WAITGPUPAUSED;
                   end if;
@@ -930,6 +1146,14 @@ begin
                         arbiter_BE           <= memSPU_BE;      
                         arbiter_WE           <= memSPU_WE;      
                         arbiter_RD           <= memSPU_RD;
+                     elsif (memZN_request = '1') then
+                        memZN_acknext        <= '1';
+                        arbiter_BURSTCNT     <= memZN_BURSTCNT;
+                        arbiter_ADDR         <= memZN_ADDR;    
+                        arbiter_DIN          <= memZN_DIN;     
+                        arbiter_BE           <= memZN_BE;      
+                        arbiter_WE           <= memZN_WE;      
+                        arbiter_RD           <= memZN_RD;
                      end if;
                   end if;
                
@@ -943,6 +1167,7 @@ begin
                      if (memHPScard1_acknext  = '1') then memHPScard1_ack <= '1';  end if;
                      if (memHPScard2_acknext  = '1') then memHPScard2_ack <= '1';  end if;
                      if (memSPU_acknext       = '1') then memSPU_ack <= '1';       end if;
+                     if (memZN_acknext        = '1') then memZN_ack <= '1';        end if;
                   end if;
                
                when WAITDONE =>
@@ -951,7 +1176,8 @@ begin
                       (memDDR3card2_request and memDDR3card2_acknext) = '0' and 
                       (memHPScard1_request  and memHPScard1_acknext ) = '0' and 
                       (memHPScard2_request  and memHPScard2_acknext ) = '0' and
-                      (memSPU_request       and memSPU_acknext      ) = '0'
+                      (memSPU_request       and memSPU_acknext      ) = '0' and
+                      (memZN_request        and memZN_acknext       ) = '0'
                      ) then
                      ddr3state      <= ARBITERIDLE;
                      arbiter_active <= '0';
@@ -967,7 +1193,7 @@ begin
    imemctrl : entity work.memctrl
    port map
    (
-      clk1x                => clk1x,
+      clk1x                => clk_cpu,
       ce                   => ce,   
       reset                => reset_intern,
 
@@ -1039,6 +1265,8 @@ begin
    Gun1Y_scanlines <= resize(Gun1Y, 9) - resize(Gun1Y(7 downto 4), 9); -- Gun1Y * 240 / 256
    Gun2Y_scanlines <= resize(Gun2Y, 9) - resize(Gun2Y(7 downto 4), 9); -- Gun1Y * 240 / 256
 
+   gjoypad : if HAS_PADS = 1 generate
+   begin
    ijoypad: entity work.joypad
    port map 
    (
@@ -1132,7 +1360,34 @@ begin
       SS_DataRead          => SS_DataRead_JOYPAD,
       SS_idle              => SS_idle_pad
    );
+   end generate;
+   gnopadbus : if HAS_PADS = 0 and ZN2_BOARD = 0 generate
+   begin
+      irq_PAD              <= '0';
+      bus_pad_dataRead     <= (others => '0');
+   end generate;
+
+   gnojoypad : if HAS_PADS = 0 generate
+   begin
+      joypad1_rumble       <= (others => '0');
+      joypad2_rumble       <= (others => '0');
+      joypad3_rumble       <= (others => '0');
+      joypad4_rumble       <= (others => '0');
+      padMode              <= (others => '0');
+      JustifierIrqEnable   <= (others => '0');
+      selectedPort1Snac    <= '0';
+      selectedPort2Snac    <= '0';
+      transmitValueSnac    <= (others => '0');
+      clk9Snac             <= '0';
+      beginTransferSnac    <= '0';
+      memDDR3card1_request <= '0';
+      memDDR3card2_request <= '0';
+      SS_DataRead_JOYPAD   <= (others => '0');
+      SS_idle_pad          <= '1';
+   end generate;
    
+   gcheats : if HAS_CHEATS = 1 generate
+   begin
    icheats : entity work.cheats
    port map
    (
@@ -1160,11 +1415,19 @@ begin
       BusReadData    => Cheats_BusReadData,
       BusDone        => Cheats_BusDone
    );
+   end generate;
+   gnocheats : if HAS_CHEATS = 0 generate
+   begin
+      Cheats_BusAddr       <= (others => '0');
+      Cheats_BusRnW        <= '1';
+      Cheats_BusByteEnable <= (others => '0');
+      Cheats_BusWriteData  <= (others => '0');
+   end generate;
 
    isio : entity work.sio
    port map
    (
-      clk1x                => clk1x,
+      clk1x                => clk_cpu,
       ce                   => ce,   
       reset                => reset_intern,
       
@@ -1195,7 +1458,7 @@ begin
    iirq : entity work.irq
    port map
    (
-      clk1x                => clk1x,
+      clk1x                => clk_cpu,
       ce                   => ce,   
       reset                => reset_intern,
       
@@ -1237,9 +1500,9 @@ begin
    idma : entity work.dma
    port map
    (
-      clk1x                => clk1x,
-      clk3x                => clk3x,
-      clk3xIndex           => clk3xIndex,
+      clk1x                => clk_cpu,
+      clk3x                => clk_cpu3x,
+      clk3xIndex           => clk3xIndex_c,
       ce                   => ce,   
       reset                => reset_intern,
       
@@ -1302,6 +1565,8 @@ begin
       DMA_SPU_readEna      => DMA_SPU_readEna,    
       DMA_SPU_write        => DMA_SPU_write,    
       DMA_SPU_read         => DMA_SPU_read,
+      DMA_SPU_readStall    => DMA_SPU_readStall,
+      DMA_SPU_readReq      => DMA_SPU_readReq,
       
       bus_addr             => bus_dma_addr,     
       bus_dataWrite        => bus_dma_dataWrite,
@@ -1333,9 +1598,9 @@ begin
                     ram_cpu_Adr(24 downto 23) &        ram_cpu_Adr(22 downto 0) when (ram8mb = '1') else
                     ram_cpu_Adr(24 downto 23) & "00" & ram_cpu_Adr(20 downto 0);
    
-   process (clk1x)
+   process (clk_cpu)
    begin
-      if rising_edge(clk1x) then
+      if rising_edge(clk_cpu) then
       
          if (ram_ena = '1') then
             ram_next_cpu <= '0';
@@ -1352,9 +1617,10 @@ begin
    itimer : entity work.timer
    port map
    (
-      clk1x                => clk1x,
+      clk1x                => clk_cpu,
       ce                   => ce,   
       reset                => reset_intern,
+      sys_tick             => sys_tick,
       
       error                => errorTimer,
       
@@ -1387,6 +1653,8 @@ begin
       SS_DataRead          => SS_DataRead_TIMER
    );
    
+   gcd : if HAS_CD = 1 generate
+   begin
    icd_top : entity work.cd_top
    port map
    (
@@ -1448,22 +1716,43 @@ begin
       SS_DataRead          => SS_DataRead_CD,
       SS_Idle              => SS_Idle_cd
    );
+   end generate;
+   gnocd : if HAS_CD = 0 generate
+   begin
+      region_out           <= region;
+      pauseCD              <= '0';
+      Pause_idle_cd        <= '1';
+      cdSlow               <= '0';
+      errorCD              <= '0';
+      LBAdisplay           <= (others => '0');
+      irq_CDROM            <= '0';
+      cd_left              <= (others => '0');
+      cd_right             <= (others => '0');
+      bus_cd_dataRead      <= (others => '0');
+      DMA_CD_read          <= (others => '0');
+      cd_hps_lba           <= (others => '0');
+      cd_hps_lba_sim       <= (others => '0');
+      resetFromCD          <= '0';
+      SS_DataRead_CD       <= (others => '0');
+      SS_Idle_cd           <= '1';
+   end generate;
 
    cdslowEna <= cdSlow and cdslowOn;
 
    igpu : entity work.gpu
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
    port map
    (
       clk1x                => clk1x,
       clk2x                => clk2x,
       clk2xIndex           => clk2xIndex,
       clkvid               => clkvid,
-      ce                   => ce,   
-      reset                => reset_intern,
+      ce                   => ce_p,   
+      reset                => reset_intern_p,
       
-      allowunpause         => allowunpause,
+      allowunpause         => allowunpause_p,
       savestate_busy       => savestate_busy,
-      system_paused        => pausing,
+      system_paused        => pausing_p,
       
       ditherOff            => ditherOff,
       interlaced480pHack   => interlaced480pHack,
@@ -1479,7 +1768,7 @@ begin
       dither24             => dither24,
       render24             => render24,
       drawSlow             => drawSlow,
-      debugmodeOn          => debugmodeOn,
+      debugmodeOn          => debugmodeOn_p,
       syncVideoOut         => syncVideoOut,
       syncInterlace        => syncInterlace,
       rotate180            => rotate180,
@@ -1504,36 +1793,36 @@ begin
       cdSlow               => cdslowEna,
       
       errorOn              => errorOn,  
-      errorEna             => errorEna, 
-      errorCode            => errorCode,
+      errorEna             => errorEna_p, 
+      errorCode            => errorCode_p,
       
       LBAOn                => LBAOn,
       LBAdisplay           => LBAdisplay,
       
-      errorLINE            => errorLINE,
-      errorRECT            => errorRECT,
-      errorPOLY            => errorPOLY,
-      errorGPU             => errorGPU, 
-      errorMASK            => errorMASK, 
-      errorFIFO            => errorGPUFIFO,
+      errorLINE            => errorLINE_p,
+      errorRECT            => errorRECT_p,
+      errorPOLY            => errorPOLY_p,
+      errorGPU             => errorGPU_p, 
+      errorMASK            => errorMASK_p, 
+      errorFIFO            => errorGPUFIFO_p,
       
-      bus_addr             => bus_gpu_addr,     
-      bus_dataWrite        => bus_gpu_dataWrite,
-      bus_read             => bus_gpu_read,     
-      bus_write            => bus_gpu_write,    
-      bus_dataRead         => bus_gpu_dataRead, 
-      bus_stall            => bus_gpu_stall, 
+      bus_addr             => bus_gpu_addr_p,     
+      bus_dataWrite        => bus_gpu_dataWrite_p,
+      bus_read             => bus_gpu_read_p,     
+      bus_write            => bus_gpu_write_p,    
+      bus_dataRead         => bus_gpu_dataRead_p, 
+      bus_stall            => bus_gpu_stall_p, 
       
-      dmaOn                => dmaOn,
-      gpu_dmaRequest       => gpu_dmaRequest,  
-      DMA_GPU_waiting      => DMA_GPU_waiting,
-      DMA_GPU_writeEna     => DMA_GPU_writeEna,
-      DMA_GPU_readEna      => DMA_GPU_readEna, 
-      DMA_GPU_write        => DMA_GPU_write,   
-      DMA_GPU_read         => DMA_GPU_read,  
+      dmaOn                => dmaOn_p,
+      gpu_dmaRequest       => gpu_dmaRequest_p,  
+      DMA_GPU_waiting      => DMA_GPU_waiting_p,
+      DMA_GPU_writeEna     => DMA_GPU_writeEna_p,
+      DMA_GPU_readEna      => DMA_GPU_readEna_p, 
+      DMA_GPU_write        => DMA_GPU_write_p,   
+      DMA_GPU_read         => DMA_GPU_read_p,  
       
-      irq_VBLANK           => irq_VBLANK,
-      irq_GPU              => irq_GPU,
+      irq_VBLANK           => irq_VBLANK_p,
+      irq_GPU              => irq_GPU_p,
       
       vram_pause           => vram_pause, 
       vram_paused          => vram_paused,
@@ -1547,9 +1836,9 @@ begin
       vram_WE              => vram_WE,        
       vram_RD              => vram_RD, 
 
-      hblank_tmr           => hblank_tmr,
-      vblank_tmr           => vblank_tmr,
-      dotclock             => dotclock,
+      hblank_tmr           => hblank_tmr_p,
+      vblank_tmr           => vblank_tmr_p,
+      dotclock             => dotclock_p,
       
       video_hsync          => hsync, 
       video_vsync          => vsync, 
@@ -1577,19 +1866,21 @@ begin
       export_gobj          => export_gobj,
 -- synthesis translate_on
       
-      loading_savestate    => loading_savestate,
-      SS_reset             => SS_reset,
-      SS_DataWrite         => SS_DataWrite,
-      SS_Adr               => SS_Adr(2 downto 0),
-      SS_wren_GPU          => SS_wren(1),     
-      SS_wren_Timing       => SS_wren(2),      
+      loading_savestate    => loading_savestate_p,
+      SS_reset             => SS_reset_p,
+      SS_DataWrite         => SS_DataWrite_p,
+      SS_Adr               => SS_Adr_p(2 downto 0),
+      SS_wren_GPU          => SS_wren_p(1),     
+      SS_wren_Timing       => SS_wren_p(2),      
       SS_rden_GPU          => SS_rden(1),     
       SS_rden_Timing       => SS_rden(2),
       SS_DataRead_GPU      => SS_DataRead_GPU,
       SS_DataRead_Timing   => SS_DataRead_GPUTiming,
-      SS_Idle              => SS_Idle_gpu
+      SS_Idle              => SS_Idle_gpu_p
    );
    
+   gmdec : if HAS_MDEC = 1 generate
+   begin
    imdec : entity work.mdec
    port map
    (
@@ -1620,6 +1911,16 @@ begin
       SS_DataRead          => SS_DataRead_MDEC,
       SS_Idle              => SS_Idle_mdec
    );
+   end generate;
+   gnomdec : if HAS_MDEC = 0 generate
+   begin
+      bus_mdec_dataRead    <= (others => '0');
+      mdec_dmaWriteRequest <= '0';
+      mdec_dmaReadRequest  <= '0';
+      DMA_MDEC_read        <= (others => '0');
+      SS_DataRead_MDEC     <= (others => '0');
+      SS_Idle_mdec         <= '1';
+   end generate;
 
    ispu : entity work.spu
    port map
@@ -1627,8 +1928,8 @@ begin
       clk1x                => clk1x,   
       clk2x                => clk2x,    
       clk2xIndex           => clk2xIndex,      
-      ce                   => ce,        
-      reset                => reset_intern,     
+      ce                   => ce_p,        
+      reset                => reset_intern_p,     
       
       SPUon                => SPUon,
       SPUIRQTrigger        => SPUIRQTrigger,
@@ -1637,30 +1938,30 @@ begin
       REPRODUCIBLESPUDMA   => REPRODUCIBLESPUDMA,
       REVERBOFF            => REVERBOFF,
       
-      cpuPaused            => cpuPaused,
+      cpuPaused            => cpuPaused_p,
       
       spu_tick             => spu_tick,
       cd_left              => cd_left,
       cd_right             => cd_right,
       
-      irqOut               => irq_SPU,
+      irqOut               => irq_SPU_p,
       
-      sound_timeout        => errorSPUTIME,
+      sound_timeout        => errorSPUTIME_p,
       
       sound_out_left       => sound_out_left, 
       sound_out_right      => sound_out_right,
       
-      bus_addr             => bus_spu_addr,     
-      bus_dataWrite        => bus_spu_dataWrite,
-      bus_read             => bus_spu_read,     
-      bus_write            => bus_spu_write,    
-      bus_dataRead         => bus_spu_dataRead, 
+      bus_addr             => bus_spu_addr_p,     
+      bus_dataWrite        => bus_spu_dataWrite_p,
+      bus_read             => bus_spu_read_p,     
+      bus_write            => bus_spu_write_p,    
+      bus_dataRead         => bus_spu_dataRead_p, 
       
-      spu_dmaRequest       => spu_dmaRequest, 
-      dma_read             => DMA_SPU_readEna,      
-      dma_readdata         => DMA_SPU_read, 
-      dma_write            => DMA_SPU_writeEna, 
-      dma_writedata        => DMA_SPU_write,
+      spu_dmaRequest       => spu_dmaRequest_p, 
+      dma_read             => DMA_SPU_readEna_p,      
+      dma_readdata         => DMA_SPU_read_p, 
+      dma_write            => DMA_SPU_writeEna_p, 
+      dma_writedata        => DMA_SPU_write_p,
           
       sdram_dataWrite      => spuram_dataWrite,
       sdram_dataRead       => spuram_dataRead, 
@@ -1681,14 +1982,14 @@ begin
       mem_DOUT             => ddr3_DOUT,      
       mem_DOUT_READY       => ddr3_DOUT_READY,
       
-      SS_reset             => SS_reset,
-      loading_savestate    => loading_savestate,
-      SS_DataWrite         => SS_DataWrite,
-      SS_Adr               => SS_Adr(8 downto 0),  
-      SS_wren              => SS_wren(9),     
+      SS_reset             => SS_reset_p,
+      loading_savestate    => loading_savestate_p,
+      SS_DataWrite         => SS_DataWrite_p,
+      SS_Adr               => SS_Adr_p(8 downto 0),  
+      SS_wren              => SS_wren_p(9),     
       SS_rden              => SS_rden(9),     
       SS_DataRead          => SS_DataRead_SOUND,
-      SS_idle              => SS_idle_spu,
+      SS_idle              => SS_idle_spu_p,
       
       SS_RAM_dataWrite     => SS_SPURAM_dataWrite,
       SS_RAM_Adr           => SS_SPURAM_Adr,      
@@ -1701,7 +2002,7 @@ begin
    iexp2 : entity work.exp2
    port map
    (
-      clk1x                => clk1x,
+      clk1x                => clk_cpu,
       ce                   => ce,   
       reset                => reset_intern,
       
@@ -1713,17 +2014,22 @@ begin
    );
 
    imemorymux : entity work.memorymux
+   generic map
+   (
+      ZN2_MAP              => ZN2_BOARD,
+      ZN2_READ_OVERLAP     => ZN2_READ_OVERLAP
+   )
    port map
    (
-      clk1x                => clk1x,
-      clk2x                => clk2x,
+      clk1x                => clk_cpu,
+      clk2x                => clk_cpu2x,
       ce                   => ce,   
       reset                => reset_intern,
       
       pauseNext            => cpuPaused or (dmaRequest and canDMA),
       isIdle               => memMuxIdle,
          
-      loadExe              => loadExe,
+      loadExe              => loadExe_c,
       exe_initial_pc       => exe_initial_pc,  
       exe_initial_gp       => exe_initial_gp,  
       exe_load_address     => exe_load_address,
@@ -1839,6 +2145,7 @@ begin
       bus_spu_read         => bus_spu_read,     
       bus_spu_write        => bus_spu_write,    
       bus_spu_dataRead     => bus_spu_dataRead, 
+      bus_spu_stall        => bus_spu_stall,
       
       ex2_memctrl          => ex2_memctrl,
       bus_exp2_addr        => bus_exp2_addr,     
@@ -1863,15 +2170,23 @@ begin
       SS_DataWrite         => SS_DataWrite,
       SS_Adr               => SS_Adr(18 downto 0),
       SS_wren_SDRam        => SS_wren(16),
-      SS_rden_SDRam        => SS_rden(16)
+      SS_rden_SDRam        => SS_rden(16),
+      
+      zn_req               => zn_req,
+      zn_we                => zn_we,
+      zn_addr              => zn_addr,
+      zn_be                => zn_be,
+      zn_wdata             => zn_wdata,
+      zn_ack               => zn_ack,
+      zn_rdata             => zn_rdata
    );
    
    icpu : entity work.cpu
    port map
    (
-      clk1x             => clk1x,
-      clk2x             => clk2x,
-      clk3x             => clk3x,
+      clk1x             => clk_cpu,
+      clk2x             => clk_cpu2x,
+      clk3x             => clk_cpu3x,
       ce                => ce,   
       reset             => reset_intern,
       
@@ -1941,15 +2256,17 @@ begin
       cpu_export        => cpu_export,
 -- synthesis translate_on
       
-      debug_firstGTE    => debug_firstGTE
+      debug_firstGTE    => debug_firstGTE,
+      debug_pc          => cpu_debug_pc
    );
    
    igte : entity work.gte
+   generic map (NARROW_MUL => GTE_NARROW_MUL)
    port map
    (
-      clk1x                => clk1x,     
-      clk2x                => clk2x,     
-      clk2xIndex           => clk2xIndex,
+      clk1x                => clk_cpu,     
+      clk2x                => clk_cpu2x,     
+      clk2xIndex           => clk2xIndex_c,
       ce                   => ce,        
       reset                => reset_intern,     
       
@@ -1988,6 +2305,8 @@ begin
    memcard_changed <= MemCard_changePending1 or MemCard_changePending2;
    saving_memcard  <= MemCard_saving_memcard1 or MemCard_saving_memcard2;
    
+   gmemcards : if HAS_PADS = 1 generate
+   begin
    imemcard1 : entity work.memcard
    port map
    (
@@ -2067,22 +2386,39 @@ begin
       memcard_dataIn       => memcard2_dataIn, 
       memcard_dataOut      => memcard2_dataOut
    );
+   end generate;
+   gnomemcards : if HAS_PADS = 0 generate
+   begin
+      MemCard_changePending1  <= '0';
+      MemCard_changePending2  <= '0';
+      MemCard_saving_memcard1 <= '0';
+      MemCard_saving_memcard2 <= '0';
+      memcard1_pause          <= '0';
+      memcard2_pause          <= '0';
+      memHPScard1_request     <= '0';
+      memHPScard2_request     <= '0';
+      memcard1_lba            <= (others => '0');
+      memcard2_lba            <= (others => '0');
+      memcard1_dataOut        <= (others => '0');
+      memcard2_dataOut        <= (others => '0');
+   end generate;
    
    isavestates : entity work.savestates
    generic map
    (
       FASTSIM                 => is_simu,
-      Softmap_SaveState_ADDR  => 58720256
+      Softmap_SaveState_ADDR  => 58720256,
+      CPU_FILL_EXT            => CPU_CLK_SPLIT
    )
    port map
    (
       clk1x                   => clk1x,
       clk2x                   => clk2x,
       clk2xIndex              => clk2xIndex,
-      ce                      => ce,
+      ce                      => ce_p,
       reset_in                => reset_in,
-      reset_out               => reset_intern,
-      ss_reset                => SS_reset,
+      reset_out               => reset_intern_p,
+      ss_reset                => SS_reset_p,
       
       hps_busy                => hps_busy,
       loadExe                 => loadExe,
@@ -2097,17 +2433,17 @@ begin
       savestate_address       => savestate_address,  
       savestate_busy          => savestate_busy,    
 
-      SS_idle                 => SS_idle,
-      system_paused           => pausingSS,
-      savestate_pause         => savestate_pause,
+      SS_idle                 => SS_idle_p,
+      system_paused           => pausingSS_p,
+      savestate_pause         => savestate_pause_p,
       ddr3_savestate          => ddr3_savestate,
       
       useSPUSDRAM             => SPUSDRAM,
       
-      SS_DataWrite            => SS_DataWrite,   
-      SS_Adr                  => SS_Adr,         
-      SS_wren                 => SS_wren,       
-      SS_rden                 => SS_rden,       
+      SS_DataWrite            => SS_DataWrite_p,   
+      SS_Adr                  => SS_Adr_p,         
+      SS_wren                 => SS_wren_eng,       
+      SS_rden                 => SS_rden_eng,       
       SS_DataRead_CPU         => SS_DataRead_CPU,
       SS_DataRead_GPU         => SS_DataRead_GPU,
       SS_DataRead_GPUTiming   => SS_DataRead_GPUTiming,
@@ -2123,9 +2459,9 @@ begin
       SS_DataRead_SCP         => SS_DataRead_SCP,
       SS_DataRead_CD          => SS_DataRead_CD,
 
-      sdram_done              => ram_done,
+      sdram_done              => ram_done_p,
       
-      loading_savestate       => loading_savestate,
+      loading_savestate       => loading_savestate_p,
       saving_savestate        => open,
             
       ddr3_BUSY               => ddr3_BUSY,      
@@ -2138,17 +2474,30 @@ begin
       ddr3_WE                 => ss_ram_WE,      
       ddr3_RD                 => ss_ram_RD,
 
-      ram_done                => ram_cpu_done,   
-      ram_data                => ram_dataRead32,
+      ram_done                => ram_cpu_done_p,   
+      ram_data                => ram_dataRead32_p,
       
       SS_SPURAM_dataWrite     => SS_SPURAM_dataWrite,
       SS_SPURAM_Adr           => SS_SPURAM_Adr,      
       SS_SPURAM_request       => SS_SPURAM_request,  
       SS_SPURAM_rnw           => SS_SPURAM_rnw,      
       SS_SPURAM_dataRead      => SS_SPURAM_dataRead, 
-      SS_SPURAM_done          => SS_SPURAM_done     
+      SS_SPURAM_done          => SS_SPURAM_done,
+
+      ext_fill_req            => ext_fill_req,
+      ext_fill_done           => ext_fill_done
    );  
 
+   -- HAS_SAVESTATES = 0: reset still runs through the savestate engine, but
+   -- only types 12-16 (scratchpad, CD, SPU RAM, VRAM, SDRAM zero fill) are
+   -- written in reset mode. Forcing the other write strobes and all read
+   -- strobes to 0 lets each module's saved-state registers reduce to their
+   -- SS_reset constants.
+   SS_wren_p <= SS_wren_eng when HAS_SAVESTATES = 1 else SS_wren_eng and "11111000000000000";
+   SS_rden <= SS_rden_eng when HAS_SAVESTATES = 1 else (others => '0');
+
+   gstatemanager : if HAS_SAVESTATES = 1 generate
+   begin
    istatemanager : entity work.statemanager
    generic map
    (
@@ -2177,6 +2526,381 @@ begin
       request_address     => savestate_address,  
       request_busy        => savestate_busy    
    );
+   end generate;
+   gnostatemanager : if HAS_SAVESTATES = 0 generate
+   begin
+      savestate_savestate  <= '0';
+      savestate_loadstate  <= '0';
+      savestate_address    <= 0;
+   end generate;
+
+   -- ############################################################
+   -- R1 CPU_CLK_SPLIT (docs/r1_cpu_domain_design.md): wiring between the
+   -- CPU group and the PS1 group (GPU, SPU, savestates engine, DDR3 arbiter)
+   -- ############################################################
+   gsplit0 : if CPU_CLK_SPLIT = 0 generate
+   begin
+      -- upstream: one clock group, the copies are plain wires
+      reset_c              <= reset;
+      pause_c              <= pause;
+      loadExe_c            <= loadExe;
+      reset_in_c           <= reset_in;
+      reset_exe_p          <= reset_exe;
+      clk2xIndex_c         <= clk2xIndex;
+      clk3xIndex_c         <= clk3xIndex;
+      sys_tick             <= '1';
+      ce_p                 <= ce;
+      pausing_p            <= pausing;
+      pausingSS_p          <= pausingSS;
+      cpuPaused_p          <= cpuPaused;
+      dmaOn_p              <= dmaOn;
+      reset_intern         <= reset_intern_p;
+      SS_reset             <= SS_reset_p;
+      loading_savestate    <= loading_savestate_p;
+      savestate_pause      <= savestate_pause_p;
+      allowunpause         <= allowunpause_p;
+      SS_Idle_gpu          <= SS_Idle_gpu_p;
+      SS_idle_spu          <= SS_idle_spu_p;
+      SS_idle_p            <= SS_idle;
+      SS_DataWrite         <= SS_DataWrite_p;
+      SS_Adr               <= SS_Adr_p;
+      SS_wren              <= SS_wren_p;
+      ram_done_p           <= ram_done;
+      ram_cpu_done_p       <= ram_cpu_done;
+      ram_dataRead32_p     <= ram_dataRead32;
+      ext_fill_done        <= '0';
+      errorEna_p           <= errorEna;
+      errorCode_p          <= errorCode;
+      debugmodeOn_p        <= debugmodeOn;
+      errorLINE            <= errorLINE_p;
+      errorRECT            <= errorRECT_p;
+      errorPOLY            <= errorPOLY_p;
+      errorGPU             <= errorGPU_p;
+      errorMASK            <= errorMASK_p;
+      errorGPUFIFO         <= errorGPUFIFO_p;
+      errorSPUTIME         <= errorSPUTIME_p;
+      bus_gpu_addr_p       <= bus_gpu_addr;
+      bus_gpu_dataWrite_p  <= bus_gpu_dataWrite;
+      bus_gpu_read_p       <= bus_gpu_read;
+      bus_gpu_write_p      <= bus_gpu_write;
+      bus_gpu_dataRead     <= bus_gpu_dataRead_p;
+      bus_gpu_stall        <= bus_gpu_stall_p;
+      gpu_dmaRequest       <= gpu_dmaRequest_p;
+      DMA_GPU_waiting_p    <= DMA_GPU_waiting;
+      DMA_GPU_writeEna_p   <= DMA_GPU_writeEna;
+      DMA_GPU_readEna_p    <= DMA_GPU_readEna;
+      DMA_GPU_write_p      <= DMA_GPU_write;
+      DMA_GPU_read         <= DMA_GPU_read_p;
+      irq_VBLANK           <= irq_VBLANK_p;
+      irq_GPU              <= irq_GPU_p;
+      irq_SPU              <= irq_SPU_p;
+      hblank_tmr           <= hblank_tmr_p;
+      vblank_tmr           <= vblank_tmr_p;
+      dotclock             <= dotclock_p;
+      bus_spu_addr_p       <= bus_spu_addr;
+      bus_spu_dataWrite_p  <= bus_spu_dataWrite;
+      bus_spu_read_p       <= bus_spu_read;
+      bus_spu_write_p      <= bus_spu_write;
+      bus_spu_dataRead     <= bus_spu_dataRead_p;
+      bus_spu_stall        <= '0';
+      spu_dmaRequest       <= spu_dmaRequest_p;
+      DMA_SPU_writeEna_p   <= DMA_SPU_writeEna;
+      DMA_SPU_readEna_p    <= DMA_SPU_readEna;
+      DMA_SPU_write_p      <= DMA_SPU_write;
+      DMA_SPU_read         <= DMA_SPU_read_p;
+      DMA_SPU_readStall    <= '0';
+   end generate;
+
+   gsplit1 : if CPU_CLK_SPLIT = 1 generate
+      signal c_cpu_idle    : std_logic;
+      signal p_cpu_idle    : std_logic;
+      signal c_err         : std_logic_vector(6 downto 0);
+      signal p_err_disp    : std_logic_vector(5 downto 0);
+      signal p_err         : std_logic_vector(6 downto 0);
+      signal c_err_disp    : std_logic_vector(5 downto 0);
+      -- component, so builds without CPU_CLK_SPLIT need no rtl/gnet/cpu_split files
+      component cpu_split is
+      generic (
+         FASTSIM         : std_logic := '0';
+         CLK_FAST_RATIO  : integer   := 2;
+         FILL_RAM_WORDS  : positive  := 524288;
+         SIM_META_WINDOW : time      := 0 ns
+      );
+      port (
+         clk_cpu              : in  std_logic;
+         clk_cpu2x            : in  std_logic;
+         clk1x                : in  std_logic;
+         clk2x                : in  std_logic;
+         reset_top            : in  std_logic;
+         pause_top            : in  std_logic;
+         loadExe_top          : in  std_logic;
+         c_reset              : out std_logic;
+         c_pause              : out std_logic;
+         c_loadExe            : out std_logic;
+         c_reset_in           : out std_logic;
+         p_reset_top          : out std_logic;
+         c_reset_exe          : in  std_logic;
+         p_reset_exe          : out std_logic;
+         p_SS_reset           : in  std_logic;
+         p_reset_intern       : in  std_logic;
+         c_SS_reset           : out std_logic;
+         c_reset_intern       : out std_logic;
+         p_savestate_pause    : in  std_logic;
+         c_savestate_pause    : out std_logic;
+         p_loading_savestate  : in  std_logic;
+         c_loading_savestate  : out std_logic;
+         p_fill_req           : in  std_logic;
+         p_fill_done          : out std_logic;
+         c_SS_wren            : out std_logic_vector(16 downto 0);
+         c_SS_Adr             : out unsigned(18 downto 0);
+         c_SS_DataWrite       : out std_logic_vector(31 downto 0);
+         c_ram_done           : in  std_logic;
+         c_ce                 : in  std_logic;
+         c_pausing            : in  std_logic;
+         c_pausingSS          : in  std_logic;
+         c_cpuPaused          : in  std_logic;
+         c_dmaOn              : in  std_logic;
+         c_DMA_GPU_waiting    : in  std_logic;
+         c_cpu_idle           : in  std_logic;
+         p_ce                 : out std_logic;
+         p_pausing            : out std_logic;
+         p_pausingSS          : out std_logic;
+         p_cpuPaused          : out std_logic;
+         p_dmaOn              : out std_logic;
+         p_DMA_GPU_waiting    : out std_logic;
+         p_cpu_idle           : out std_logic;
+         p_allowunpause       : in  std_logic;
+         p_gpu_idle           : in  std_logic;
+         p_spu_idle           : in  std_logic;
+         c_allowunpause       : out std_logic;
+         c_gpu_idle           : out std_logic;
+         c_spu_idle           : out std_logic;
+         p_err                : in  std_logic_vector(6 downto 0);
+         c_err                : out std_logic_vector(6 downto 0);
+         c_err_disp           : in  std_logic_vector(5 downto 0);
+         p_err_disp           : out std_logic_vector(5 downto 0);
+         p_hblank_tmr         : in  std_logic;
+         p_vblank_tmr         : in  std_logic;
+         p_dotclock           : in  std_logic;
+         p_irq_VBLANK         : in  std_logic;
+         p_irq_GPU            : in  std_logic;
+         p_irq_SPU            : in  std_logic;
+         c_hblank_tmr         : out std_logic;
+         c_vblank_tmr         : out std_logic;
+         c_dotclock           : out std_logic;
+         c_irq_VBLANK         : out std_logic;
+         c_irq_GPU            : out std_logic;
+         c_irq_SPU            : out std_logic;
+         c_sys_tick           : out std_logic;
+         c_clk2xIndex         : out std_logic;
+         c_clk3xIndex         : out std_logic;
+         c_bus_gpu_addr       : in  unsigned(3 downto 0);
+         c_bus_gpu_dataWrite  : in  std_logic_vector(31 downto 0);
+         c_bus_gpu_read       : in  std_logic;
+         c_bus_gpu_write      : in  std_logic;
+         c_bus_gpu_dataRead   : out std_logic_vector(31 downto 0);
+         c_bus_gpu_stall      : out std_logic;
+         c_DMA_GPU_writeEna   : in  std_logic;
+         c_DMA_GPU_write      : in  std_logic_vector(31 downto 0);
+         c_DMA_GPU_readEna    : in  std_logic;
+         c_DMA_GPU_read       : out std_logic_vector(31 downto 0);
+         c_gpu_dmaRequest     : out std_logic;
+         p_bus_gpu_addr       : out unsigned(3 downto 0);
+         p_bus_gpu_dataWrite  : out std_logic_vector(31 downto 0);
+         p_bus_gpu_read       : out std_logic;
+         p_bus_gpu_write      : out std_logic;
+         p_bus_gpu_dataRead   : in  std_logic_vector(31 downto 0);
+         p_bus_gpu_stall      : in  std_logic;
+         p_DMA_GPU_writeEna   : out std_logic;
+         p_DMA_GPU_write      : out std_logic_vector(31 downto 0);
+         p_DMA_GPU_readEna    : out std_logic;
+         p_DMA_GPU_read       : in  std_logic_vector(31 downto 0);
+         p_gpu_dmaRequest     : in  std_logic;
+         c_bus_spu_addr       : in  unsigned(9 downto 0);
+         c_bus_spu_dataWrite  : in  std_logic_vector(15 downto 0);
+         c_bus_spu_read       : in  std_logic;
+         c_bus_spu_write      : in  std_logic;
+         c_bus_spu_dataRead   : out std_logic_vector(15 downto 0);
+         c_bus_spu_stall      : out std_logic;
+         c_DMA_SPU_writeEna   : in  std_logic;
+         c_DMA_SPU_write      : in  std_logic_vector(15 downto 0);
+         c_DMA_SPU_readReq    : in  std_logic;
+         c_DMA_SPU_readEna    : in  std_logic;
+         c_DMA_SPU_readStall  : out std_logic;
+         c_DMA_SPU_read       : out std_logic_vector(15 downto 0);
+         c_spu_dmaRequest     : out std_logic;
+         p_bus_spu_addr       : out unsigned(9 downto 0);
+         p_bus_spu_dataWrite  : out std_logic_vector(15 downto 0);
+         p_bus_spu_read       : out std_logic;
+         p_bus_spu_write      : out std_logic;
+         p_bus_spu_dataRead   : in  std_logic_vector(15 downto 0);
+         p_DMA_SPU_writeEna   : out std_logic;
+         p_DMA_SPU_write      : out std_logic_vector(15 downto 0);
+         p_DMA_SPU_readEna    : out std_logic;
+         p_DMA_SPU_read       : in  std_logic_vector(15 downto 0);
+         p_spu_dmaRequest     : in  std_logic
+      );
+      end component;
+      signal c_SS_wren     : std_logic_vector(16 downto 0);
+   begin
+      assert HAS_CD = 0 and HAS_PADS = 0 and HAS_SAVESTATES = 0 and HAS_CHEATS = 0 and HAS_MDEC = 0
+         report "psx_top: CPU_CLK_SPLIT = 1 needs HAS_CD, HAS_PADS, HAS_SAVESTATES, HAS_CHEATS and HAS_MDEC = 0" severity failure;
+      assert CLK_FAST_RATIO = 2
+         report "psx_top: CPU_CLK_SPLIT = 1 needs CLK_FAST_RATIO = 2 (SDRAM at 2x the CPU clock)" severity failure;
+
+      c_cpu_idle <= SS_Idle_mdec and SS_Idle_cd and SS_idle_pad and SS_idle_irq and SS_idle_cpu and SS_idle_gte and SS_idle_dma;
+      SS_idle_p  <= SS_Idle_gpu_p and SS_idle_spu_p and p_cpu_idle;
+
+      -- the engine reads no CPU-group state with CPU_FILL_EXT = 1 (types 12 and 16 go to the CPU-side filler)
+      ram_done_p       <= '0';
+      ram_cpu_done_p   <= '0';
+      ram_dataRead32_p <= (others => '0');
+
+      SS_wren          <= c_SS_wren;
+
+      errorLINE    <= c_err(6);
+      errorRECT    <= c_err(5);
+      errorPOLY    <= c_err(4);
+      errorGPU     <= c_err(3);
+      errorMASK    <= c_err(2);
+      errorGPUFIFO <= c_err(1);
+      errorSPUTIME <= c_err(0);
+      p_err         <= errorLINE_p & errorRECT_p & errorPOLY_p & errorGPU_p & errorMASK_p & errorGPUFIFO_p & errorSPUTIME_p;
+      c_err_disp    <= errorEna & std_logic_vector(errorCode) & debugmodeOn;
+      errorEna_p    <= p_err_disp(5);
+      errorCode_p   <= unsigned(p_err_disp(4 downto 1));
+      debugmodeOn_p <= p_err_disp(0);
+
+      icpu_split : cpu_split
+      generic map
+      (
+         FASTSIM              => is_simu,
+         CLK_FAST_RATIO       => CLK_FAST_RATIO
+      )
+      port map
+      (
+         clk_cpu              => clk_cpu,
+         clk_cpu2x            => clk_cpu2x,
+         clk1x                => clk1x,
+         clk2x                => clk2x,
+
+         reset_top            => reset,
+         pause_top            => pause,
+         loadExe_top          => loadExe,
+         c_reset              => reset_c,
+         c_pause              => pause_c,
+         c_loadExe            => loadExe_c,
+         c_reset_in           => reset_in_c,
+         p_reset_top          => open,
+
+         c_reset_exe          => reset_exe,
+         p_reset_exe          => reset_exe_p,
+         p_SS_reset           => SS_reset_p,
+         p_reset_intern       => reset_intern_p,
+         c_SS_reset           => SS_reset,
+         c_reset_intern       => reset_intern,
+         p_savestate_pause    => savestate_pause_p,
+         c_savestate_pause    => savestate_pause,
+         p_loading_savestate  => loading_savestate_p,
+         c_loading_savestate  => loading_savestate,
+         p_fill_req           => ext_fill_req,
+         p_fill_done          => ext_fill_done,
+         c_SS_wren            => c_SS_wren,
+         c_SS_Adr             => SS_Adr,
+         c_SS_DataWrite       => SS_DataWrite,
+         c_ram_done           => ram_done,
+
+         c_ce                 => ce,
+         c_pausing            => pausing,
+         c_pausingSS          => pausingSS,
+         c_cpuPaused          => cpuPaused,
+         c_dmaOn              => dmaOn,
+         c_DMA_GPU_waiting    => DMA_GPU_waiting,
+         c_cpu_idle           => c_cpu_idle,
+         p_ce                 => ce_p,
+         p_pausing            => pausing_p,
+         p_pausingSS          => pausingSS_p,
+         p_cpuPaused          => cpuPaused_p,
+         p_dmaOn              => dmaOn_p,
+         p_DMA_GPU_waiting    => DMA_GPU_waiting_p,
+         p_cpu_idle           => p_cpu_idle,
+         p_allowunpause       => allowunpause_p,
+         p_gpu_idle           => SS_Idle_gpu_p,
+         p_spu_idle           => SS_idle_spu_p,
+         c_allowunpause       => allowunpause,
+         c_gpu_idle           => SS_Idle_gpu,
+         c_spu_idle           => SS_idle_spu,
+
+         p_err                => p_err,
+         c_err                => c_err,
+         c_err_disp           => c_err_disp,
+         p_err_disp           => p_err_disp,
+
+         p_hblank_tmr         => hblank_tmr_p,
+         p_vblank_tmr         => vblank_tmr_p,
+         p_dotclock           => dotclock_p,
+         p_irq_VBLANK         => irq_VBLANK_p,
+         p_irq_GPU            => irq_GPU_p,
+         p_irq_SPU            => irq_SPU_p,
+         c_hblank_tmr         => hblank_tmr,
+         c_vblank_tmr         => vblank_tmr,
+         c_dotclock           => dotclock,
+         c_irq_VBLANK         => irq_VBLANK,
+         c_irq_GPU            => irq_GPU,
+         c_irq_SPU            => irq_SPU,
+
+         c_sys_tick           => sys_tick,
+         c_clk2xIndex         => clk2xIndex_c,
+         c_clk3xIndex         => clk3xIndex_c,
+
+         c_bus_gpu_addr       => bus_gpu_addr,
+         c_bus_gpu_dataWrite  => bus_gpu_dataWrite,
+         c_bus_gpu_read       => bus_gpu_read,
+         c_bus_gpu_write      => bus_gpu_write,
+         c_bus_gpu_dataRead   => bus_gpu_dataRead,
+         c_bus_gpu_stall      => bus_gpu_stall,
+         c_DMA_GPU_writeEna   => DMA_GPU_writeEna,
+         c_DMA_GPU_write      => DMA_GPU_write,
+         c_DMA_GPU_readEna    => DMA_GPU_readEna,
+         c_DMA_GPU_read       => DMA_GPU_read,
+         c_gpu_dmaRequest     => gpu_dmaRequest,
+         p_bus_gpu_addr       => bus_gpu_addr_p,
+         p_bus_gpu_dataWrite  => bus_gpu_dataWrite_p,
+         p_bus_gpu_read       => bus_gpu_read_p,
+         p_bus_gpu_write      => bus_gpu_write_p,
+         p_bus_gpu_dataRead   => bus_gpu_dataRead_p,
+         p_bus_gpu_stall      => bus_gpu_stall_p,
+         p_DMA_GPU_writeEna   => DMA_GPU_writeEna_p,
+         p_DMA_GPU_write      => DMA_GPU_write_p,
+         p_DMA_GPU_readEna    => DMA_GPU_readEna_p,
+         p_DMA_GPU_read       => DMA_GPU_read_p,
+         p_gpu_dmaRequest     => gpu_dmaRequest_p,
+
+         c_bus_spu_addr       => bus_spu_addr,
+         c_bus_spu_dataWrite  => bus_spu_dataWrite,
+         c_bus_spu_read       => bus_spu_read,
+         c_bus_spu_write      => bus_spu_write,
+         c_bus_spu_dataRead   => bus_spu_dataRead,
+         c_bus_spu_stall      => bus_spu_stall,
+         c_DMA_SPU_writeEna   => DMA_SPU_writeEna,
+         c_DMA_SPU_write      => DMA_SPU_write,
+         c_DMA_SPU_readReq    => DMA_SPU_readReq,
+         c_DMA_SPU_readEna    => DMA_SPU_readEna,
+         c_DMA_SPU_readStall  => DMA_SPU_readStall,
+         c_DMA_SPU_read       => DMA_SPU_read,
+         c_spu_dmaRequest     => spu_dmaRequest,
+         p_bus_spu_addr       => bus_spu_addr_p,
+         p_bus_spu_dataWrite  => bus_spu_dataWrite_p,
+         p_bus_spu_read       => bus_spu_read_p,
+         p_bus_spu_write      => bus_spu_write_p,
+         p_bus_spu_dataRead   => bus_spu_dataRead_p,
+         p_DMA_SPU_writeEna   => DMA_SPU_writeEna_p,
+         p_DMA_SPU_write      => DMA_SPU_write_p,
+         p_DMA_SPU_readEna    => DMA_SPU_readEna_p,
+         p_DMA_SPU_read       => DMA_SPU_read_p,
+         p_spu_dmaRequest     => spu_dmaRequest_p
+      );
+   end generate;
    
    -- export
 -- synthesis translate_off
@@ -2188,7 +2912,7 @@ begin
       iexport : entity work.export
       port map
       (
-         clk               => clk1x,
+         clk               => clk_cpu,
          ce                => ce,
          reset             => reset_intern,
             
@@ -2214,6 +2938,629 @@ begin
    
    end generate;
 -- synthesis translate_on
+   
+   -- ############################################################
+   -- G-NET: ZN-2 board and FC PCB (docs/zn2_layer_design.md 13)
+   -- ############################################################
+   gzoomchk : if ZOOM_BOARD = 1 and (ZN2_BOARD = 0 or CPU_CLK_SPLIT = 0) generate
+   begin
+      assert false report "ZOOM_BOARD = 1 needs ZN2_BOARD = 1 and CPU_CLK_SPLIT = 1 (rtl/gnet/zoom_cdc.vhd)" severity failure;
+   end generate;
+
+   gnozoom : if not (ZOOM_BOARD = 1 and ZN2_BOARD = 1 and CPU_CLK_SPLIT = 1) generate
+   begin
+      zoom_m_req   <= '0';
+      zoom_m_line  <= (others => '0');
+      zoom_rst     <= '1';
+      zoom_aud_l   <= (others => '0');
+      zoom_aud_r   <= (others => '0');
+      zoom_flags   <= (others => '0');
+   end generate;
+
+   gzn2 : if ZN2_BOARD = 1 and CPU_CLK_SPLIT = 0 generate
+   begin
+      assert HAS_PADS = 0 report "ZN2_BOARD = 1 needs HAS_PADS = 0 (SIO0 belongs to the ZN-2 devices)" severity failure;
+
+      izn2_board : entity work.zn2_board
+      generic map
+      (
+         CLK_HZ       => 33868800,
+         FLASH_PRESET => ZN2_FLASH_PRESET,
+         PS1_SIO      => ZN2_PS1_SIO,
+         SPU_STATUS   => ZN2_SPU_STATUS,
+         WD_TIMEOUT_S => ZN2_WD_TIMEOUT_S
+      )
+      port map
+      (
+         clk1x          => clk1x,
+         ce             => ce,
+         reset          => reset_intern,
+         zn_req         => zn_req,
+         zn_we          => zn_we,
+         zn_addr        => zn_addr,
+         zn_be          => zn_be,
+         zn_wdata       => zn_wdata,
+         zn_ack         => zn_ack,
+         zn_rdata       => zn_rdata,
+         sio_addr       => bus_pad_addr,
+         sio_dataWrite  => bus_pad_dataWrite,
+         sio_read       => bus_pad_read,
+         sio_write      => bus_pad_write,
+         sio_writeMask  => bus_pad_writeMask,
+         sio_dataRead   => bus_pad_dataRead,
+         sio_irq        => irq_PAD,
+         in_p1          => zn_in_p1,
+         in_p2          => zn_in_p2,
+         in_service     => zn_in_service,
+         in_system      => zn_in_system,
+         dsw            => zn_dsw,
+         jp1            => zn_jp1,
+         card_present   => zn_card_present,
+         key_valid      => zn_key_valid,
+         coin           => zn_coin,
+         wd_reset       => zn_dbg_wd,
+         zoom_reset     => open,
+         ld_wr          => zn_ld_wr,
+         ld_target      => zn_ld_target,
+         ld_addr        => zn_ld_addr,
+         ld_data        => zn_ld_data,
+         fl_req         => zn_fl_req,
+         fl_rnw         => zn_fl_rnw,
+         fl_addr        => zn_fl_addr,
+         fl_din         => zn_fl_din,
+         fl_be          => zn_fl_be,
+         fl_ready       => zn_fl_ready,
+         fl_dout        => zn_fl_dout,
+         cm_req         => zn_cm_req,
+         cm_we          => zn_cm_we,
+         cm_addr        => zn_cm_addr,
+         cm_wdata       => zn_cm_wdata,
+         cm_ack         => zn_cm_ack,
+         cm_rdata       => zn_cm_rdata,
+         dbg_wd_kick    => zn_dbg_kick,
+         dbg_ctrl       => zn_dbg_ctrl,
+         dbg_sec_cmd    => zn_dbg_sec,
+         nv_clk         => zn_nv_clk,
+         nv_addr        => zn_nv_addr,
+         nv_q           => zn_nv_q,
+         nv_wtog        => zn_nv_wtog
+      );
+
+      zn_wd_reset <= zn_dbg_wd;
+
+      izn2_cardmem : entity work.zn2_cardmem
+      port map
+      (
+         clk2x          => clk2x,
+         reset          => reset_intern,
+         dl_wr          => zn_card_dl_wr,
+         dl_addr        => zn_card_dl_addr,
+         dl_data        => zn_card_dl_data,
+         dl_busy        => zn_card_dl_busy,
+         cm_req         => zn_cm_req,
+         cm_we          => zn_cm_we,
+         cm_addr        => zn_cm_addr,
+         cm_wdata       => zn_cm_wdata,
+         cm_ack         => zn_cm_ack,
+         cm_rdata       => zn_cm_rdata,
+         mem_request    => memZN_request,
+         mem_BURSTCNT   => memZN_BURSTCNT,
+         mem_ADDR       => memZN_ADDR,
+         mem_DIN        => memZN_DIN,
+         mem_BE         => memZN_BE,
+         mem_WE         => memZN_WE,
+         mem_RD         => memZN_RD,
+         mem_ack        => memZN_ack,
+         mem_DOUT       => ddr3_DOUT,
+         mem_DOUT_READY => ddr3_DOUT_READY
+      );
+   end generate;
+
+   -- With CPU_CLK_SPLIT = 1 (docs/r1_cpu_domain_design.md, "ZN-2 layer in
+   -- the CPU group"): zn2_board joins memorymux in the CPU group (clk_cpu,
+   -- CLK_HZ 50,000,000, ce, reset and sys_tick of the CPU group), so the
+   -- expansion bus, SIO0 and IRQ7 stay synchronous, and its flash port is on
+   -- the SDRAM controller's clk_base (clk_cpu, PSX.sv zn2_ch3_arb).
+   -- zn2_cardmem stays on clk2x with the DDR3 arbiter. rtl/gnet/zn2_cdc
+   -- carries the board inputs and the loader in from clk1x, the watchdog
+   -- pulse and the coin outputs back, and the card memory port (C18) to
+   -- clk2x and back.
+   gzn2c : if ZN2_BOARD = 1 and CPU_CLK_SPLIT = 1 generate
+      -- component, so builds without CPU_CLK_SPLIT need no rtl/gnet/zn2_cdc.vhd
+      component zn2_cdc is
+      generic
+      (
+         SIM_META_WINDOW : time := 0 ns
+      );
+      port
+      (
+         clk_cpu          : in  std_logic;
+         clk1x            : in  std_logic;
+         clk2x            : in  std_logic;
+         c_board_rst      : in  std_logic;
+         p_in_p1          : in  std_logic_vector(7 downto 0);
+         p_in_p2          : in  std_logic_vector(7 downto 0);
+         p_in_service     : in  std_logic_vector(7 downto 0);
+         p_in_system      : in  std_logic_vector(7 downto 0);
+         p_dsw            : in  std_logic_vector(3 downto 0);
+         p_jp1            : in  std_logic;
+         p_card_present   : in  std_logic;
+         p_key_valid      : in  std_logic;
+         c_in_p1          : out std_logic_vector(7 downto 0);
+         c_in_p2          : out std_logic_vector(7 downto 0);
+         c_in_service     : out std_logic_vector(7 downto 0);
+         c_in_system      : out std_logic_vector(7 downto 0);
+         c_dsw            : out std_logic_vector(3 downto 0);
+         c_jp1            : out std_logic;
+         c_card_present   : out std_logic;
+         c_key_valid      : out std_logic;
+         p_ld_wr          : in  std_logic;
+         p_ld_target      : in  std_logic_vector(1 downto 0);
+         p_ld_addr        : in  unsigned(10 downto 0);
+         p_ld_data        : in  std_logic_vector(15 downto 0);
+         p_ld_overflow    : out std_logic;
+         p_ld_busy        : out std_logic;
+         c_ld_wr          : out std_logic;
+         c_ld_target      : out std_logic_vector(1 downto 0);
+         c_ld_addr        : out unsigned(10 downto 0);
+         c_ld_data        : out std_logic_vector(15 downto 0);
+         c_wd_reset       : in  std_logic;
+         p_wd_reset       : out std_logic;
+         c_coin           : in  std_logic_vector(7 downto 0);
+         p_coin           : out std_logic_vector(7 downto 0);
+         c_cm_req         : in  std_logic;
+         c_cm_we          : in  std_logic;
+         c_cm_addr        : in  std_logic_vector(24 downto 0);
+         c_cm_wdata       : in  std_logic_vector(15 downto 0);
+         c_cm_ack         : out std_logic;
+         c_cm_rdata       : out std_logic_vector(15 downto 0);
+         p2_cm_req        : out std_logic;
+         p2_cm_we         : out std_logic;
+         p2_cm_addr       : out std_logic_vector(24 downto 0);
+         p2_cm_wdata      : out std_logic_vector(15 downto 0);
+         p2_cm_ack        : in  std_logic;
+         p2_cm_rdata      : in  std_logic_vector(15 downto 0)
+      );
+      end component;
+
+      signal c_in_p1, c_in_p2, c_in_service, c_in_system : std_logic_vector(7 downto 0);
+      signal c_dsw                 : std_logic_vector(3 downto 0);
+      signal c_jp1, c_card_present : std_logic;
+      signal c_key_valid           : std_logic;
+      signal c_ld_wr               : std_logic;
+      signal c_ld_target           : std_logic_vector(1 downto 0);
+      signal c_ld_addr             : unsigned(10 downto 0);
+      signal c_ld_data             : std_logic_vector(15 downto 0);
+      signal c_wd_reset            : std_logic;
+      signal c_coin                : std_logic_vector(7 downto 0);
+      signal c_cm_req, c_cm_we     : std_logic;
+      signal c_cm_addr             : std_logic_vector(24 downto 0);
+      signal c_cm_wdata            : std_logic_vector(15 downto 0);
+      signal c_cm_ack              : std_logic;
+      signal c_cm_rdata            : std_logic_vector(15 downto 0);
+      -- Taito Zoom host port and reset (clk_cpu)
+      signal c_zm_req, c_zm_we     : std_logic;
+      signal c_zm_addr             : unsigned(23 downto 0);
+      signal c_zm_be               : std_logic_vector(3 downto 0);
+      signal c_zm_wdata            : std_logic_vector(31 downto 0);
+      signal c_zm_ack              : std_logic;
+      signal c_zm_rdata            : std_logic_vector(31 downto 0);
+      signal c_zoom_reset          : std_logic;
+   begin
+      assert HAS_PADS = 0 report "ZN2_BOARD = 1 needs HAS_PADS = 0 (SIO0 belongs to the ZN-2 devices)" severity failure;
+
+      izn2_board : entity work.zn2_board
+      generic map
+      (
+         CLK_HZ       => 50000000,   -- clk_cpu from rtl/gnet/pll_cpu.v
+         FLASH_PRESET => ZN2_FLASH_PRESET,
+         PS1_SIO      => ZN2_PS1_SIO,
+         SPU_STATUS   => ZN2_SPU_STATUS,
+         WD_TIMEOUT_S => ZN2_WD_TIMEOUT_S,
+         ZOOM         => ZOOM_BOARD
+      )
+      port map
+      (
+         clk1x          => clk_cpu,
+         ce             => ce,
+         reset          => reset_intern,
+         sys_tick       => sys_tick,
+         zn_req         => zn_req,
+         zn_we          => zn_we,
+         zn_addr        => zn_addr,
+         zn_be          => zn_be,
+         zn_wdata       => zn_wdata,
+         zn_ack         => zn_ack,
+         zn_rdata       => zn_rdata,
+         sio_addr       => bus_pad_addr,
+         sio_dataWrite  => bus_pad_dataWrite,
+         sio_read       => bus_pad_read,
+         sio_write      => bus_pad_write,
+         sio_writeMask  => bus_pad_writeMask,
+         sio_dataRead   => bus_pad_dataRead,
+         sio_irq        => irq_PAD,
+         in_p1          => c_in_p1,
+         in_p2          => c_in_p2,
+         in_service     => c_in_service,
+         in_system      => c_in_system,
+         dsw            => c_dsw,
+         jp1            => c_jp1,
+         card_present   => c_card_present,
+         key_valid      => c_key_valid,
+         coin           => c_coin,
+         wd_reset       => c_wd_reset,
+         zoom_reset     => c_zoom_reset,
+         ld_wr          => c_ld_wr,
+         ld_target      => c_ld_target,
+         ld_addr        => c_ld_addr,
+         ld_data        => c_ld_data,
+         fl_req         => zn_fl_req,
+         fl_rnw         => zn_fl_rnw,
+         fl_addr        => zn_fl_addr,
+         fl_din         => zn_fl_din,
+         fl_be          => zn_fl_be,
+         fl_ready       => zn_fl_ready,
+         fl_dout        => zn_fl_dout,
+         cm_req         => c_cm_req,
+         cm_we          => c_cm_we,
+         cm_addr        => c_cm_addr,
+         cm_wdata       => c_cm_wdata,
+         cm_ack         => c_cm_ack,
+         cm_rdata       => c_cm_rdata,
+         dbg_wd_kick    => zn_dbg_kick,
+         dbg_ctrl       => zn_dbg_ctrl,
+         dbg_sec_cmd    => zn_dbg_sec,
+         nv_clk         => zn_nv_clk,
+         nv_addr        => zn_nv_addr,
+         nv_q           => zn_nv_q,
+         nv_wtog        => zn_nv_wtog,
+         zm_req         => c_zm_req,
+         zm_we          => c_zm_we,
+         zm_addr        => c_zm_addr,
+         zm_be          => c_zm_be,
+         zm_wdata       => c_zm_wdata,
+         zm_ack         => c_zm_ack,
+         zm_rdata       => c_zm_rdata
+      );
+
+      zn_dbg_wd <= c_wd_reset;
+
+      izn2_cdc : zn2_cdc
+      port map
+      (
+         clk_cpu          => clk_cpu,
+         clk1x            => clk1x,
+         clk2x            => clk2x,
+         c_board_rst      => reset_intern,
+         p_in_p1          => zn_in_p1,
+         p_in_p2          => zn_in_p2,
+         p_in_service     => zn_in_service,
+         p_in_system      => zn_in_system,
+         p_dsw            => zn_dsw,
+         p_jp1            => zn_jp1,
+         p_card_present   => zn_card_present,
+         p_key_valid      => zn_key_valid,
+         c_in_p1          => c_in_p1,
+         c_in_p2          => c_in_p2,
+         c_in_service     => c_in_service,
+         c_in_system      => c_in_system,
+         c_dsw            => c_dsw,
+         c_jp1            => c_jp1,
+         c_card_present   => c_card_present,
+         c_key_valid      => c_key_valid,
+         p_ld_wr          => zn_ld_wr,
+         p_ld_target      => zn_ld_target,
+         p_ld_addr        => zn_ld_addr,
+         p_ld_data        => zn_ld_data,
+         p_ld_overflow    => open,
+         p_ld_busy        => zn_ld_busy,
+         c_ld_wr          => c_ld_wr,
+         c_ld_target      => c_ld_target,
+         c_ld_addr        => c_ld_addr,
+         c_ld_data        => c_ld_data,
+         c_wd_reset       => c_wd_reset,
+         p_wd_reset       => zn_wd_reset,
+         c_coin           => c_coin,
+         p_coin           => zn_coin,
+         c_cm_req         => c_cm_req,
+         c_cm_we          => c_cm_we,
+         c_cm_addr        => c_cm_addr,
+         c_cm_wdata       => c_cm_wdata,
+         c_cm_ack         => c_cm_ack,
+         c_cm_rdata       => c_cm_rdata,
+         p2_cm_req        => zn_cm_req,
+         p2_cm_we         => zn_cm_we,
+         p2_cm_addr       => zn_cm_addr,
+         p2_cm_wdata      => zn_cm_wdata,
+         p2_cm_ack        => zn_cm_ack,
+         p2_cm_rdata      => zn_cm_rdata
+      );
+
+      izn2_cardmem : entity work.zn2_cardmem
+      port map
+      (
+         clk2x          => clk2x,
+         reset          => reset_intern_p,
+         dl_wr          => zn_card_dl_wr,
+         dl_addr        => zn_card_dl_addr,
+         dl_data        => zn_card_dl_data,
+         dl_busy        => zn_card_dl_busy,
+         cm_req         => zn_cm_req,
+         cm_we          => zn_cm_we,
+         cm_addr        => zn_cm_addr,
+         cm_wdata       => zn_cm_wdata,
+         cm_ack         => zn_cm_ack,
+         cm_rdata       => zn_cm_rdata,
+         mem_request    => memZN_request,
+         mem_BURSTCNT   => memZN_BURSTCNT,
+         mem_ADDR       => memZN_ADDR,
+         mem_DIN        => memZN_DIN,
+         mem_BE         => memZN_BE,
+         mem_WE         => memZN_WE,
+         mem_RD         => memZN_RD,
+         mem_ack        => memZN_ack,
+         mem_DOUT       => ddr3_DOUT,
+         mem_DOUT_READY => ddr3_DOUT_READY
+      );
+
+      -- Taito Zoom (docs/zoom_board_design.md 14): the board runs on clk1x
+      -- and clk2x (CLK_H 4: MN10200 side on clk2x) with its host side on
+      -- clk1x; zoom_cdc carries the host port and control bit 4 from
+      -- clk_cpu. Its flash area line port leaves on zoom_m_* (clk1x).
+      gzoom : if ZOOM_BOARD = 1 generate
+         -- components, so builds without the Zoom need none of its files
+         component zoom_cdc is
+         generic
+         (
+            SIM_META_WINDOW : time := 0 ns
+         );
+         port
+         (
+            clk_cpu          : in  std_logic;
+            clk1x            : in  std_logic;
+            c_board_rst      : in  std_logic;
+            p_board_rst      : in  std_logic;
+            c_zm_req         : in  std_logic;
+            c_zm_we          : in  std_logic;
+            c_zm_addr        : in  unsigned(23 downto 0);
+            c_zm_be          : in  std_logic_vector(3 downto 0);
+            c_zm_wdata       : in  std_logic_vector(31 downto 0);
+            c_zm_ack         : out std_logic;
+            c_zm_rdata       : out std_logic_vector(31 downto 0);
+            p_h_req          : out std_logic;
+            p_h_we           : out std_logic;
+            p_h_addr         : out std_logic_vector(23 downto 0);
+            p_h_be           : out std_logic_vector(3 downto 0);
+            p_h_wdata        : out std_logic_vector(31 downto 0);
+            p_h_ack          : in  std_logic;
+            p_h_rdata        : in  std_logic_vector(31 downto 0);
+            p_h_hit          : in  std_logic;
+            c_zoom_reset     : in  std_logic;
+            p_zoom_reset     : out std_logic
+         );
+         end component;
+
+         -- rtl/zoom/zoom_board.sv (SystemVerilog); parameters not listed
+         -- keep their defaults: the TMS57002 User's Guide behaviour
+         -- (TMS_MAME 0), the MB87078 volume law (MAME_GAIN 0), the flash
+         -- area layout of zn2_layer_design.md 13.4 (U27 at 0x200000, wave
+         -- flashes from 0x400000), output at 25 MHz / 768
+         component zoom_board is
+         generic
+         (
+            CLK_H       : integer := 4;
+            PACE_CAP    : integer := 1024;
+            ZSG_INFL    : integer := 4;
+            TIMER_EXACT : integer := 0;
+            DEBUG       : integer := 0
+         );
+         port
+         (
+            clk         : in  std_logic;
+            clk2x       : in  std_logic;
+            rst         : in  std_logic;
+            hclk        : in  std_logic;
+            hrst        : in  std_logic;
+            zoom_reset  : in  std_logic;
+            h_req       : in  std_logic;
+            h_we        : in  std_logic;
+            h_addr      : in  std_logic_vector(23 downto 0);
+            h_be        : in  std_logic_vector(3 downto 0);
+            h_wdata     : in  std_logic_vector(31 downto 0);
+            h_ack       : out std_logic;
+            h_rdata     : out std_logic_vector(31 downto 0);
+            h_hit       : out std_logic;
+            m_req       : out std_logic;
+            m_line      : out std_logic_vector(20 downto 0);
+            m_ready     : in  std_logic;
+            m_rvalid    : in  std_logic;
+            m_rdata     : in  std_logic_vector(63 downto 0);
+            prog_inval  : in  std_logic;
+            aud_tick    : out std_logic;
+            aud_l       : out std_logic_vector(15 downto 0);
+            aud_r       : out std_logic_vector(15 downto 0);
+            pace_en     : in  std_logic;
+            dbg_hold    : in  std_logic;
+            dbg_bound   : out std_logic;
+            dbg_insn    : out std_logic;
+            dbg_pc      : out std_logic_vector(23 downto 0);
+            dbg_psw     : out std_logic_vector(15 downto 0);
+            dbg_mdr     : out std_logic_vector(15 downto 0);
+            dbg_cycles  : out std_logic_vector(47 downto 0);
+            dbg_regs    : out std_logic_vector(191 downto 0);
+            tb_pin1_ovr : in  std_logic;
+            tb_pin1     : in  std_logic;
+            tb_ld       : in  std_logic;
+            tb_ld_left  : in  std_logic_vector(8 downto 0);
+            tb_ld_rem   : in  std_logic_vector(15 downto 0);
+            dbg_flags   : out std_logic_vector(7 downto 0)
+         );
+         end component;
+
+         signal p_h_req, p_h_we       : std_logic;
+         signal p_h_addr              : std_logic_vector(23 downto 0);
+         signal p_h_be                : std_logic_vector(3 downto 0);
+         signal p_h_wdata             : std_logic_vector(31 downto 0);
+         signal p_h_ack, p_h_hit      : std_logic;
+         signal p_h_rdata             : std_logic_vector(31 downto 0);
+         signal p_zoom_reset          : std_logic;
+      begin
+         zoom_rst <= reset_intern_p;
+
+         izoom_cdc : zoom_cdc
+         port map
+         (
+            clk_cpu          => clk_cpu,
+            clk1x            => clk1x,
+            c_board_rst      => reset_intern,
+            p_board_rst      => reset_intern_p,
+            c_zm_req         => c_zm_req,
+            c_zm_we          => c_zm_we,
+            c_zm_addr        => c_zm_addr,
+            c_zm_be          => c_zm_be,
+            c_zm_wdata       => c_zm_wdata,
+            c_zm_ack         => c_zm_ack,
+            c_zm_rdata       => c_zm_rdata,
+            p_h_req          => p_h_req,
+            p_h_we           => p_h_we,
+            p_h_addr         => p_h_addr,
+            p_h_be           => p_h_be,
+            p_h_wdata        => p_h_wdata,
+            p_h_ack          => p_h_ack,
+            p_h_rdata        => p_h_rdata,
+            p_h_hit          => p_h_hit,
+            c_zoom_reset     => c_zoom_reset,
+            p_zoom_reset     => p_zoom_reset
+         );
+
+         izoom_board : zoom_board
+         generic map (CLK_H => 4, PACE_CAP => 1024, ZSG_INFL => ZOOM_INFL, TIMER_EXACT => 0, DEBUG => 0)
+         port map
+         (
+            clk         => clk1x,
+            clk2x       => clk2x,
+            rst         => reset_intern_p,
+            hclk        => clk1x,
+            hrst        => reset_intern_p,
+            zoom_reset  => p_zoom_reset,
+            h_req       => p_h_req,
+            h_we        => p_h_we,
+            h_addr      => p_h_addr,
+            h_be        => p_h_be,
+            h_wdata     => p_h_wdata,
+            h_ack       => p_h_ack,
+            h_rdata     => p_h_rdata,
+            h_hit       => p_h_hit,
+            m_req       => zoom_m_req,
+            m_line      => zoom_m_line,
+            m_ready     => zoom_m_ready,
+            m_rvalid    => zoom_m_rvalid,
+            m_rdata     => zoom_m_rdata,
+            prog_inval  => '0',        -- no U27 write while the Zoom runs (zoom_board_design.md 3.4, I2)
+            aud_tick    => open,
+            aud_l       => zoom_aud_l,
+            aud_r       => zoom_aud_r,
+            pace_en     => '1',
+            dbg_hold    => zoom_hold,      -- core pause (see the port)
+            dbg_bound   => open,
+            dbg_insn    => open,
+            dbg_pc      => open,
+            dbg_psw     => open,
+            dbg_mdr     => open,
+            dbg_cycles  => open,
+            dbg_regs    => open,
+            tb_pin1_ovr => '0',
+            tb_pin1     => '0',
+            tb_ld       => '0',
+            tb_ld_left  => (others => '0'),
+            tb_ld_rem   => (others => '0'),
+            dbg_flags   => zoom_flags
+         );
+      end generate;
+
+      gnozoom2 : if ZOOM_BOARD = 0 generate
+      begin
+         c_zm_ack   <= '0';
+         c_zm_rdata <= (others => '0');
+      end generate;
+   end generate;
+
+   -- the loader writes zn2_board directly without the split: never busy
+   gldbusy0 : if not (ZN2_BOARD = 1 and CPU_CLK_SPLIT = 1) generate
+   begin
+      zn_ld_busy <= '0';
+   end generate;
+
+   -- Debug overlay capture (docs/hw_debug_overlay.md): on the clock of the
+   -- CPU and zn2_board, no reset input (the counters and the watchdog
+   -- snapshot survive the core reset). A component, so builds without the
+   -- ZN-2 board need no rtl/gnet/zn_dbg_regs.vhd.
+   gzndbg : if ZN2_BOARD = 1 generate
+      component zn_dbg_regs is
+      generic
+      (
+         CLK_HZ     : integer := 33868800;
+         WD_WIN_MS  : integer := 100;
+         GAP_TICKS  : integer := 2
+      );
+      port
+      (
+         clk        : in  std_logic;
+         core_reset : in  std_logic;
+         pc         : in  unsigned(31 downto 0);
+         dat_take   : in  std_logic;
+         dat_addr   : in  unsigned(31 downto 0);
+         wd_fire    : in  std_logic;
+         wd_kick    : in  std_logic;
+         ctrl       : in  std_logic_vector(7 downto 0);
+         sec_cmd    : in  std_logic;
+         rd_idx     : in  std_logic_vector(3 downto 0);
+         rd_word    : out std_logic_vector(31 downto 0)
+      );
+      end component;
+
+      signal dbg_take : std_logic;
+   begin
+      dbg_take <= ce and mem_request and mem_isData;
+
+      izn_dbg_regs : zn_dbg_regs
+      generic map
+      (
+         CLK_HZ     => 33868800 + CPU_CLK_SPLIT * (50000000 - 33868800)
+      )
+      port map
+      (
+         clk        => clk_cpu,
+         core_reset => reset_intern,
+         pc         => cpu_debug_pc,
+         dat_take   => dbg_take,
+         dat_addr   => mem_addressData,
+         wd_fire    => zn_dbg_wd,
+         wd_kick    => zn_dbg_kick,
+         ctrl       => zn_dbg_ctrl,
+         sec_cmd    => zn_dbg_sec,
+         rd_idx     => zn_dbg_idx,
+         rd_word    => zn_dbg_word
+      );
+   end generate;
+
+   gnozn2 : if ZN2_BOARD = 0 generate
+   begin
+      zn_dbg_word     <= (others => '0');
+      zn_nv_q         <= (others => '0');
+      zn_nv_wtog      <= '0';
+      zn_ack          <= '0';
+      zn_rdata        <= (others => '0');
+      memZN_request   <= '0';
+      zn_coin         <= (others => '0');
+      zn_wd_reset     <= '0';
+      zn_card_dl_busy <= '0';
+      zn_fl_req       <= '0';
+      zn_fl_rnw       <= '1';
+      zn_fl_addr      <= (others => '0');
+      zn_fl_din       <= (others => '0');
+      zn_fl_be        <= (others => '0');
+   end generate;
    
 end architecture;
 

@@ -8,6 +8,10 @@ library mem;
 -- todo: how does it behave when copy with srcX + widt wrapping around?
 
 entity gpu_vram2cpu is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -28,7 +32,7 @@ entity gpu_vram2cpu is
       fifoOut_idle         : in  std_logic;
       requestVRAMEnable    : out std_logic;
       requestVRAMXPos      : out unsigned(9 downto 0);
-      requestVRAMYPos      : out unsigned(8 downto 0);
+      requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
       requestVRAMIdle      : in  std_logic;
       requestVRAMDone      : in  std_logic;
@@ -63,14 +67,14 @@ architecture arch of gpu_vram2cpu is
    signal state : tState := IDLE;
    
    signal srcX          : unsigned(9 downto 0);
-   signal srcY          : unsigned(8 downto 0);     
+   signal srcY          : unsigned(VRAM_Y_BITS - 1 downto 0);     
    signal widt          : unsigned(10 downto 0);
    signal widtVram      : unsigned(10 downto 0);
-   signal heig          : unsigned(9 downto 0);
+   signal heig          : unsigned(VRAM_Y_BITS downto 0);
                         
    signal xSrc          : unsigned(9 downto 0);
    signal xCnt          : unsigned(10 downto 0);
-   signal yCnt          : unsigned(9 downto 0);
+   signal yCnt          : unsigned(VRAM_Y_BITS downto 0);
    
    signal drawTiming    : unsigned(6 downto 0);
    
@@ -169,7 +173,7 @@ begin
                   if (fifo_Valid = '1') then
                      state    <= REQUESTWORD3;  
                      srcX <= unsigned(fifo_data( 9 downto  0));
-                     srcY <= unsigned(fifo_data(24 downto 16));
+                     srcY <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                   end if;
             
                when REQUESTWORD3 =>
@@ -178,7 +182,7 @@ begin
                      state      <= REQUESTFIRST;
                      widt       <= '0' & unsigned(fifo_data( 9 downto  0));
                      widtVram   <= '0' & unsigned(fifo_data( 9 downto  0));
-                     heig       <= '0' & unsigned(fifo_data(24 downto 16));
+                     heig       <= '0' & unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                      
                      if (fifo_data(0) = '1') then
                         widtVram <= resize(unsigned(fifo_data(9 downto 0)), 11) + 1;
@@ -188,8 +192,8 @@ begin
                         widt       <= to_unsigned(16#400#, 11); 
                         widtVram   <= to_unsigned(16#400#, 11); 
                      end if;
-                     if (unsigned(fifo_data(24 downto 16)) = 0) then 
-                        heig <= to_unsigned(16#200#, 10); 
+                     if (unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16)) = 0) then 
+                        heig <= to_unsigned(2**VRAM_Y_BITS, VRAM_Y_BITS + 1); 
                      end if;
                   end if;
                   

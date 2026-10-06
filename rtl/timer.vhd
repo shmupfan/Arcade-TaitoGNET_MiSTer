@@ -8,6 +8,9 @@ entity timer is
       clk1x                : in  std_logic;
       ce                   : in  std_logic;
       reset                : in  std_logic;
+      -- '1' every cycle (upstream). With the CPU on its own clock: 33.8688 MHz-
+      -- equivalent ticks for the system clock sources (docs/r1_cpu_domain_design.md P3)
+      sys_tick             : in  std_logic := '1';
       
       error                : out std_logic;
       
@@ -147,7 +150,9 @@ begin
 
          elsif (ce = '1') then
          
-            timer2_subcount <= timer2_subcount + 1;
+            if (sys_tick = '1') then
+               timer2_subcount <= timer2_subcount + 1;
+            end if;
             hblank_1        <= hblank;
             vblank_1        <= vblank;
             dotclock_1      <= dotclock;
@@ -163,7 +168,7 @@ begin
             if (timerArray(0).T_MODE(8) = '1') then
                newTick(0) := dotclock and (not dotclock_1);
             else
-               newTick(0) := '1';
+               newTick(0) := sys_tick;
             end if;
             
             if (timerArray(1).T_MODE(8) = '1') then
@@ -171,15 +176,15 @@ begin
                   newTick(1) := '1';
                end if;
             else
-               newTick(1) := '1';
+               newTick(1) := sys_tick;
             end if;
             
             if (timerArray(2).T_MODE(9) = '1') then
-               if (timer2_subcount = "111") then
+               if (timer2_subcount = "111" and sys_tick = '1') then
                   newTick(2) := '1';
                end if;
             else
-               newTick(2) := '1';
+               newTick(2) := sys_tick;
             end if;
             
             

@@ -1,228 +1,341 @@
-# [Playstation](https://en.wikipedia.org/wiki/PlayStation_(console)) for [MiSTer Platform](https://github.com/MiSTer-devel/Main_MiSTer/wiki)
+# Taito G-NET - MiSTer FPGA Core (alpha)
 
-## Hardware Requirements
-SDRAM of any size is required.
+A MiSTer core for Taito G-NET: Sony's ZN-2 main board (a PlayStation
+derived arcade board) with Taito's FC PCB on top, which carries the
+Taito Zoom sound board, five flash chips and the PC card slot the games
+are sold on. The core is built on Robert Peip's PSX_MiSTer. I wrote the
+ZN-2 board layer, the G-NET glue (flash, PC card, watchdog) and the Taito
+Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 
-## Features
-* Savestates
-* Option for core pause when OSD is open
-* Optional manual Memory Card file loading (.MCD)
-* CUE+BIN and CHD format support
-* Multiple Disc Game support with automatic Lid open/close toggle
-* Fast Boot (Skips BIOS)
-* Dithering On/Off Toggle
-* Bob or Weave Deinterlacing
-* Texture Filtering
-* 24 Bit rendering
-* Widescreen modes
-* Screen rotation by 180°
-* 8 Mbyte mode(from dev units, mostly for homebrew) 
-* Inputs: DualShock, Digital, Analog, Mouse, NeGcon, Wheel, Justifier and Guncon support.
-* Native Input support through SNAC
-* Old GPU (CXD8514Q)
+<img src="docs/images/raycris.png" width="26%" alt="Ray Crisis"> <img src="docs/images/psyvarrv.png" width="15%" alt="Psyvariar -Revision-"> <img src="docs/images/shikigam.png" width="15%" alt="Shikigami no Shiro"> <img src="docs/images/nightrai.png" width="26%" alt="Night Raid"> <img src="docs/images/xiistag.png" width="15%" alt="XII Stag">
 
-## Bios
-Rename your playstation bios file (e.g. `scph-1001.bin`/`ps-22a.bin` ) and place it in the `./games/PSX/` folder.
+*Screenshots taken on a MiSTer with this core.*
+
+**Status: alpha.** All five target games boot and play in full-system
+simulation, and on my MiSTer Shikigami no Shiro and Psyvariar run with the
+Zoom music and the sound effects. On 2026-10-06 I played
+Psyvariar -Revision- to the end on a DE10-Nano with this release's RBF (md5
+e7d7995e); the sound and gameplay were both good. The other games, the
+first-boot copy and several shell features still need testing on real
+hardware, and some timings are known to differ from the real board (see
+Known issues). I am
+publishing it now to get test reports, especially from people who own a
+G-NET board. How to help: [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
+
+The research behind the core, with the evidence for each subsystem and
+every known difference from MAME and from the real board, is in
+[docs/ACCURACY.md](docs/ACCURACY.md).
+
+## Supported games
+
+| Game | MAME set | Orientation |
+|---|---|---|
+| Ray Crisis (V2.03O 1998/11/15) | raycris | horizontal |
+| Psyvariar -Medium Unit- (V2.02O 2000/02/22) | psyvaria | vertical |
+| Psyvariar -Revision- (V2.04J 2000/08/11) | psyvarrv | vertical |
+| XII Stag (V2.01J 2002/06/26) | xiistag | vertical |
+| Shikigami no Shiro (V2.03J 2001/08/07) | shikigam | vertical |
+| Night Raid (V2.03J 2001/02/26) | nightrai | horizontal |
+
+All six use the same machine: the `coh3002t` BIOS, the FC PCB with the
+Taito Zoom board, and a Taito Type 1 PC card. Other G-NET games (the
+non-shooters and the 2011 conversions of G-Darius, Ray Storm, Aero
+Fighters Special and Brave Blade) run on the same hardware and can be
+added later.
+
+## Roadmap
+
+This alpha covers the G-NET shooters. The rest of the library runs on the
+same board and differs mainly in how the game card unlocks, whether the
+Taito Zoom sound board is used, and the controls. I add each game once I
+can test it on the core.
+
+| Stage | Games | What each needs |
+|---|---|---|
+| Alpha 1 (this release) | Ray Crisis, Psyvariar -Medium Unit-, Psyvariar -Revision-, XII Stag, Shikigami no Shiro, Night Raid | Done; test reports wanted |
+| Next | Japanese and internal versions of the same games (raycrisj, psyvarij, shikigama) | MRAs and a hardware boot test |
+| Next | Other Type 1 card games with a stick and 3 buttons: Chaos Heat, Flip Maze, Kollon, Otenami Haiken, Zoku Otenamihaiken, Zooo, Space Invaders Anniversary, Shanghai Shoryu Sairin, Soutenryu, Shanghai Sangokuhai Tougi, Otenki Kororin | MRAs, a "no Zoom board" setting for the games without it, a look at the interrupt quirk MAME works around for two of them |
+| Later | The 2011 conversions on plain cards: G-Darius, Ray Storm, Aero Fighters Special, Brave Blade, Flame Gunner, Fighters' Impact, Shanghai Matekibuyuu, The Block Kuzushi | The modified BIOS they boot from, MRAs |
+| Later | Type 2 and CompactFlash card games: Super Puzzle Bobble, Kollon (CF), Otenami Haiken Final, Zoku Otenamihaiken (V2.05J) | The other two card unlock methods |
+| Later | Special controls: Go By RC, RC De Go (wheel), Mahjong Oh, Usagi (mahjong panel); Mawasunda (ZN-1 board) | New inputs; Mawasunda also needs the ZN-1 G-NET BIOS |
+
+## What works
+
+- In full-system simulation of the core, Ray Crisis, Psyvariar -Medium
+  Unit-, XII Stag, Shikigami no Shiro and Night Raid boot from power-on
+  through the BIOS, the card unlock and the loader to their attract mode,
+  and their screens match MAME's for the first 30 seconds, in the same
+  order, a little later than MAME (see Known issues). On my MiSTer,
+  Shikigami no Shiro and Psyvariar play with sound.
+- Taito Zoom music and effects (MN10200, ZSG-2, TMS57002), checked
+  against MAME instruction by instruction and sample by sample.
+- PlayStation SPU sound, mixed with the Zoom output.
+- The BIOS's first-boot install (it copies the card into the flash
+  chips), or a quick start that loads the flash as the BIOS leaves it.
+- Vertical games: rotation for HDMI, Flip Screen for a rotated monitor.
+- The board's EEPROM (settings and high scores) saved as NVRAM; a check
+  across a power cycle on hardware is still open.
+- The MB3773 watchdog, so a hung game resets as on the board.
+
+## Installation
+
+You need your own MAME 0.288 files. No BIOS, card, flash or game data is
+included in this repository.
+
+1. Copy `releases/Arcade-TaitoGNET_20261006.rbf` to
+   `/media/fat/_Arcade/cores/`, the MRA files from `releases/` to
+   `/media/fat/_Arcade/`, and, for the first-boot MRAs, the folders in
+   `releases/_alternatives/` to `/media/fat/_Arcade/_alternatives/`.
+2. Copy your `coh3002t.zip` (the G-NET BIOS set, MAME 0.288) to
+   `/media/fat/games/mame/`.
+3. MiSTer cannot read MAME's hard-disk CHD files, so each game's card is
+   converted once on a computer. With Python 3 and MAME's `chdman`:
+
+   ```
+   python3 tools/gnet/gnet_tester_zips.py --roms <your MAME roms folder> --out <a new folder>
+   ```
+
+   The roms folder holds `coh3002t.zip` and each game's CHD in its MAME
+   folder, for example `shikigam/shikigam.chd`. On Windows use `python`
+   instead of `python3`; if `chdman` is not on your PATH, add
+   `--chdman <path to chdman.exe>`. The tool checks that `coh3002t.zip`
+   is the MAME 0.288 version and warns if a CHD does not match MAME 0.288.
+   It writes one `gnet_<set>.zip` per game it finds, holding the card
+   image (40,960,000 bytes), the card's identify data, CIS and unlock key,
+   and the flash chips as the BIOS leaves them after its first-boot copy.
+   These zips are made from your own files: keep them to yourself.
+4. Copy every `gnet_<set>.zip` to `/media/fat/games/mame/`.
+
+There are two MRAs per game:
+
+- **`<Game>.mra`**, the main MRA, loads the flash as the BIOS leaves it
+  after its first-boot copy, so the game starts in a few seconds.
+- **`_alternatives/_<Game>/<Game> (first boot).mra`** starts like a real
+  board after a card swap: the BIOS copies the card into the flash chips
+  (about 2.5 minutes), then the game starts. The flash is not kept
+  between loads, so the copy runs every time. Do not reset or power off
+  during it.
+
+### MRA layout
+
+For anyone writing MRAs for this core:
+
+| ioctl index | Content | Source |
+|---|---|---|
+| 0 | BIOS `m534002c-60.ic353` (512 KB) | coh3002t.zip |
+| 2 | CAT702 keys `tt10.ic652`, `tt16.u17` | coh3002t.zip |
+| 3 | flash area, 10 MB: U30 sub-BIOS, U27 Zoom program, U56/U55/U29 wave data | `<set>.flash` from the game zip (main MRA), or `flash.u30` plus 8 MB of FFh (first boot MRA) |
+| 4 | card identify data, CIS and key (1 KB) | `<set>.meta` from the game zip |
+| 5 | PC card image | `<set>.img` from the game zip |
+| 6 | EEPROM (2 KB), `<nvram index="6" size="2048"/>` | saved by MiSTer |
+| 7 | game configuration byte: 01 for the vertical sets, 00 otherwise | inline in the MRA |
+| 254 | DIP switch S551 | MRA switches |
+
+## Controls
+
+Two players, an 8-way stick and three buttons each, plus Start, Coin,
+Service, Test and Pause. MAME gives no button names for these games and I
+have not found the game manuals, so the buttons are Button 1 to 3.
+
+| Function | Joypad (default) | Keyboard, player 1 | Keyboard, player 2 |
+|---|---|---|---|
+| Buttons 1, 2, 3 | A, B, X | Left Ctrl, Left Alt, Space | A, S, Q |
+| Start | Start | 1 | 2 |
+| Coin | Select | 5 | 6 |
+| Service | L | 9 | |
+| Test | R | F2 | |
+| Pause | map it in the OSD | P | |
+
+Movement is the stick or D-pad, the arrow keys for player 1, and R, F, D,
+G for player 2. The keyboard keys are MAME's defaults.
+
+## OSD options
+
+- **Aspect ratio** and **Scale** (HDMI): Original is 4:3 for the area the
+  game draws, as an arcade monitor adjusted to fill the tube shows it.
+  There is no 216p crop: the games use 240 lines, and a 216-line crop
+  would cut part of the picture.
+- **Orientation** and **Rotate Direction** (vertical games, HDMI): stand
+  the picture upright on a horizontal screen.
+- **Flip Screen** (vertical games): turns the picture 180 degrees in the
+  video output, for a monitor rotated the other way. It works on a CRT as
+  well as over HDMI.
+- **Scandoubler Fx**: HQ2x or CRT scanlines for 31 kHz output.
+- **CRT H Position** and **CRT V Position**: move the picture in 2 pixel
+  steps (-16 to +14) and whole lines (-4 to +3). Only the sync pulses
+  move; the picture and the game's timing stay as they are, and a change
+  takes effect at the next frame. Vertical sync starts and ends on a
+  horizontal sync edge, so a CRT gets a clean composite sync.
+- **Pause when OSD is open**, plus the Pause button and the P key.
+- **Volume**: Normal, +6 dB, -6 dB, -12 dB.
+- **SFX Level**: the PlayStation SPU's
+  level in the mix against the Zoom board: 0.7 (the default, estimated
+  from a recording of a real Psyvariar Revision cabinet), 0.3 (MAME's
+  setting), 0.45, 0.6, 0.9, 1.2, 1.5. The estimate comes from one phone
+  recording, so treat it as provisional
+  ([docs/ACCURACY.md](docs/ACCURACY.md), SPU).
+- **DIP switches**: S551. Switch 4 is Test Mode (the operator manual says
+  to use switch 4 only); switch 2 is the BIOS service mode in MAME;
+  switches 1 and 3 are unknown. Leave them off for normal play.
+- **Watchdog**: leave it On. It resets a game that stops running, as the
+  board's MB3773 does. Off is for debugging.
+- **Debug overlay**: a small box of hex numbers with the board state, for
+  test reports ([docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md)).
+
+The screen stays black, with sync running, while the MRA loads and while
+the core resets, so a CRT or a direct video DAC keeps its picture. The
+pixel clock is an exact division of the 53.693175 MHz video clock in
+every mode the games use (256, 320, 512 and 640 dots), so direct video
+shows even pixel widths.
+
+The EEPROM is saved to the SD card by MiSTer's NVRAM mechanism when the
+OSD opens after the game has written to it.
+
+## Known issues
+
+- **Loading is slower than on the board.** The CPU spends about 9.6 of its
+  cycles on each main RAM load where the real chip needs about 7, so
+  CPU-bound work runs slow: Ray Crisis's "Prepares the start." bar takes
+  about 16.9 s on the core, 14.69 s on a real board and 12.3 s in MAME.
+  Screens after the loaders come 1.5 to 5 s later than in MAME.
+- **Sound balance.** MAME mixes the SPU at 0.3 under the Zoom board, a
+  setting chosen by ear. The core also applies the SPU main volume the
+  games set, which MAME ignores, so at MAME's setting the effects are
+  quieter than in MAME (by 2.5 to 14.1 dB depending on the game). This
+  release defaults to 0.7, estimated from one phone recording of a real
+  cabinet (Psyvariar Revision); MAME's 0.3 is one of the SFX Level
+  settings. A line-out recording of a board would settle it.
+- **First-boot copy.** The first boot MRAs repeat the 2.5 minute copy at
+  every load, because the flash chips are not saved. I have not yet
+  confirmed the copy on my own hardware, only the main MRAs.
+- **Card writes are not saved.** Some games write a few sectors to their
+  PC card (what they hold is not known yet); the core keeps those writes
+  only until the core is reloaded.
+- **Not yet checked on hardware:** Ray Crisis, XII Stag and Night Raid on
+  my MiSTer; slowdown in heavy scenes against a real board; the EEPROM
+  save across a power cycle; rotation and Flip Screen on every display.
+- **Watchdog period.** The core uses 8 s where MAME uses 5 s; the board's
+  real period is not known (the timing capacitor's value is not legible
+  in any photo I have found).
+- **Frame rate.** The core runs 59.817 Hz (3413 x 263 at 53.693175 MHz);
+  MAME and a note from a real board give 59.826 Hz. A cabinet recording
+  agrees with MAME to about 0.3%, which cannot tell the two apart; a
+  frequency counter on a board would.
+
+The full list, with the evidence for each item, is in
+[docs/ACCURACY.md](docs/ACCURACY.md).
+
+## Findings
+
+Where the core differs from MAME, and why. Full detail and sources are in
+[docs/ACCURACY.md](docs/ACCURACY.md).
+
+- **GPU rasteriser.** The PSX_MiSTer GPU matches the PS1 hardware test
+  images of JaCzekanski's ps1-tests (Gouraud steps, blend mode 0, texture
+  coordinates, edges, dithering); MAME 0.288 differs from them. The core
+  keeps the PS1 behaviour, and the ZN-2's 2 MB VRAM.
+- **ZSG-2 voice readback.** The Zoom sound driver needs a 13-bit volume
+  readback; MAME 0.288 returns 16 bits, which corrupts its voice
+  allocator in every game, not only Shikigami. The core follows MAME's
+  later fix (commit 61c7940).
+- **TMS57002 effects DSP.** The core follows the TI User's Guide on three
+  points where MAME does not (multiplier input width, the coefficient
+  update rule and the 16-bit serial input), each traced to a page of the
+  guide.
+- **Watchdog.** Three games run a 2.5 million iteration delay loop with
+  no watchdog kick (2.4 to 2.9 s in MAME, longer on the slower real CPU),
+  so the board's watchdog cannot be the 1 s or shorter that the MB3773
+  datasheet recommends.
+- **Flash parts.** Board photos show 28F160S5 (5 V) wave and sub-BIOS
+  flash and a 28F400B5 bottom-boot Zoom program flash.
+
+## Architecture
+
+- PSX_MiSTer (Robert Peip): CPU, GTE, GPU, SPU, DMA, timers, IRQ. The CD,
+  memory cards, pads, MDEC and savestate request paths are removed behind
+  switches; the G-NET games do not use them.
+- CPU group at 50.000 MHz with the GTE at 100 MHz; GPU and SPU on their
+  own clocks, as on the ZN-2.
+- ZN-2 board layer: 4 MB main RAM, 2 MB VRAM, BIOS, two CAT702 security
+  chips, the I/O MCU model, the AT28C16 EEPROM, inputs.
+- G-NET FC PCB: five Intel flash chips with their command set, the
+  RF5C296 PC card controller, the Taito Type 1 ATA card with its unlock,
+  control registers and the MB3773 watchdog.
+- Taito Zoom: MN10200 sound CPU, ZSG-2 wavetable chip, TMS57002 effects
+  DSP, M66220 mailbox, MB87078 volume.
+- Memory: main RAM, BIOS and flash in SDRAM; VRAM, SPU RAM, the card
+  image and a copy of the flash area for the Zoom board in DDR3, behind a
+  DDR3 arbiter that also serves HDMI rotation.
+
+## Repository layout
 
 ```
-boot.rom  => US BIOS
-boot1.rom => JP BIOS
-boot2.rom => EU BIOS
+PSX.sv, PSX.qpf               MiSTer shell and Quartus project
+GNET_Z1FULL.qsf, GNET_*.sdc   release revision and its timing constraints
+PSX.qsf, PSX_DualSDRAM.*      upstream PSX_MiSTer revisions
+rtl/                          PSX_MiSTer core (upstream), with trims behind switches
+rtl/gnet/                     ZN-2 board layer, G-NET glue, shell blocks, DDR3 arbiter
+rtl/zoom/                     Taito Zoom: MN10200, ZSG-2, TMS57002, board glue
+sys/                          MiSTer framework
+releases/                     released RBF and MRA files (releases/README.md)
+docs/                         accuracy notes, design notes and findings
+docs/images/                  screenshots taken on a MiSTer with this core
+sim/                          NVC and Verilator benches against MAME traces
+tools/                        card, flash and MRA tools, MAME trace scripts
 ```
 
-You can also place a cd_bios.rom in the same directory as the CD or 1 directory above, to have it uses together with that CD. This can be used for games that depend on a special BIOS beyond usual US,EU,JP.
+The MAME 0.288 sources used as the reference are not copied into the
+repository; `docs/mame_sources.md` links each one at the exact version,
+with its md5.
 
-If you get a black screen with "ED" overlay in upper left corner, either your BIOS files are corrupt or missing or you have no SDRAM module installed.
+## Building and verifying
 
-## Region
+- Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULL`.
+  Releases are built only from a fit with every clock meeting timing.
+  `Arcade-TaitoGNET_20261006.rbf` is the GNET_Z1FULL build of this
+  commit's sources (Quartus 17.0.2, every clock met).
+- The design documents in `docs/` are a development log. They name
+  earlier experimental Quartus revisions (GNET_F0, GNET_B1, GNET_Z1,
+  GNET_Z1SHELL, ZOOM_FIT and others), test MRAs in `mra/`, the script
+  that ran builds on my compile PC, and development branches. Those are
+  not in this repository; the references record how each result was
+  obtained.
+- Simulation: NVC 1.23 and Verilator 5.x benches in `sim/`. The MAME
+  reference traces need MAME 0.288 and your own files; the trace scripts
+  are in `tools/mame/`. Game-derived data from these runs stays in
+  gitignored folders.
 
-Region settings (e.g. Clock, BIOS, CD check) are selected automatically when loading a CD. You can force a different Region in OSD.
+## License and credits
 
-## Memory Card
+The files I wrote carry GPL-2.0-or-later headers, the same as PSX_MiSTer's
+PSX.sv, so they can go back upstream unchanged. The combined core and its
+bitstream are GPL-3.0-or-later, because the MiSTer framework files are
+([docs/licensing.md](docs/licensing.md)). `LICENSE` holds PSX_MiSTer's
+GPLv2 text and `LICENSE-GPL3` the GPLv3 text. Files from other projects
+keep their own licences and headers.
 
-Games that are in their own folder will create it's own memory card in media/fat/saves/psx as <folder name>.sav 
+- **PSX_MiSTer** by Robert Peip is the base of the core: CPU, GTE, GPU,
+  SPU and the rest of the PlayStation hardware. The MiSTer framework is by
+  Sorgelig and contributors.
+- **MAME** is the behavioural reference for everything without a better
+  source: the taitogn, zn and taito_zm drivers and the zsg2, tms57002,
+  mn10200, psx, cat702, rf5c296, ataflash and mb3773 devices, by smf,
+  Olivier Galibert, R. Belmont, hap, superctr, cam900, Aaron Giles,
+  pSXAuthor and the other MAME developers. The core follows superctr's
+  later ZSG-2 fix (MAME commit 61c7940).
+- **psx-spx** (Martin "nocash" Korth and contributors) for the PlayStation
+  hardware, and JaCzekanski's **ps1-tests** for GPU behaviour.
+- **Datasheet and manual authors:** Texas Instruments (TMS57002 User's
+  Guide), Fujitsu (MB3773, MB87078), Intel (28F160S5, 28F160S3, 28F400B5),
+  Ricoh (RF5C296), Analog Devices (ADM708), IDT (R3051/R3052), LSI Logic
+  (CW33000), Panasonic (MN102H and MN102L manuals), Mitsubishi (M66220),
+  Atmel (AT28C16), Sanyo (LC321664), the CompactFlash Association, and
+  Taito (the G-NET operator manual).
+- **Board photos and recordings:** System 16, bytestorm and the
+  arcade-projects forum members whose traces and notes are cited in
+  docs/ACCURACY.md, westtrade, Gamers Bay and The Obsolete Geek for PCB
+  footage.
+- XelaNotPu's ZN-1 and ZN-2 cores informed my feasibility study and the
+  area budget (measured fits); no code was taken from them.
 
-One card can be mounted for each controller slot. Cards are in raw .mcd format. An empty formatted .mcd file is available for [download here](https://github.com/MiSTer-devel/PSX_MiSTer/raw/main/memcard/empty.mcd).
-
-You need to save them either manually in the OSD or turn on autosave. Saving or loading a card will pause the core for a short time.
-
-## CUE+BIN and CHD files
-
-For proper operation, CUE/BIN and CHD game files should be placed in separate folders, with one folder per game. This allows the core to automatically create a dedicated virtual memory card for each game, preventing save data from being shared between different titles.
-
-Additionally, when a new game is selected, the core automatically resets itself, ensuring the game starts correctly without requiring a manual restart.
-
-## Multiple Disc Games
-
-To swap discs while the game is running, all disc files for the game must be placed in the same folder. When a disc change is required, the core will automatically simulate opening and closing the disc lid. Example folder structure of a multi-disc game:
-
-```
-/media/fat/games/PSX/Final Fantasy VII (USA)/Final Fantasy VII (USA) (Disc 1).chd
-/media/fat/games/PSX/Final Fantasy VII (USA)/Final Fantasy VII (USA) (Disc 2).chd
-/media/fat/games/PSX/Final Fantasy VII (USA)/Final Fantasy VII (USA) (Disc 3).chd
-```
-
-## Video output
-
-Core can output through HDMI and Analog out.
-
-HDMI also offers a debugging framebuffer mode with support of full VRAM as 1024x512 pixel image(debug only)
-
-Analog out from Direct Video is full 24Bit Color, but from Analog Board will only deliver 18 Bits of color.
-You can activate the 24 Bit dithering option to remove color banding in FMVs without decreasing the image quality in 16 bit color ingame.
-Do not use with HDMI or you get artifacts!
-
-Fixed Hblank as well as Fixed Vblank can help delivering correct aspect rations and keeping the screen in sync with e.g. shaking animations.
-Both also offer crop options for games that depend on CRT viewports to hide artifacts at the edge of the image.
-
-Sync 480i for HDMI will make 480i content run with 240p timings, making it easier for HDMI devices to keep the sync when switching between both modes in games. 
-Do not use with VGA/Analog out or you get artifacts!
-
-## Libcrypt
-
-Some games are secured with Libcrypt and will not work if it's not circumvented.
-
-You can provide a .sbi file to do that.
-If there is a .sbi file next to a .cue with the same name, it is loaded automatically when mounting the CD image.
-
-## Unsafe options
-
-The core offers various options to improve gameplay for some games, but those options cannot be considered stable through all games.
-If you use one or more of these options, the core will warn you every time you start a game.
-
-- 480i to 480p hack: 
-Allows to render some games with full 480p resolution, removing interlacing artifacts. Only works for some full 3D 480i titles.
-
-- Turbo: 
-Increases CPU, DMA, Memory and GTE performance by ~10%(Low), ~20%(Medium) or 50%(High). Cheats cannot be used while Turbo is on and are disabled automatically.
-
-- Pause when CD slow: 
-CD data must be returned in a fixed time frame, otherwise the core will pause until the data has arrived. Disabling this will remove these pauses, but also risk that the game hangs up due to CD data being late.
-
-- PAL 60Hz Hack:
-Runs PAL games with 60Hz. PAL Games will often run faster with this hack on. Screen height is limited to 256 lines in this mode, so some games might be cropped.
-
-- CD Fast Seek:
-CD will seek the next sector in the minimal possible time. Decreases loading time of games, but some games depend on the long loading times and will crash.
-
-- CD Speed:
-Allows to run the CD drive with fixed higher speed to decrease loading times, but some games depend on the long loading times and will crash.
-CD will automatically speed down to original speed for FMVs or CD audio playback and back to increased speed in loading areas.
-The higher speed rates are more unstable and require proper storage to be usable with bin/cue files reaching higher performance than chd.
-
-- Limit Max CD Speed:
-Will hold back any new CD data until the game has processed the last data. 
-Mostly useful to prevent CD data overrun when using higher speed modes, leading to overall faster loading times due to less read retries.
-
-- RAM:
-8 Mbyte option from development consoles. Only use for homebrew that requires it, otherwise there is a high chance of crashing games.
-
-## Error messages
-
-If there is a recognized problem, an overlay is displayed, showing which error has occured.
-You can hide these messages with an OSD option, by default they are on.
-
-List of Errors:
-- E2     - CPU exception(only relevant if game shows issues)
-- E3..E6 - GPU hangs (e.g. corrupt display list)
-- E7     - CPU2VRAM with mask-AND enabled
-- E8     - DMA chopping enabled
-- E9     - GPU FIFO overflow
-- EA     - SPU timeout
-- EB     - DMA and CPU interlock error 
-- EC     - DMA FIFO overflow
-- ED     - CPU Data/Bus request timeout -> will also appear if the BIOS is not found or corrupt or no SDRAM module is installed
-- EF     - BusWidth for SPU was set to 8 Bit (but should be 16 bit)
-
-## Debug Options
-
-The debug menu is intended for use by developers only. They don't really serve any purpose for regular users so it's best to leave them at their default setting as a lot of undesirable behavior could occur.
-
-## Pad Options
-The following pad types are emulated by the core and can be independently assigned to each port:
-- DualShock:
-  Switch Digital/Analog mode with mouse/touchpad click or L3+R3+Up/Down or mapable button 
-- Digital  
-  (ID 0x41) Ten button digital pad.
-- Analog  
-  (ID 0x73) Twinstick pad.  
-- Mouse  
-  (ID 0x12) Two button mouse.
-- Off  
-  Pad unplugged from port.
-- GunCon  
-  (ID 0x62) GunCon compatible lightgun.
-- Justifier  
-- NeGcon  
-  (ID 0x23) NeGcon compatible racing pad.  
-  Primarily developed for dual analog stick usage with the following mapping (genuine NeGcons  
-   may work if usb adapters map steering to Left Analog and I/II to Right Analog):
-   - Steering -> Left Analog (you can also use a paddle controller for this axis)
-   - Circle -> Circle
-   - Triangle -> Triangle
-   - I -> Right Analog Up, Cross (100% pressed), R2 (100% pressed)
-   - II -> Right Analog Down, Rectangle (100% pressed), L2 (100% pressed)
-   - L -> L1 (100% pressed)
-   - R -> R1
-   
-SNAC can be selected for each port and will support gamepads and memory cards on the corresponding slot.
-When SNAC is enabled for a slot, the emulated gamepad/memory for this slot is disconnected.
-
-## Controller mapping reference
-NeGcon based controllers
-
-| DualShock (for reference) | NeGcon | Volume | Pachinko |
-|:-------------------------:|:------:|:------:|:--------:|
-| D-PAD                     | D-PAD  |        |          |
-| RX Axis                   | Twist  | Paddle | Handle   |
-| RY Axis                   | I      |        |          |
-| LX Axis                   | L1     |        |          |
-| LY Axis                   | II     |        |          |
-| O                         | A      | B      |          |
-| △                         | B      |        |          |
-| R1                        | R1     |        |          |
-| Start                     | Start  | A      | Button   |
-
-Lightgun
-  
-| DualShock (for reference) |   Guncon  | Justifier |
-|:-------------------------:|:---------:|:---------:|
-| O                         | Trigger   | Trigger   |
-| Start                     | A (Left)  | Start     |
-| X                         | B (Right) | Special   |
-  
-## Status
-
-Many games working
-
---
-
-CPU    : 90%
-- exception for read in invalid instruction and data area missing
-
-GPU    : 90%
-- mask bits not implemented for cpu2vram -> nothing yet found that uses it
-- vram2vram read/modify/write race condition when copying to same line
-
-IRQ    : 90%
-- irq_SIO missing because unused        
-
-PAD    : 90%
-- full configurable multitap missing
-
-Memctrl: register stubs only
-
-SIO    : register stubs only
-
-Timer  : 90%
-- accuracy for dotclock and gates timer not tested
-
-GTE    : 90%
-- CPU <-> GTE Transfer pipeline delay not fully correct
-
-MDEC   : 90%
-- timing slightly too fast (4996/5376)
- 
-CD     : 90%
-- accurate CD access model for correct seek times should be added
-- drive and controller logic should be seperated
+Development used Anthropic's Claude as a coding tool.

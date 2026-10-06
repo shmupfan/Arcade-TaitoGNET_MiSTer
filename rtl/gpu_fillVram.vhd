@@ -3,6 +3,10 @@ use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all; 
 
 entity gpu_fillVram is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -24,7 +28,7 @@ entity gpu_fillVram is
       
       pixelStall           : in  std_logic;
       pixelColor           : out std_logic_vector(15 downto 0);
-      pixelAddr            : out unsigned(19 downto 0);
+      pixelAddr            : out unsigned(VRAM_Y_BITS + 10 downto 0);
       pixelWrite           : out std_logic
    );
 end entity;
@@ -43,12 +47,12 @@ architecture arch of gpu_fillVram is
       
    signal color   : std_logic_vector(14 downto 0);
    signal x1      : unsigned(9 downto 0);
-   signal y1      : unsigned(8 downto 0);   
+   signal y1      : unsigned(VRAM_Y_BITS - 1 downto 0);   
    signal widt    : unsigned(10 downto 0);
-   signal heig    : unsigned(8 downto 0);
+   signal heig    : unsigned(VRAM_Y_BITS - 1 downto 0);
    
    signal x       : unsigned(10 downto 0);
-   signal y       : unsigned(8 downto 0);
+   signal y       : unsigned(VRAM_Y_BITS - 1 downto 0);
    
    signal timer   : integer;
    signal timeCnt : integer;
@@ -59,7 +63,7 @@ begin
 
    -- fill VRAM
    process (clk2x)
-      variable row     : unsigned(8 downto 0);
+      variable row     : unsigned(VRAM_Y_BITS - 1 downto 0);
       variable col     : unsigned(10 downto 0);
       variable lineEnd : std_logic;
    begin
@@ -93,7 +97,7 @@ begin
                   if (fifo_Valid = '1') then
                      state <= REQUESTWORD3;  
                      x1    <= unsigned(fifo_data( 9 downto  4) & x"0");
-                     y1    <= unsigned(fifo_data(24 downto 16));
+                     y1    <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                   end if;
             
                when REQUESTWORD3 =>
@@ -102,10 +106,10 @@ begin
                      state   <= WRITING;
                      widt    <= resize(unsigned(fifo_data( 9 downto  0)), 11) + 15;
                      widt(3 downto 0) <= x"0";
-                     heig    <= unsigned(fifo_data(24 downto 16));
+                     heig    <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                      x       <= (others => '0');
                      y       <= (others => '0');
-                     if (unsigned(fifo_data( 9 downto  0)) = 0 or unsigned(fifo_data(24 downto 16)) = 0) then
+                     if (unsigned(fifo_data( 9 downto  0)) = 0 or unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16)) = 0) then
                         state <= IDLE;
                         done  <= '1';
                      end if;

@@ -1,0 +1,8 @@
+instance_end system raycris machine_seconds 900.0 coin_at 240.0 soft_resets 0
+  gpu_w 1823883 first 0.00
+  mdec_w 0 first -
+  mdec_r 0 first -
+  dma0 0 first -
+  dma1 0 first -
+  kon 4674 first 155.45
+  spucnt 1503 first 155.45

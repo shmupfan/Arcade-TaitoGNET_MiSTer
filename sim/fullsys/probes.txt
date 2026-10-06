@@ -1,0 +1,62 @@
+# Debug probes for the full-system top: name width hierarchical-path
+# (GHDL lower-cases internal names). gen_top.py exposes each as dbg_<name>
+# and the harness prints them in progress.log.
+rst 1 u.reset_intern
+ce 1 u.ce
+pausing 1 u.pausing
+sspause 1 u.savestate_pause
+ssidle 1 u.ss_idle
+cpup 1 u.cpupaused
+mmstate 4 u.imemorymux.state
+ssstate 5 u.isavestates.state
+sscount 20 u.isavestates.count
+dmagpu_we 1 u.dma_gpu_writeena@GP@
+dmagpu_d 32 u.dma_gpu_write@GP@
+# ZN-2 expansion bus (zn2 builds only: fourth column)
+znreq 1 u.zn_req zn2
+znwe 1 u.zn_we zn2
+znaddr 24 u.zn_addr zn2
+znbe 4 u.zn_be zn2
+znwdata 32 u.zn_wdata zn2
+znack 1 u.zn_ack zn2
+znrdata 32 u.zn_rdata zn2
+# CPU reads of the GPU (GPUREAD/GPUSTAT); data is valid one clk1x later
+gpurd 1 u.bus_gpu_read
+gpuaddr 4 u.bus_gpu_addr
+gpurdata 32 u.bus_gpu_dataread
+# reset sequencer SPU RAM handshake (trace window -trace_from/-trace_to)
+ssspreq 1 u.ss_spuram_request
+ssspdone 1 u.ss_spuram_done
+c2idx 1 u.clk2xindex
+# CPU data bus into memorymux (I/O access log, -iolog_from/-iolog_to us)
+cpureq 1 u.mem_request
+cpurnw 1 u.mem_rnw
+cpuaddr 32 u.mem_addressdata
+cpuwdata 32 u.mem_datawrite
+cpurdata 32 u.mem_dataread
+cpudone 1 u.mem_done
+cpumask 4 u.mem_writemask
+# COP0 exception state (Cause, EPC, BadVaddr, SR)
+c0cause 32 u.icpu.cop0_cause
+c0epc 32 u.icpu.cop0_epc
+c0bad 32 u.icpu.cop0_badvaddr
+c0sr 32 u.icpu.cop0_sr
+c0dcic 32 u.icpu.cop0_dcic
+c0bpc 32 u.icpu.cop0_bpc
+c0bpcm 32 u.icpu.cop0_bpcm
+pcold1 32 u.icpu.pcold1
+op0 32 u.icpu.opcode0
+op1 32 u.icpu.opcode1
+op2 32 u.icpu.opcode2
+pcold0 32 u.icpu.pcold0
+# Taito Zoom (zoom-into-z1 builds): MN10200-side mailbox writes, debug flags
+zmbwe 1 u.gzn2c_gzoom_izoom_board.u_mbox.z_we zoom
+zmba 7 u.gzn2c_gzoom_izoom_board.u_mbox.z_a zoom
+zmbwd 16 u.gzn2c_gzoom_izoom_board.u_mbox.z_wd zoom
+zmflags 8 u.zoom_flags zoom
+zmtick 1 u.gzn2c_gzoom_izoom_board.u_out.tick zoom
+zmoutl 16 u.gzn2c_gzoom_izoom_board.u_out.out_l zoom
+zmoutr 16 u.gzn2c_gzoom_izoom_board.u_out.out_r zoom
+zmpush 1 u.gzn2c_gzoom_izoom_board.u_out.push zoom
+zmso1l 16 u.gzn2c_gzoom_izoom_board.u_out.in_l zoom
+zmso1r 16 u.gzn2c_gzoom_izoom_board.u_out.in_r zoom

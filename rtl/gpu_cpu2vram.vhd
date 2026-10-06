@@ -3,6 +3,10 @@ use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all; 
 
 entity gpu_cpu2vram is
+   generic
+   (
+      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+   );
    port 
    (
       clk2x                : in  std_logic;
@@ -24,7 +28,7 @@ entity gpu_cpu2vram is
       
       pixelStall           : in  std_logic;
       pixelColor           : out std_logic_vector(15 downto 0);
-      pixelAddr            : out unsigned(19 downto 0);
+      pixelAddr            : out unsigned(VRAM_Y_BITS + 10 downto 0);
       pixelWrite           : out std_logic
    );
 end entity;
@@ -41,12 +45,12 @@ architecture arch of gpu_cpu2vram is
    signal state : tState := IDLE;
    
    signal copyDstX     : unsigned(9 downto 0);
-   signal copyDstY     : unsigned(8 downto 0);   
+   signal copyDstY     : unsigned(VRAM_Y_BITS - 1 downto 0);   
    signal copySizeX    : unsigned(10 downto 0);
-   signal copySizeY    : unsigned(9 downto 0);
+   signal copySizeY    : unsigned(VRAM_Y_BITS downto 0);
                        
    signal x            : unsigned(10 downto 0);
-   signal y            : unsigned(9 downto 0);
+   signal y            : unsigned(VRAM_Y_BITS downto 0);
    
    signal fifo_Valid_1 : std_logic;
    signal fifo_data_1  : std_logic_vector(15 downto 0);
@@ -58,7 +62,7 @@ begin
                   '0';
 
    process (clk2x)
-      variable row : unsigned(8 downto 0);
+      variable row : unsigned(VRAM_Y_BITS - 1 downto 0);
       variable col : unsigned(9 downto 0);
    begin
       if rising_edge(clk2x) then
@@ -95,7 +99,7 @@ begin
                   if (fifo_Valid = '1') then
                      state    <= REQUESTWORD3;  
                      copyDstX <= unsigned(fifo_data( 9 downto  0));
-                     copyDstY <= unsigned(fifo_data(24 downto 16));
+                     copyDstY <= unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                   end if;
             
                when REQUESTWORD3 =>
@@ -103,11 +107,11 @@ begin
                      CmdDone    <= '1';
                      state      <= WRITING;
                      copySizeX  <= '0' & unsigned(fifo_data( 9 downto  0));
-                     copySizeY  <= '0' & unsigned(fifo_data(24 downto 16));
+                     copySizeY  <= '0' & unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16));
                      x          <= (others => '0');
                      y          <= (others => '0');
                      if (unsigned(fifo_data( 9 downto  0)) = 0) then copySizeX <= to_unsigned(16#400#, 11); end if;
-                     if (unsigned(fifo_data(24 downto 16)) = 0) then copySizeY <= to_unsigned(16#200#, 10); end if;
+                     if (unsigned(fifo_data(VRAM_Y_BITS + 15 downto 16)) = 0) then copySizeY <= to_unsigned(2**VRAM_Y_BITS, VRAM_Y_BITS + 1); end if;
                   end if;
                   
                when WRITING => 
@@ -119,7 +123,7 @@ begin
                   -- todo: AND/OR masking
                
                   if (fifo_Valid = '1' or fifo_Valid_1 = '1') then
-                     row := copyDstY + y(8 downto 0);
+                     row := copyDstY + y(VRAM_Y_BITS - 1 downto 0);
                      col := copyDstX + x(9 downto 0);
       
                      pixelWrite <= '1';
