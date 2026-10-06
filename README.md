@@ -28,36 +28,32 @@ every known difference from MAME and from the real board, is in
 
 ## Supported games
 
-| Game | MAME set | Orientation |
-|---|---|---|
-| Ray Crisis (V2.03O 1998/11/15) | raycris | horizontal |
-| Psyvariar -Medium Unit- (V2.02O 2000/02/22) | psyvaria | vertical |
-| Psyvariar -Revision- (V2.04J 2000/08/11) | psyvarrv | vertical |
-| XII Stag (V2.01J 2002/06/26) | xiistag | vertical |
-| Shikigami no Shiro (V2.03J 2001/08/07) | shikigam | vertical |
-| Night Raid (V2.03J 2001/02/26) | nightrai | horizontal |
+The games come in three batches. Only batch 1 is tested. Batches 2 and 3
+share the same hardware paths in the core, but have had little or no
+testing on hardware, so expect bugs. The full table, with each set's card
+type, game configuration byte, zip name and test status, is in
+[releases/README.md](releases/README.md).
 
-All six use the same machine: the `coh3002t` BIOS, the FC PCB with the
-Taito Zoom board, and a Taito Type 1 PC card. Other G-NET games (the
-non-shooters and the 2011 conversions of G-Darius, Ray Storm, Aero
-Fighters Special and Brave Blade) run on the same hardware and can be
-added later.
+| Batch | Folder | Games | Status |
+|---|---|---|---|
+| 1 | `releases/` | Ray Crisis (V2.03O and V2.03J), Chaos Heat (V2.09O), Psyvariar -Medium Unit- (V2.02O), Psyvariar -Revision-, XII Stag, Shikigami no Shiro, Night Raid | Tested: played on my MiSTer, except Ray Crisis (V2.03O) and XII Stag, which boot but I have not played yet |
+| 2 | `releases/_Taito G-NET batch 2 (boots)/` | Chaos Heat (V2.08J), Psyvariar -Medium Unit- (V2.04J), Shikigami no Shiro internal build, Flip Maze, Kollon (Type 1 card), Shanghai Shoryu Sairin, Soutenryu, Shanghai Sangokuhai Tougi, Otenki Kororin | Boot to their title or attract screen on my MiSTer; Psyvariar (V2.04J) and the Shikigami internal build not yet tried. Expect bugs |
+| 3 | `releases/_Taito G-NET batch 3 (untested)/` | Otenami Haiken, Zoku Otenamihaiken (both versions), Zooo, Space Invaders Anniversary, Otenami Haiken Final, Super Puzzle Bobble (both versions), Kollon (CompactFlash), Go By RC, RC De Go, Mahjong Oh, Usagi | New core features (no Zoom board, Type 2 and CompactFlash cards, mahjong and RC controls), not yet run on hardware. Expect bugs |
+
+All of them use the `coh3002t` BIOS and the FC PCB. Not supported:
+Mawasunda, which runs on the ZN-1 G-NET board (`coh1002t`), and the 2011
+conversions of G-Darius, Ray Storm, Aero Fighters Special, Brave Blade
+and others, which boot from a modified BIOS on a plain card.
 
 ## Roadmap
 
-This alpha covers the G-NET shooters. The rest of the library runs on the
-same board and differs mainly in how the game card unlocks, whether the
-Taito Zoom sound board is used, and the controls. I add each game once I
-can test it on the core.
-
 | Stage | Games | What each needs |
 |---|---|---|
-| Alpha 1 (this release) | Ray Crisis, Psyvariar -Medium Unit-, Psyvariar -Revision-, XII Stag, Shikigami no Shiro, Night Raid | Done; test reports wanted |
-| Next | Japanese and internal versions of the same games (raycrisj, psyvarij, shikigama) | MRAs and a hardware boot test |
-| Next | Other Type 1 card games with a stick and 3 buttons: Chaos Heat, Flip Maze, Kollon, Otenami Haiken, Zoku Otenamihaiken, Zooo, Space Invaders Anniversary, Shanghai Shoryu Sairin, Soutenryu, Shanghai Sangokuhai Tougi, Otenki Kororin | MRAs, a "no Zoom board" setting for the games without it, a look at the interrupt quirk MAME works around for two of them |
+| Batch 1 (this release) | The shooters above | Done; test reports wanted |
+| Batch 2 (this release) | Other Type 1 card games and versions | Play testing on hardware, and a look at the interrupt quirk MAME works around for Kollon (V2.04JA) |
+| Batch 3 (this release) | No Zoom board, Type 2 and CompactFlash cards, special controls | A first hardware test of each new feature, the same interrupt quirk for Space Invaders Anniversary, and whether the CompactFlash games need the sub-BIOS that MAME's BIOS flasher writes |
 | Later | The 2011 conversions on plain cards: G-Darius, Ray Storm, Aero Fighters Special, Brave Blade, Flame Gunner, Fighters' Impact, Shanghai Matekibuyuu, The Block Kuzushi | The modified BIOS they boot from, MRAs |
-| Later | Type 2 and CompactFlash card games: Super Puzzle Bobble, Kollon (CF), Otenami Haiken Final, Zoku Otenamihaiken (V2.05J) | The other two card unlock methods |
-| Later | Special controls: Go By RC, RC De Go (wheel), Mahjong Oh, Usagi (mahjong panel); Mawasunda (ZN-1 board) | New inputs; Mawasunda also needs the ZN-1 G-NET BIOS |
+| Later | Mawasunda | The ZN-1 board and its G-NET BIOS, and its two handles |
 
 ## What works
 
@@ -83,9 +79,9 @@ You need your own MAME 0.288 files. No BIOS, card, flash or game data is
 included in this repository.
 
 1. Copy `releases/Arcade-TaitoGNET_20261006.rbf` to
-   `/media/fat/_Arcade/cores/`, the MRA files from `releases/` to
-   `/media/fat/_Arcade/`, and, for the first-boot MRAs, the folders in
-   `releases/_alternatives/` to `/media/fat/_Arcade/_alternatives/`.
+   `/media/fat/_Arcade/cores/`, and the rest of `releases/` (the MRA
+   files and the `_alternatives` and batch folders, as they are laid
+   out) to `/media/fat/_Arcade/`.
 2. Copy your `coh3002t.zip` (the G-NET BIOS set, MAME 0.288) to
    `/media/fat/games/mame/`.
 3. MiSTer cannot read MAME's hard-disk CHD files, so each game's card is
@@ -101,8 +97,9 @@ included in this repository.
    `--chdman <path to chdman.exe>`. The tool checks that `coh3002t.zip`
    is the MAME 0.288 version and warns if a CHD does not match MAME 0.288.
    It writes one `gnet_<set>.zip` per game it finds, holding the card
-   image (40,960,000 bytes), the card's identify data, CIS and unlock key,
-   and the flash chips as the BIOS leaves them after its first-boot copy.
+   image (38.6 MB to 64.2 MB depending on the card), the card's identify
+   data, CIS, unlock key and card type, and the flash chips as the BIOS
+   leaves them after its first-boot copy.
    These zips are made from your own files: keep them to yourself.
 4. Copy every `gnet_<set>.zip` to `/media/fat/games/mame/`.
 
@@ -110,7 +107,8 @@ There are two MRAs per game:
 
 - **`<Game>.mra`**, the main MRA, loads the flash as the BIOS leaves it
   after its first-boot copy, so the game starts in a few seconds.
-- **`_alternatives/_<Game>/<Game> (first boot).mra`** starts like a real
+- **`_alternatives/_<Game>/<Game> (first boot).mra`** (in each batch
+  folder) starts like a real
   board after a card swap: the BIOS copies the card into the flash chips
   (about 2.5 minutes), then the game starts. The flash is not kept
   between loads, so the copy runs every time. Do not reset or power off
@@ -125,11 +123,11 @@ For anyone writing MRAs for this core:
 | 0 | BIOS `m534002c-60.ic353` (512 KB) | coh3002t.zip |
 | 2 | CAT702 keys `tt10.ic652`, `tt16.u17` | coh3002t.zip |
 | 3 | flash area, 10 MB: U30 sub-BIOS, U27 Zoom program, U56/U55/U29 wave data | `<set>.flash` from the game zip (main MRA), or `flash.u30` plus 8 MB of FFh (first boot MRA) |
-| 4 | card identify data, CIS and key (1 KB) | `<set>.meta` from the game zip |
-| 5 | PC card image | `<set>.img` from the game zip |
+| 4 | card identify data, CIS, key and card type at 3F0h (01 Type 1, 02 Type 2, 03 CompactFlash) (1 KB) | `<set>.meta` from the game zip |
+| 5 | PC card image (whole sectors, up to 64 MB) | `<set>.img` from the game zip |
 | 6 | EEPROM (2 KB), `<nvram index="6" size="2048"/>` | saved by MiSTer |
-| 7 | game configuration byte: 01 for the vertical sets, 00 otherwise | inline in the MRA |
-| 254 | DIP switch S551 | MRA switches |
+| 7 | game configuration byte: bit 0 vertical set (MAME ROT270), bit 1 no Taito Zoom board (MAME `init_nozoom`), bits 3:2 controls (0 stick, 1 mahjong panel and P1 stick, 2 mahjong panel, 3 RC wheel and trigger) | inline in the MRA |
+| 254 | bits 3-0 DIP switch S551, bit 4 JP1 (kept open, see releases/README.md) | MRA switches |
 
 ## Controls
 
@@ -148,6 +146,16 @@ have not found the game manuals, so the buttons are Button 1 to 3.
 
 Movement is the stick or D-pad, the arrow keys for player 1, and R, F, D,
 G for player 2. The keyboard keys are MAME's defaults.
+
+Batch 3 has two other control types, as MAME 0.288 maps them:
+
+- **Mahjong panel** (Mahjong Oh, Usagi), on the keyboard with MAME's
+  default keys: A to N for the tiles, Left Ctrl Kan, Left Alt Pon, Space
+  Chi, Left Shift Reach, Z Ron, 1 Start. Mahjong Oh also keeps the player
+  1 stick and buttons; Usagi has neither.
+- **RC wheel and trigger** (Go By RC, RC De Go), one player: the analog
+  stick's X axis or a paddle steers, the stick's Y axis is the trigger;
+  the D-pad or arrow keys give full deflection.
 
 ## OSD options
 
@@ -211,8 +219,8 @@ OSD opens after the game has written to it.
 - **Card writes are not saved.** Some games write a few sectors to their
   PC card (what they hold is not known yet); the core keeps those writes
   only until the core is reloaded.
-- **Not yet checked on hardware:** Ray Crisis, XII Stag and Night Raid on
-  my MiSTer; slowdown in heavy scenes against a real board; the EEPROM
+- **Not yet checked on hardware:** play in Ray Crisis (V2.03O) and XII
+  Stag on my MiSTer; batches 2 and 3 beyond their title screens; slowdown in heavy scenes against a real board; the EEPROM
   save across a power cycle; rotation and Flip Screen on every display.
 - **Watchdog period.** The core uses 8 s where MAME uses 5 s; the board's
   real period is not known (the timing capacitor's value is not legible

@@ -6,7 +6,8 @@ What the BIOS does on first boot, as reconstructed from MAME 0.288 NVRAM
 (docs/m0_findings.md 3a):
   - SYSTEM.INF on the card (FAT16) names the files: gameprog, zoomprog, wave.
   - wave0..2  = the wave files, 16-bit byte-swapped.
-  - zoomprog  = the zoomprog file; if its extension is .SDH it is decoded
+  - zoomprog  = the zoomprog file (absent on cards for boards without the
+                Zoom sound board: left erased); if its extension is .SDH it is decoded
                 (Huffman then LZSS) first; then byte-swapped.
   - firm (U30) = flash.u30 from coh3002t.zip (sub-BIOS), byte-swapped, with
                  an install header at 0x50000, SYSTEM.TIM at 0x54000 (VRAM
@@ -146,11 +147,15 @@ def build(card_path, zip_path):
     for n, w in enumerate(inf['wave']):
         data = fs.read(w[0])
         out['wave%d' % n] = swap16(data.ljust(0x200000, b'\xff'))
-    zname = inf['zoomprog'][0]
-    z = fs.read(zname)
-    if zname.upper().endswith('.SDH'):
-        z = sdh_decode(z)
-    out['zoomprog'] = swap16(z.ljust(0x80000, b'\xff'))
+    # games without the Zoom board (MAME init_nozoom: otenamih, zooo and the
+    # rest) have no zoomprog line; U27 then stays erased (all FFh), so no
+    # 'zoomprog' image is returned and callers leave the area at FFh
+    if 'zoomprog' in inf:
+        zname = inf['zoomprog'][0]
+        z = fs.read(zname)
+        if zname.upper().endswith('.SDH'):
+            z = sdh_decode(z)
+        out['zoomprog'] = swap16(z.ljust(0x80000, b'\xff'))
 
     firm = bytearray(swap16(zipfile.ZipFile(zip_path).read('flash.u30')))
     gname, gver = inf['gameprog'][0], inf['gameprog'][1]

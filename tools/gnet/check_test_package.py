@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SIZES = {"0": 524288, "2": 16, "3": 0xA00000, "4": 1024, "5": 40960000, "7": 1}
+SIZES = {"0": 524288, "2": 16, "3": 0xA00000, "4": 1024, "7": 1}
+CARD_MAX = 64 << 20   # index 5, the card image: whole sectors, up to the core's 64 MB window
 
 
 def main():
@@ -81,6 +82,8 @@ def main():
                     errs.append(f"index {idx}: {part.get('name')} CRC {info.CRC:08x}, MRA says {crc}")
             if idx in SIZES and total != SIZES[idx]:
                 errs.append(f"index {idx}: {total} bytes, expected {SIZES[idx]}")
+            if idx == "5" and (total == 0 or total % 512 or total > CARD_MAX):
+                errs.append(f"index 5: {total} bytes, expected whole 512-byte sectors up to {CARD_MAX}")
         print(("FAIL " if errs else "ok   ") + f"{name} ({setname}, {rbf})")
         for e in errs:
             print("       " + e)

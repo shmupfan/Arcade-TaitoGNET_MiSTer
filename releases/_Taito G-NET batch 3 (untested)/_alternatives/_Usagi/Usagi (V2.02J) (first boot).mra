@@ -1,0 +1,40 @@
+<misterromdescription>
+    <name>Usagi (V2.02J 2001/10/02) (first boot)</name>
+    <setname>usagi</setname>
+    <rbf>TaitoGNET</rbf>
+    <mameversion>0288</mameversion>
+    <year>2001</year>
+    <manufacturer>Warashi / Mahjong Kobo / Taito</manufacturer>
+    <category>Mahjong</category>
+    <players>1</players>
+    <joystick>none</joystick>
+    <rotation>horizontal</rotation>
+    <switches default="0F">
+        <dip name="Unknown (S551:1)" bits="0" ids="On,Off" />
+        <dip name="Service Mode (S551:2)" bits="1" ids="On,Off" />
+        <dip name="Unknown (S551:3)" bits="2" ids="On,Off" />
+        <dip name="Test Mode (S551:4)" bits="3" ids="On,Off" />
+    </switches>
+    <buttons names="(unused),(unused),(unused),Start,Coin,Service,Test,Pause" default="A,B,X,Start,Select,L,R" />
+    <rom index="0" zip="coh3002t.zip" md5="none">
+        <part name="m534002c-60.ic353" crc="03967fa7" />
+    </rom>
+    <rom index="2" zip="coh3002t.zip" md5="none">
+        <part name="tt10.ic652" crc="235510b1" />
+        <part name="tt16.u17" crc="6bb167b3" />
+    </rom>
+    <rom index="3" zip="coh3002t.zip" md5="none">
+        <part name="flash.u30" crc="c48c8236" />
+        <part repeat="0x800000">FF</part>
+    </rom>
+    <rom index="4" zip="gnet_usagi.zip" md5="none">
+        <part name="usagi.meta" />
+    </rom>
+    <rom index="5" zip="gnet_usagi.zip" md5="none">
+        <part name="usagi.img" />
+    </rom>
+    <rom index="7">
+        <part>08</part>
+    </rom>
+    <nvram index="6" size="2048" />
+</misterromdescription>
