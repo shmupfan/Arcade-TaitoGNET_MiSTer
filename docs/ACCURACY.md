@@ -126,6 +126,21 @@ audio) stays in gitignored folders and is never committed.
 | MDEC | removed | present | unused by all six games in 900 s traces (`docs/r18_mdec_spu.md`) | Rank 5; later-stage overlays are not covered |
 | Slowdown | the GPU draws with real timing on DDR3 | MAME's GPU draws instantly, so MAME drops almost no frames in Ray Crisis demo 1 at any CPU clock | the board drops about 7.8% of frames in that demo | Not yet measured on the core. Demo 1 (223 extra frames on the board) is the test (`docs/r1_speed_study.md` 3.2, 4) |
 
+### 2.5 Kollon and Space Invaders Anniversary: the ttgnirq race
+
+MAME runs these two sets as `ttgnirq_state`, which zeroes I_MASK when the
+CPU fetches 0x80010008 ([taitogn.cpp L649-L680](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L649-L680)). I traced
+why (`docs/ttgnirq_quirk.md`).
+
+| Item | Finding |
+|---|---|
+| Sources | MAME 0.288 under the debugger, warm boots of kollon, sianniv and kollonc ([taitogn.cpp L1365-L1367](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L1365-L1367)); rank 5 |
+| Mechanism | The game's start-up code clears its BSS, which in these two sets runs into the code of the sub-BIOS loader that jumped to it. The loader leaves its VBLANK tick enabled, so a VBLANK after the clear passes the tick's code executes zeroed memory and faults; the game masks interrupts itself about 12,000 cycles (kollon) or 280,000 instructions (sianniv) after the clear |
+| Taito's own fix | kollonc (the later CompactFlash build) has `mtc0 zero,SR` in the delay slot of the clear loop, so interrupts are off during the clear. Patching it back to a nop in MAME makes kollonc hang the same way, so the race is in the game, not in MAME |
+| What the core does | Runs the same loader and game code with the same IRQ setup. I do not copy MAME's fetch tap: it has no hardware basis. Whether a set survives depends on where VBLANK falls in a window 41% (kollon) to 80% (sianniv) of a frame wide, about ten frames after the jump, so it follows the CPU's speed against VBLANK |
+| How it was checked | Hardware, 2026-10-06: Kollon with an unpatched U30 boots on my DE10-Nano to its title screen (GNET_Z1FULLO build of 2026-10-06 21:10, RBF md5 9dbb2405); not played further. Space Invaders Anniversary: not tested |
+| Known gaps | Whether the T1 Kollon and Space Invaders Anniversary cards boot every time on a real board is unknown (needs-review). If Space Invaders Anniversary fails on the core, the fallback is Taito's kollonc fix applied to the U30 image as data, recommended in `docs/ttgnirq_quirk.md` 5 and not implemented |
+
 ## 3. GPU and VRAM
 
 ### 3.1 Sources
@@ -246,6 +261,17 @@ audio) stays in gitignored folders and is never committed.
 | BIOS POST writes to 0x1FA00000, byte writes to 0x1FB68000 | ignored | ignored | Meaning unknown (a latch or LED; `docs/board_evidence.md` C3) |
 | Board configuration register | 0x69 (4 MB RAM, 2 MB VRAM, 512 KB SPU RAM) | 0x69 | Trace (`docs/zn2_layer_design.md` 3) |
 
+### 5.4 Special controls: mahjong panel and RC wheel
+
+| Item | Detail |
+|---|---|
+| Sources | MAME 0.288 `taitogn.cpp` INPUT_PORTS gobyrc, mahjngoh and usagi ([L944-L1015](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L944-L1015)) and `ttgnmp_state::mahjong_panel_r` ([L682-L713](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L682-L713)); `mahjong.cpp` `mahjong_matrix_1p` ([source](https://github.com/mamedev/mame/blob/mame0288/src/mame/shared/mahjong.cpp)); MAME's default keys, `inpttype.ipp` ([source](https://github.com/mamedev/mame/blob/mame0288/src/emu/inpttype.ipp)); the RC De Go controller description in [taitogn.cpp L145-L161](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L145-L161). Rank 5, plus that description |
+| Selection | The MRA's game configuration byte, bits 3:2: 0 joysticks, 1 mahjong panel and P1 joystick (Mahjong Oh), 2 mahjong panel only (Usagi), 3 RC wheel and trigger (Go By RC, RC De Go). Controls MAME marks unused for a set read as released |
+| Mahjong panel | A read of 0x1FA10100 returns the AND of the key rows that coin register bits 2, 3, 6 and 7 select, as `mahjong_panel_r`. The keys are on the keyboard with MAME's default keys: A to N, Kan LCtrl, Pon LAlt, Chi Space, Reach LShift, Ron Z, Start 1 |
+| RC wheel and trigger | The I/O MCU's analog channels 0 and 1, 00h to FFh, centre 80h (MAME IPT_PADDLE, and IPT_PADDLE_V with PORT_REVERSE). Wheel from the analog stick's X or a paddle, trigger from the stick's Y, D-pad for full deflection |
+| How it was checked | zn2_io directed tests of the panel read (each row, two rows together, no row, mahjong off); the clock-domain crossing of the keys and of the analog bytes in `sim/zn2cpu50` (40 runs, 0 errors; a deliberately per-bit analog crossing gives 513 torn values, so the check catches them); lint of the shell. Every other set's inputs are unchanged |
+| Known gaps | Not yet checked in a full-system simulation (a game reading the panel or the wheel) or on hardware. The mahjong keys are on the keyboard only: MiSTer-devel's Psikyo SH2 core puts mahjong keys on joystick buttons 4 to 23, which in this core would collide with the PSX base's savestate and fast-forward buttons. The trigger direction follows MAME's PORT_REVERSE; the real controller's direction is not documented beyond MAME |
+
 ## 6. G-NET FC PCB
 
 ### 6.1 Sources
@@ -359,6 +385,19 @@ bit 5 (0x1FB40000), about every two frames.
 | JP1 | MRA switch, off for these six games | input port | JP1 is the 2-pin header beside U30 (bytestorm's photo); only the 2011 conversions use it |
 | Bootleg EPROM in bank 2 | reads 0 | MB2011 or flasher image | Not needed for the six sets |
 
+### 6.7 Taito Type 2 card and CompactFlash card
+
+Five sets use the Type 2 card (spuzbobl, spuzboblj, gobyrc, zokuoten,
+usagi) and two the CompactFlash card (kollonc, otenamhf)
+([taitogn.cpp L389-L407](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L389-L407) and the GAME lines).
+
+| Item | Detail |
+|---|---|
+| Sources | MAME 0.288 `ataflash.cpp`: `taito_pccard2_device` ([L233-L327](https://github.com/mamedev/mame/blob/mame0288/src/devices/bus/pccard/ataflash.cpp#L233-L327)) and `taito_compact_flash_device` ([L329-L392](https://github.com/mamedev/mame/blob/mame0288/src/devices/bus/pccard/ataflash.cpp#L329-L392)); MAME's note of the values each card type writes to attribute register 07h ([L116-L120](https://github.com/mamedev/mame/blob/mame0288/src/devices/bus/pccard/ataflash.cpp#L116-L120)), which the core ignores as MAME does. Rank 5: MAME is the only description of either lock |
+| What the core does | The card's metadata byte (3F0h) selects the type: 02h Type 2, 03h CompactFlash. Type 2: command FEh, then FCh with a 512-byte key block (bytes 2 to 6 the key, the rest zero); a wrong block sets ERR and the card stays locked. CompactFlash: command 0Fh with the key in the task file (feature, sector count, sector number, cylinder low and high); a wrong key clears DRDY. Neither has the Type 1 attribute lock registers (attribute 201h reads FFFFh). The card size comes from IDENTIFY words 60 and 61 |
+| How it was checked | Unit test `sim/gnet_ata/tb_ata_t2.sv` (core sources): 28 checks, 0 failures: 13 Type 2, 6 Type 1 regression, 9 CompactFlash, including the CompactFlash status bytes of MAME's otenamhf trace (11h for a locked read, 50h after the right key). Full system, spuzbobl warm boot at 50 MHz: the ATA register traffic equals MAME's cold trace value for value, through a wrong-key block (status 51h three times) and the right key (50h) to IDENTIFY and READ SECTORS; the unlock completes at 0.760 s in the core against 0.207 s in MAME (the core's longer BIOS security polling), game code from 1.06 s. The frame comparison of that run is pending |
+| Known gaps | No board observation of either lock. Whether a wrong key after an unlock locks the card again is a TODO in MAME too. No Type 2 or CompactFlash set tested on hardware yet |
+
 ## 7. Taito Zoom sound board
 
 The Zoom board: an MN10200 sound CPU running a program from flash U27, a
@@ -464,6 +503,20 @@ manuals and MAME's behaviour; nothing is taken from other FPGA cores.
   entry late, so the DSP heard silence (about 40 dB down). Fixed before
   this build (14.12).
 
+### 7.7 Sets without a Zoom board
+
+MAME's `init_nozoom` ([L416-L419](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L416-L419)) clears `m_has_zoom`:
+the MN10200 is put in reset at machine reset ([L467](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L467)) and the
+control register's bit 4 never releases it ([L519-L521](https://github.com/mamedev/mame/blob/mame0288/src/mame/sony/taitogn.cpp#L519-L521)).
+Sets: otenamih, otenamhf, zokuoten, zokuotena, zooo, sianniv and the 2011
+conversions.
+
+| Item | Detail |
+|---|---|
+| What the core does | Bit 1 of the MRA's game configuration byte holds the Zoom MN10200 in reset regardless of control bit 4, as MAME. Existing MRAs (byte 00h or 01h) are unchanged |
+| How it was checked | Full-system result pending |
+| Known gaps | Whether these boards were fitted without a Zoom board, or had one the games never start, is not documented outside MAME |
+
 ## 8. Video output and CRT shell
 
 From `docs/m4_shell.md` unless noted.
@@ -508,6 +561,8 @@ From `docs/m4_shell.md` unless noted.
 | Line-out recording of a board (stereo, volume noted), or the analog mixing resistors | SPU against Zoom balance, MB87078 law, ZSG-2 guesses | 4, 7 |
 | Value of the MB3773 timing capacitor and where RESET goes | watchdog period and reach | 6.5 |
 | Close-ups or continuity checks on the FC PCB (TMS57002 pins 10 and 80, MB87078 DSEL, U30 BYTE#, Zoom reset line, AT28C16 marking) | DSP clock mode and latency, volume wiring, flash bus width, reset reach, EEPROM write time | 5, 6, 7 |
+| A board boot video or owner report of Kollon and Space Invaders Anniversary T1 cards | whether the ttgnirq race also hits real boards | 2.5 |
+| A Go By RC or RC De Go controller (or its manual) | trigger direction and wheel range | 5.4 |
 | G card manuals | button names, per-game DIP use, Night Raid's monitor orientation | README |
 
 The questions for board owners, in plain language, are in
@@ -527,4 +582,5 @@ refers to that list's numbering.
 | Zoom chips and board | `sim/mn10200/`, `sim/zsg2/`, `sim/tms57002/`, `sim/zoomboard/`, `sim/zoomlink/`, `sim/zoomddr3/` |
 | CPU timing | `tools/r1/` (footage analysis, memory latency bench, cycle breakdown) |
 | Shell | `sim/shell/`, `sim/dbg/`, `sim/rotfx/` |
+| PC card types | `sim/gnet_ata/tb_ata_t2.sv` (Verilator) |
 | Frame comparison | `tools/frame_hash.py` |
