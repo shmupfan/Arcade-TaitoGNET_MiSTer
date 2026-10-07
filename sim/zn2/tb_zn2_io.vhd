@@ -21,6 +21,8 @@ architecture sim of tb_zn2_io is
    signal rdata      : std_logic_vector(31 downto 0);
    signal p1, p2, sv, sy : std_logic_vector(7 downto 0) := x"FF";
    signal znsecsel, coin : std_logic_vector(7 downto 0);
+   signal mj         : std_logic_vector(23 downto 0) := (others => '1');
+   signal mj_en      : std_logic := '0';
    signal ee_addr    : unsigned(10 downto 0) := (others => '0');
    signal ee_we      : std_logic := '0';
    signal ee_wdata   : std_logic_vector(7 downto 0) := (others => '0');
@@ -37,7 +39,7 @@ begin
    generic map (CLK_HZ => CLK_HZ, WRITE_US => 200)
    port map (clk => clk, reset => reset, req => req, we => we, addr => addr, be => be, wdata => wdata,
              ack => ack, rdata => rdata, hit => hit, in_p1 => p1, in_p2 => p2, in_service => sv, in_system => sy,
-             znsecsel => znsecsel, coin => coin, ee_addr => ee_addr, ee_we => ee_we, ee_wdata => ee_wdata,
+             in_mj => mj, in_mj_en => mj_en, znsecsel => znsecsel, coin => coin, ee_addr => ee_addr, ee_we => ee_we, ee_wdata => ee_wdata,
              ee_rdata => ee_rdata, ee_busy => ee_busy,
              nv_clk => clk, nv_addr => nv_addr, nv_q => nv_q, nv_wtog => nv_wtog);
 
@@ -103,6 +105,27 @@ begin
       acc(16#A10300#, "0001", false, x"00000000", r); check("znsecsel read", r(7 downto 0), x"88");
       acc(16#A20000#, "0001", true, x"00000022", r); check("coin out", coin, x"22");
       acc(16#A20000#, "0001", false, x"00000000", r); check("coin read", r(7 downto 0), x"22");
+      -- mahjong panel at A10100 (ttgnmp mahjong_panel_r): Mahjong A (row 0
+      -- bit 0) and Pon (row 3 bit 3) pressed
+      mj <= "110111" & "111111" & "111111" & "111110";
+      acc(16#A20000#, "0001", true, x"00000084", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("P4 without mahjong", r(7 downto 0), x"FF");
+      mj_en <= '1';
+      acc(16#A20000#, "0001", true, x"00000000", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("mj no row", r(7 downto 0), x"FF");
+      acc(16#A20000#, "0001", true, x"00000004", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("mj row 0", r(7 downto 0), x"3E");
+      acc(16#A20000#, "0001", true, x"00000008", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("mj row 1", r(7 downto 0), x"3F");
+      acc(16#A20000#, "0001", true, x"00000080", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("mj row 3", r(7 downto 0), x"37");
+      acc(16#A20000#, "0001", true, x"00000084", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("mj rows 0 and 3", r(7 downto 0), x"36");
+      mj <= "111111" & "101111" & "111111" & "111111";   -- Ron (row 2 bit 4)
+      acc(16#A20000#, "0001", true, x"00000040", r);
+      acc(16#A10100#, "0001", false, x"00000000", r); check("mj row 2", r(7 downto 0), x"2F");
+      mj_en <= '0'; mj <= (others => '1');
+      acc(16#A20000#, "0001", true, x"00000022", r);
       -- 0x1FA60000 toggles bit 3 per read of the low half (trace: 8, 0, 8)
       acc(16#A60000#, "0011", false, x"00000000", r); check("1fa60000 #1", r, x"00000008");
       acc(16#A60000#, "1100", false, x"00000000", r); check("1fa60002", r, x"00000000");

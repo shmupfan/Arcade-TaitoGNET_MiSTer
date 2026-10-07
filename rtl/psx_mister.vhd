@@ -313,8 +313,13 @@ entity psx_mister is
       zn_in_system          : in  std_logic_vector(7 downto 0) := x"FF";
       zn_dsw                : in  std_logic_vector(3 downto 0) := x"F";
       zn_jp1                : in  std_logic := '0';
+      zn_nozoom             : in  std_logic := '0';   -- no Taito Zoom board (MAME init_nozoom): its MN10200 held in reset
       zn_card_present       : in  std_logic := '0';
       zn_key_valid          : in  std_logic := '0';
+      zn_in_mj              : in  std_logic_vector(23 downto 0) := (others => '1');
+      zn_in_mj_en           : in  std_logic := '0';
+      zn_in_an0             : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_an1             : in  std_logic_vector(7 downto 0) := x"FF";
       zn_coin               : out std_logic_vector(7 downto 0);
       zn_wd_reset           : out std_logic;
       zn_ld_wr              : in  std_logic := '0';
@@ -754,8 +759,13 @@ begin
       zn_in_system          => zn_in_system,
       zn_dsw                => zn_dsw,
       zn_jp1                => zn_jp1,
+      zn_nozoom             => zn_nozoom,
       zn_card_present       => zn_card_present,
       zn_key_valid          => zn_key_valid,
+      zn_in_mj              => zn_in_mj,
+      zn_in_mj_en           => zn_in_mj_en,
+      zn_in_an0             => zn_in_an0,
+      zn_in_an1             => zn_in_an1,
       zn_coin               => zn_coin,
       zn_wd_reset           => zn_wd_reset,
       zn_ld_wr              => zn_ld_wr,

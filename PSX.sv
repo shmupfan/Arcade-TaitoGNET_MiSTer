@@ -351,7 +351,7 @@ parameter CONF_STR = {
 	"O[64],Pause when OSD is open,On,Off;",
 	"O[106:105],Volume,Normal,+6 dB,-6 dB,-12 dB;",
 `ifdef GNET_ZOOM
-	"O[119:117],SFX Level,0.7 (PCB est.),0.3 (MAME),0.45,0.6,0.9,1.2,1.5;",
+	"O[119:117],SFX Level,0.3 (MAME),0.45,0.6,0.9,1.2,1.5;",
 `endif
 	"-;",
 	"DIP;",
@@ -520,7 +520,16 @@ wire [127:0] status;
 // Game configuration from the MRA (ioctl index 7, one byte): bit 0 = the set
 // is vertical (ROT270 in MAME taitogn.cpp: psyvaria, psyvarij, psyvarrv,
 // xiistag, shikigam, shikigama). Default horizontal.
+// Bit 1 = the set has no Taito Zoom board (MAME init_nozoom, taitogn.cpp
+// 416-419: otenamih, otenamhf, zokuoten, zokuotena, zooo, sianniv and the 2011
+// conversions): the Zoom's MN10200 stays in reset whatever the game writes to
+// the control register's bit 4 (taitogn.cpp 519-535). Default: Zoom present.
+// Bits 3:2 = the controls (gnet_inmode, see the keyboard block below):
+// 0 joysticks, 1 mahjong panel and P1 joystick (Mahjong Oh), 2 mahjong panel
+// only (Usagi), 3 RC wheel and trigger (Go By RC, RC De Go).
 reg  gnet_vertical = 1'b0;
+reg  gnet_nozoom   = 1'b0;
+reg  [1:0] gnet_inmode = 2'd0;
 wire DIRECT_VIDEO;
 // EEPROM NVRAM save (MRA <nvram index="6" size="2048"/>), see the loader
 wire        ioctl_upload;
@@ -821,7 +830,11 @@ end
 `ifdef GNET_SHELL
 // game configuration byte (ioctl index 7), see gnet_vertical
 always @(posedge clk_1x)
-	if (ioctl_download & ioctl_wr & (ioctl_index == 7) & (ioctl_addr == 0)) gnet_vertical <= ioctl_dout[0];
+	if (ioctl_download & ioctl_wr & (ioctl_index == 7) & (ioctl_addr == 0)) begin
+		gnet_vertical <= ioctl_dout[0];
+		gnet_nozoom   <= ioctl_dout[1];
+		gnet_inmode   <= ioctl_dout[3:2];
+	end
 
 // Keyboard, MAME default keys (ps2_key: [10] toggles per event, [9] pressed,
 // [8] extended, [7:0] set-2 scancode)
@@ -868,6 +881,75 @@ wire [19:0] zj1 = joy  | {9'd0, k_test, k_svc, k_co1, k_st1, k_b3,  k_b2,  k_b1,
 wire [19:0] zj2 = joy2 | {9'd0, 1'b0,   1'b0,  k_co2, k_st2, k2_b3, k2_b2, k2_b1, k2_up, k2_dn, k2_lt, k2_rt};
 wire        pause_btn = zj1[11] | zj2[11] | k_p;
 
+// Special controls (gnet_inmode, MAME 0.288 taitogn.cpp INPUT_PORTS
+// mahjngoh, usagi and gobyrc). Bits MAME marks unused read as released.
+wire gnet_mj  = (gnet_inmode == 2'd1) | (gnet_inmode == 2'd2);
+wire gnet_rc  = (gnet_inmode == 2'd3);
+wire [7:0] zm_p1  = (gnet_inmode >= 2'd2) ? 8'h7F : 8'h00;      // usagi, gobyrc: P1 0x7f unused
+wire [7:0] zm_p2  = (gnet_inmode != 2'd0) ? 8'h7F : 8'h00;      // mahjngoh, usagi, gobyrc: P2 0x7f unused
+wire [7:0] zm_sys = (gnet_inmode == 2'd2) ? 8'h03 :              // usagi: START1/START2 unused
+                    (gnet_inmode == 2'd3) ? 8'h02 : 8'h00;      // gobyrc: START2 unused
+
+// Mahjong panel (taitogn.cpp ttgnmp_state, rows KEY0-KEY3 of mame
+// shared/mahjong.cpp mahjong_matrix_1p) on the keyboard, MAME's default
+// keys (emu/inpttype.ipp): A to N, Kan = LCtrl, Pon = LAlt, Chi = Space,
+// Reach = LShift, Ron = Z; Start 1 is also KEY0 bit 5. LCtrl, LAlt and
+// Space also stay P1 buttons 1-3, as MAME binds both by default.
+reg [13:0] k_mj = 14'd0;                 // A to N
+reg k_kan = 0, k_pon = 0, k_chi = 0, k_reach = 0, k_ron = 0;
+reg ps2_last_mj = 1'b0;
+always @(posedge clk_1x) begin
+	ps2_last_mj <= ps2_key[10];
+	if (ps2_key[10] != ps2_last_mj) begin
+		case ({ps2_key[8], ps2_key[7:0]})
+			9'h01C: k_mj[0]  <= ps2_key[9];   // A
+			9'h032: k_mj[1]  <= ps2_key[9];   // B
+			9'h021: k_mj[2]  <= ps2_key[9];   // C
+			9'h023: k_mj[3]  <= ps2_key[9];   // D
+			9'h024: k_mj[4]  <= ps2_key[9];   // E
+			9'h02B: k_mj[5]  <= ps2_key[9];   // F
+			9'h034: k_mj[6]  <= ps2_key[9];   // G
+			9'h033: k_mj[7]  <= ps2_key[9];   // H
+			9'h043: k_mj[8]  <= ps2_key[9];   // I
+			9'h03B: k_mj[9]  <= ps2_key[9];   // J
+			9'h042: k_mj[10] <= ps2_key[9];   // K
+			9'h04B: k_mj[11] <= ps2_key[9];   // L
+			9'h03A: k_mj[12] <= ps2_key[9];   // M
+			9'h031: k_mj[13] <= ps2_key[9];   // N
+			9'h014: k_kan    <= ps2_key[9];   // left ctrl
+			9'h011: k_pon    <= ps2_key[9];   // left alt
+			9'h029: k_chi    <= ps2_key[9];   // space
+			9'h012: k_reach  <= ps2_key[9];   // left shift
+			9'h01A: k_ron    <= ps2_key[9];   // Z
+			default: ;
+		endcase
+	end
+end
+// rows 3 downto 0, 6 bits each, pressed = 1 (zn2_io A10100, active low)
+wire [5:0] mj_r0 = {zj1[7], k_kan,   k_mj[12], k_mj[8],  k_mj[4], k_mj[0]};   // Start1 Kan M I E A
+wire [5:0] mj_r1 = {1'b0,   k_reach, k_mj[13], k_mj[9],  k_mj[5], k_mj[1]};   // -      Reach N J F B
+wire [5:0] mj_r2 = {1'b0,   k_ron,   k_chi,    k_mj[10], k_mj[6], k_mj[2]};   // -      Ron Chi K G C
+wire [5:0] mj_r3 = {2'b00,           k_pon,    k_mj[11], k_mj[7], k_mj[3]};   // -  -   Pon L H D
+wire [23:0] zn_mj = ~{mj_r3, mj_r2, mj_r1, mj_r0};
+
+// RC wheel and trigger (gobyrc ANALOG1 IPT_PADDLE, ANALOG2 IPT_PADDLE_V
+// PORT_REVERSE, 00h-FFh, centre 80h; znmcu analog channels 0 and 1).
+// Wheel: the analog stick's X, or the paddle once it moves (the source
+// that moved last is used); trigger: the stick's Y reversed as MAME's
+// PORT_REVERSE (stick up = FFh). The D-pad or keyboard arrows give full
+// deflection.
+reg       rc_paddle = 1'b0;
+reg [7:0] paddle_q  = 8'd0;
+always @(posedge clk_1x) begin
+	paddle_q <= paddle_0;
+	if ((paddle_0 > paddle_q + 8'd2) | (paddle_q > paddle_0 + 8'd2)) rc_paddle <= 1'b1;
+	else if ((joystick_analog_l0[7:0] > 8'd16) & (joystick_analog_l0[7:0] < 8'd240)) rc_paddle <= 1'b0;
+end
+wire [7:0] rc_wheel_a = rc_paddle ? paddle_0 : (joystick_analog_l0[7:0] ^ 8'h80);
+wire [7:0] rc_trig_a  = ~(joystick_analog_l0[15:8] ^ 8'h80);
+wire [7:0] zn_an0 = ~gnet_rc ? 8'hFF : zj1[1] ? 8'h00 : zj1[0] ? 8'hFF : rc_wheel_a;   // left, right
+wire [7:0] zn_an1 = ~gnet_rc ? 8'hFF : zj1[3] ? 8'hFF : zj1[2] ? 8'h00 : rc_trig_a;    // up, down
+
 // EEPROM NVRAM save (docs/m4_shell.md 4). Main_MiSTer loads the MRA's
 // <nvram index="6" size="2048"/> file on index 6 (the loader above) and
 // saves it by an upload of index 6: hps_io steps ioctl_addr by 2 and takes
@@ -894,6 +976,10 @@ end
 wire [19:0] zj1 = joy;
 wire [19:0] zj2 = joy2;
 wire        pause_btn = joy[18];
+wire        gnet_mj = 1'b0;
+wire [7:0]  zm_p1 = 8'h00, zm_p2 = 8'h00, zm_sys = 8'h00;
+wire [23:0] zn_mj  = 24'hFFFFFF;
+wire [7:0]  zn_an0 = 8'hFF, zn_an1 = 8'hFF;
 `endif
 `else
 wire gnet_download = 0;
@@ -1796,12 +1882,19 @@ psx
    ,
    // G-NET: inputs active low (MAME zn/taitogn input ports, docs/zn2_layer_design.md 7.1)
    // zj1/zj2: joysticks, with the MAME keyboard keys in GNET_SHELL builds
-   .zn_in_p1       (~{1'b0, zj1[6], zj1[5], zj1[4], zj1[0], zj1[1], zj1[2], zj1[3]}),
-   .zn_in_p2       (~{1'b0, zj2[6], zj2[5], zj2[4], zj2[0], zj2[1], zj2[2], zj2[3]}),
+   .zn_in_p1       (~{1'b0, zj1[6], zj1[5], zj1[4], zj1[0], zj1[1], zj1[2], zj1[3]} | zm_p1),
+   .zn_in_p2       (~{1'b0, zj2[6], zj2[5], zj2[4], zj2[0], zj2[1], zj2[2], zj2[3]} | zm_p2),
    .zn_in_service  (~{6'b000000, zj1[9], zj1[10]}),
-   .zn_in_system   (~{2'b00, zj2[8], zj1[8], 2'b00, zj2[7], zj1[7]}),
+   .zn_in_system   (~{2'b00, zj2[8], zj1[8], 2'b00, zj2[7], zj1[7]} | zm_sys),
+   .zn_in_mj       (zn_mj),
+   .zn_in_mj_en    (gnet_mj),
+   .zn_in_an0      (zn_an0),
+   .zn_in_an1      (zn_an1),
    .zn_dsw         (zn_sw0[3:0]),
    .zn_jp1         (zn_sw0[4]),
+`ifdef GNET_SHELL
+   .zn_nozoom      (gnet_nozoom),
+`endif
    .zn_card_present(zn_card_loaded),
    .zn_key_valid   (zn_card_loaded),
    .zn_coin        (),
@@ -1854,10 +1947,10 @@ psx
 `ifdef GNET_ZOOM
 // MAME taitogn.cpp 441-448: SPU to the speakers at 0.3, Zoom at 1.0, both
 // 16-bit full scale (rtl/zoom/zoom_mix.sv; the PCB balance is open, R13).
-// The SPU gain is the OSD SFX Level in shell builds (default 0.7, from a
-// real Psyvariar Revision board's attract audio; 0.3 is MAME's route):
-// MAME's spu.cpp ignores the SPU main volume the games set (Ray Crisis
-// 0x1125, about 0.27), spu.vhd applies it (docs/m4_shell.md 4).
+// The SPU gain is the OSD SFX Level in shell builds (0.3 default): MAME's
+// spu.cpp ignores the SPU main volume the games set (Ray Crisis 0x1125,
+// about 0.27), spu.vhd applies it, so the effects come out quieter than in
+// MAME at the same route.
 // Both inputs are clk_1x registers (spu.vhd, zoom_out.sv). With the
 // release shell the mix goes to snd_l/snd_r, ahead of the OSD volume stage
 // (gnet_volume); otherwise straight to AUDIO_L/R.
@@ -1869,9 +1962,9 @@ zoom_mix zoom_mix
 (
 	.clk   (clk_1x),
 `ifdef GNET_SHELL
-	.spu_lvl(status[119:117]),   // OSD SFX Level: 0.7 (default), 0.3 (MAME) ... 1.5
+	.spu_lvl(status[119:117]),   // OSD SFX Level: 0.3 (MAME, default) ... 1.5
 `else
-	.spu_lvl(3'd0),              // 0.7, the default
+	.spu_lvl(3'd0),              // 0.3, MAME's route
 `endif
 	.spu_l (paused ? 16'sd0 : spu_aud_l),
 	.spu_r (paused ? 16'sd0 : spu_aud_r),
@@ -2683,7 +2776,7 @@ zn_dbg_overlay #(.DR_ROW(GNET_DBG_DR_ROW)) dbg_ovl
 `endif
 
 `ifdef GNET_SHELL
-// Scandoubler Fx and gamma through the framework's arcade_video (as Lee's
+// Scandoubler Fx and gamma through the framework's arcade_video (as my
 // other cores): HQ2x or CRT scanlines when Fx is set or the scandoubler is
 // forced (31 kHz VGA). With Fx None and no forced scandoubler CE_PIXEL is the
 // core's dot enable, one dot every 10/8/5/4 clocks (DV1, docs/m4_shell.md 2).

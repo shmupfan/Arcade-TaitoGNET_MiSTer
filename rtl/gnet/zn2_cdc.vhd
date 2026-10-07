@@ -17,8 +17,10 @@
 -- PSX.sv's loader stay on clk1x. Signal prefixes: c_ clk_cpu, p_ clk1x,
 -- p2_ clk2x. Built only from rtl/gnet/cdc (cdc_tx_* sources, cdc.sdc).
 --
---   inputs   P1, P2, SERVICE, SYSTEM, DSW, JP1, card present, key valid:
---            registered on clk1x, cdc_sync into clk_cpu (independent bits)
+--   inputs   P1, P2, SERVICE, SYSTEM, DSW, mahjong rows, JP1, card present,
+--            key valid, mahjong enable: registered on clk1x, cdc_sync into
+--            clk_cpu (independent bits); znmcu analog 0 and 1 (wheel,
+--            trigger): cdc_bus_sync, so a byte always arrives whole
 --   loader   CAT702 keys, card metadata, EEPROM words (PSX.sv zn_ld_*):
 --            cdc_fifo 16 x 29 (M10K) from clk1x; the CPU side issues one
 --            word every second cycle, the spacing zn2_board's byte split
@@ -78,6 +80,10 @@ entity zn2_cdc is
       p_jp1            : in  std_logic;
       p_card_present   : in  std_logic;
       p_key_valid      : in  std_logic;
+      p_in_mj          : in  std_logic_vector(23 downto 0) := (others => '1');
+      p_in_mj_en       : in  std_logic := '0';
+      p_in_an0         : in  std_logic_vector(7 downto 0) := x"FF";
+      p_in_an1         : in  std_logic_vector(7 downto 0) := x"FF";
       c_in_p1          : out std_logic_vector(7 downto 0);
       c_in_p2          : out std_logic_vector(7 downto 0);
       c_in_service     : out std_logic_vector(7 downto 0);
@@ -86,6 +92,10 @@ entity zn2_cdc is
       c_jp1            : out std_logic;
       c_card_present   : out std_logic;
       c_key_valid      : out std_logic;
+      c_in_mj          : out std_logic_vector(23 downto 0);
+      c_in_mj_en       : out std_logic;
+      c_in_an0         : out std_logic_vector(7 downto 0);
+      c_in_an1         : out std_logic_vector(7 downto 0);
 
       -- loader: clk1x to clk_cpu
       p_ld_wr          : in  std_logic;
@@ -125,16 +135,17 @@ end entity;
 architecture rtl of zn2_cdc is
 
    -- crossing sources (cdc.sdc)
-   signal cdc_tx_in     : std_logic_vector(35 downto 0) := (others => '1');
-   signal cdc_tx_flags  : std_logic_vector(2 downto 0) := (others => '0');
+   signal cdc_tx_in     : std_logic_vector(59 downto 0) := (others => '1');
+   signal cdc_tx_flags  : std_logic_vector(3 downto 0) := (others => '0');
    signal cdc_tx_coin   : std_logic_vector(7 downto 0) := (others => '0');
    attribute altera_attribute : string;
    attribute altera_attribute of cdc_tx_in    : signal is CDC_ATTR_KEEP;
    attribute altera_attribute of cdc_tx_flags : signal is CDC_ATTR_KEEP;
    attribute altera_attribute of cdc_tx_coin  : signal is CDC_ATTR_KEEP;
 
-   signal in_s          : std_logic_vector(35 downto 0);
-   signal flags_s       : std_logic_vector(2 downto 0);
+   signal in_s          : std_logic_vector(59 downto 0);
+   signal flags_s       : std_logic_vector(3 downto 0);
+   signal an_s          : std_logic_vector(15 downto 0);
 
    -- loader FIFO
    signal ld_wdata      : std_logic_vector(28 downto 0);
@@ -179,17 +190,17 @@ begin
    process (clk1x)
    begin
       if rising_edge(clk1x) then
-         cdc_tx_in    <= p_in_p1 & p_in_p2 & p_in_service & p_in_system & p_dsw;
-         cdc_tx_flags <= p_jp1 & p_card_present & p_key_valid;
+         cdc_tx_in    <= p_in_mj & p_in_p1 & p_in_p2 & p_in_service & p_in_system & p_dsw;
+         cdc_tx_flags <= p_in_mj_en & p_jp1 & p_card_present & p_key_valid;
       end if;
    end process;
 
    u_in : entity work.cdc_sync
-      generic map (WIDTH => 36, INIT => '1', SIM_META_WINDOW => SIM_META_WINDOW, SIM_SEED => 201)
+      generic map (WIDTH => 60, INIT => '1', SIM_META_WINDOW => SIM_META_WINDOW, SIM_SEED => 201)
       port map (clk => clk_cpu, d => cdc_tx_in, q => in_s);
 
    u_flags : entity work.cdc_sync
-      generic map (WIDTH => 3, INIT => '0', SIM_META_WINDOW => SIM_META_WINDOW, SIM_SEED => 203)
+      generic map (WIDTH => 4, INIT => '0', SIM_META_WINDOW => SIM_META_WINDOW, SIM_SEED => 203)
       port map (clk => clk_cpu, d => cdc_tx_flags, q => flags_s);
 
    c_in_p1        <= in_s(35 downto 28);
@@ -200,6 +211,15 @@ begin
    c_jp1          <= flags_s(2);
    c_card_present <= flags_s(1);
    c_key_valid    <= flags_s(0);
+   c_in_mj        <= in_s(59 downto 36);
+   c_in_mj_en     <= flags_s(3);
+
+   u_an : entity work.cdc_bus_sync
+      generic map (WIDTH => 16, SIM_META_WINDOW => SIM_META_WINDOW, SIM_SEED => 241)
+      port map (src_clk => clk1x, src_data => p_in_an1 & p_in_an0, src_busy => open,
+                dst_clk => clk_cpu, dst_data => an_s, dst_update => open);
+   c_in_an0       <= an_s(7 downto 0);
+   c_in_an1       <= an_s(15 downto 8);
 
    ---------------------------------------------------------------- loader
    ld_wdata <= p_ld_target & std_logic_vector(p_ld_addr) & p_ld_data;

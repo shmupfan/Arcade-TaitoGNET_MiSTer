@@ -77,6 +77,14 @@ entity zn2_board is
       in_p2          : in  std_logic_vector(7 downto 0);
       in_service     : in  std_logic_vector(7 downto 0);
       in_system      : in  std_logic_vector(7 downto 0);
+      -- special controls (MRA game configuration byte bits 3:2, PSX.sv):
+      -- mahjong panel rows (zn2_io A10100) and the znmcu analog channels 0
+      -- and 1 (Go By RC / RC De Go wheel and trigger; FFh when unused, as
+      -- MAME's unused ANALOG ports)
+      in_mj          : in  std_logic_vector(23 downto 0) := (others => '1');
+      in_mj_en       : in  std_logic := '0';
+      in_an0         : in  std_logic_vector(7 downto 0) := x"FF";
+      in_an1         : in  std_logic_vector(7 downto 0) := x"FF";
       dsw            : in  std_logic_vector(3 downto 0);
       jp1            : in  std_logic;
       card_present   : in  std_logic;
@@ -357,6 +365,8 @@ begin
       in_p2      => in_p2,
       in_service => in_service,
       in_system  => in_system,
+      in_mj      => in_mj,
+      in_mj_en   => in_mj_en,
       znsecsel   => znsecsel,
       coin       => coin,
       ee_addr    => ee_addr,
@@ -405,7 +415,8 @@ begin
    imcu : entity work.znmcu
    generic map (CLK_HZ => CLK_HZ)
    port map (clk => clk1x, reset => reset, sel_n => mcu_sel_n, analog_rd => znsecsel(4), trackball_rd => znsecsel(5),
-             bit_stb => bit_stb, txd => outm, dsr_n => dsr_n, dsw => dsw);
+             bit_stb => bit_stb, txd => outm, dsr_n => dsr_n, dsw => dsw,
+             analog0 => in_an0, analog1 => in_an1);
 
    ---------------------------------------------------------------- loader
    -- low byte in the cycle of ld_wr, high byte in the next

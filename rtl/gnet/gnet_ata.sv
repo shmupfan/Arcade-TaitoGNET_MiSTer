@@ -1,5 +1,6 @@
-// Taito Type 1 ATA PC card (G-NET game card): attribute memory, card lock,
-// ATA task file and the three commands the games use.
+// Taito Type 1 and Type 2 ATA PC cards and the Taito CompactFlash card (G-NET
+// game cards): attribute memory, card lock, ATA task file and the commands
+// the games use.
 //
 // Copyright (C) 2026 Lee Foot
 //
@@ -19,14 +20,21 @@
 //   000h-1FFh IDENTIFY block (CHD metadata IDNT, returned verbatim as MAME)
 //   200h-2FFh CIS (CHD metadata CIS, padded with FFh)
 //   300h-304h unlock key (CHD metadata KEY); key_valid = a key was loaded
+//   3F0h      card type: 02h = Taito Type 2 (MAME taito_pccard2), 03h = Taito
+//             CompactFlash (MAME taito_cf), anything else = Type 1 (00h in
+//             meta files made before the type byte)
+// The card size is IDENTIFY words 60-61 (total LBA sectors, bytes 078h-07Bh);
+// if those are zero, NUM_LBA.
 //
 // Attribute memory (16-bit word offsets, MAME read_reg/write_reg):
 //   000h-0FFh CIS byte; 100h configuration option; 101h configuration and
-//   status; 102h pin replacement (reset 002Eh); 201h lock status (1 while
-//   locked, Taito Type 1); writes to 280h-288h compare the low byte with key
+//   status; 102h pin replacement (reset 002Eh); Type 1 only (not Type 2 or
+//   CompactFlash): 201h lock status
+//   (1 while locked), and writes to 280h-288h compare the low byte with key
 //   byte n (bytes 5 to 8 compare with 0): a match clears lock bit n, a
 //   mismatch sets it (MAME; whether a wrong key relocks a real card is open,
-//   R5); write 07h ignored; other offsets read FFFFh, writes ignored.
+//   R5); write 07h ignored; other offsets (201h and 280h-288h on Type 2 and
+//   CompactFlash) read FFFFh, writes ignored (MAME device_pccard_interface).
 //
 // Task file (byte offsets 0-7 command block, 8-15 control block; offsets
 // above 15 read FFFFh). Access width follows each access (MAME's
@@ -36,7 +44,23 @@
 // SECTORS, ECh IDENTIFY DEVICE; any other command ends with ERR and ABRT
 // (MAME also implements 90h, EFh, E7h and the multiple/DMA forms; the games
 // never issue them). While locked every command ends with ERR, error 00h and
-// DRDY clear (Taito Type 1, MAME).
+// DRDY clear (all three card types, MAME).
+//
+// Type 2 unlock (MAME 0.288 taito_pccard2_device): locked at power-on when a
+// key is loaded. FEh (unlock 1): sector count 1, DRDY, at once and whether
+// locked or not. FCh (unlock 2): DRQ for one 512-byte PIO data-out block;
+// when the block is complete, DRQ clears and the card unlocks if bytes 2-6
+// equal the key and every other byte is 0, else ERR (error 00h) and the card
+// stays locked. The bytes are checked as they arrive (t2_bad). MAME also
+// raises IRQ for FEh and FCh; this card has no IRQ output (the G-NET BIOS
+// polls status), as for the other commands.
+//
+// CompactFlash unlock (MAME 0.288 taito_compact_flash_device): locked at
+// power-on when a key is loaded. 0Fh, at once and whether locked or not:
+// unlock if feature, sector count, sector number, cylinder low and cylinder
+// high equal key bytes 0-4 (sector count as MAME holds it: 00h written is
+// 100h), else DRDY clears and the card stays locked; no data phase, no ERR.
+// MAME's IRQ for 0Fh is left out as for the other commands.
 //
 // Timing (MAME 0.288 values as defaults, all parameters): reset detect 2 ms
 // then diagnostic 2 ms; IDENTIFY 10 us busy; first sector of a read 0 (CF
@@ -127,9 +151,13 @@ module gnet_ata #(
     logic [7:0]  key     [5];
     logic [7:0]  buf_lo  [256], buf_hi [256];
     logic        dmap    [16384];
+    logic [7:0]  card_type;
+    logic [7:0]  lba_b   [4];        // IDENTIFY words 60-61, little-endian
 
     always_ff @(posedge clk) begin
         if (meta_we) begin
+            if (meta_addr == 10'h3f0) card_type <= meta_wdata;
+            if (meta_addr[9:2] == 8'h1e) lba_b[meta_addr[1:0]] <= meta_wdata;
             case (meta_addr[9:8])
                 2'b00, 2'b01: if (meta_addr[0]) idnt_hi[meta_addr[8:1]] <= meta_wdata;
                               else             idnt_lo[meta_addr[8:1]] <= meta_wdata;
@@ -181,6 +209,16 @@ module gnet_ata #(
 
     wire selected = (devhead[4] == 1'b0);
     wire ready_ok = (locked == 9'd0);
+    wire t2       = (card_type == 8'h02);
+    wire cf       = (card_type == 8'h03);
+    wire t1       = !t2 && !cf;
+    logic        t2_bad;          // Type 2 unlock block: a byte so far is wrong
+
+    // card size in sectors: IDENTIFY words 60-61, else the parameter
+    logic [31:0] num_lba;
+    always_ff @(posedge clk)
+        num_lba <= ({lba_b[3], lba_b[2], lba_b[1], lba_b[0]} != 32'd0)
+                   ? {lba_b[3], lba_b[2], lba_b[1], lba_b[0]} : 32'(NUM_LBA);
 
     function automatic logic [31:0] lba_of(input logic [7:0] dh, input logic [7:0] ch,
                                             input logic [7:0] cl, input logic [7:0] sn);
@@ -226,9 +264,10 @@ module gnet_ata #(
         boff      <= 10'd0;
         cfg_opt   <= 8'h00;
         cfg_stat  <= 8'h00;
-        locked    <= key_valid ? 9'h1ff : 9'h000;
+        locked    <= key_valid ? (t1 ? 9'h1ff : 9'h001) : 9'h000;
         se_act    <= 1'b0;
         src_idnt  <= 1'b0;
+        t2_bad    <= 1'b0;
     endtask
 
     always_ff @(posedge clk) begin
@@ -278,7 +317,7 @@ module gnet_ata #(
                             status   <= (status & ~ST_BSY) | ST_DRQ;
                         end
                         B_READ: begin                 // finished_read
-                            if (cur_lba >= NUM_LBA) begin
+                            if (cur_lba >= num_lba) begin
                                 status <= (status & ~ST_BSY) | ST_ERR;
                                 error  <= 8'h80;
                             end else begin
@@ -348,7 +387,7 @@ module gnet_ata #(
             if (attr_req) begin
                 if (attr_we) begin
                     attr_ack <= 1'b1;
-                    if (attr_waddr >= 20'h280 && attr_waddr <= 20'h288) begin
+                    if (t1 && attr_waddr >= 20'h280 && attr_waddr <= 20'h288) begin
                         logic [3:0] p;
                         p = 4'(attr_waddr - 20'h280);
                         if (attr_wdata[7:0] == ((p < 4'd5) ? key[p[2:0]] : 8'h00)) locked[p] <= 1'b0;
@@ -366,7 +405,7 @@ module gnet_ata #(
                 else if (attr_waddr == 20'h100) attr_rdata <= {8'h00, cfg_opt};
                 else if (attr_waddr == 20'h101) attr_rdata <= {8'h00, cfg_stat};
                 else if (attr_waddr == 20'h102) attr_rdata <= 16'h002e;
-                else if (attr_waddr == 20'h201) attr_rdata <= {15'h0, locked != 9'd0};
+                else if (attr_waddr == 20'h201 && t1) attr_rdata <= {15'h0, locked != 9'd0};
                 else                            attr_rdata <= 16'hffff;
             end
 
@@ -531,7 +570,20 @@ module gnet_ata #(
 
     // s0: status with ERR already cleared by the command write
     task automatic process_command(input logic [7:0] c, input logic [7:0] s0);
-        if (!ready_ok) begin                         // Taito Type 1 locked
+        if (t2 && c == 8'hfe) begin                  // Type 2 unlock 1
+            seccnt <= 9'd1;
+            status <= s0 | ST_DRDY;
+        end else if (t2 && c == 8'hfc) begin         // Type 2 unlock 2: key block
+            status <= s0 | ST_DRQ;
+            t2_bad <= 1'b0;
+        end else if (cf && c == 8'h0f) begin         // CompactFlash unlock: key in the task file
+            if (feature == key[0] && seccnt == {1'b0, key[1]} && secnum == key[2] &&
+                cyllo == key[3] && cylhi == key[4]) begin
+                status <= s0;
+                locked <= 9'h000;
+            end else
+                status <= s0 & ~ST_DRDY;
+        end else if (!ready_ok) begin                // locked (all three types)
             status <= (s0 & ~ST_DRDY) | ST_ERR;
             error  <= 8'h00;
         end else case (c)
@@ -568,7 +620,16 @@ module gnet_ata #(
         end
     endtask
 
+    // Type 2 unlock block: byte o of the block is wrong
+    function automatic logic key_bad(input logic [9:0] o, input logic [7:0] v);
+        if (o < 10'd2 || o >= 10'd7) key_bad = (v != 8'h00);
+        else                         key_bad = (v != key[3'(o - 10'd2)]);
+    endfunction
+
     task automatic data_write(input logic w16);
+        logic nb;
+        nb = w16 ? (key_bad(boff, tf_wdata[7:0]) | key_bad(boff + 10'd1, tf_wdata[15:8]))
+                 :  key_bad(boff, tf_wdata[7:0]);
         bw_addr <= boff[8:1];
         if (w16) begin
             bw_lo   <= 1'b1; bw_hi <= 1'b1;
@@ -578,7 +639,21 @@ module gnet_ata #(
             bw_hi   <=  boff[0];
             bw_data <= {tf_wdata[7:0], tf_wdata[7:0]};
         end
-        if (boff + (w16 ? 10'd2 : 10'd1) >= 10'd512) begin   // write_buffer_full
+        if (t2 && command == 8'hfc) begin            // Type 2 unlock block
+            if (boff + (w16 ? 10'd2 : 10'd1) >= 10'd512) begin   // process_buffer
+                boff <= 10'd0;
+                if (t2_bad | nb) begin
+                    status <= (status & ~ST_DRQ) | ST_ERR;
+                    error  <= 8'h00;
+                end else begin
+                    status <= status & ~ST_DRQ;
+                    locked <= 9'h000;
+                end
+            end else begin
+                boff   <= boff + (w16 ? 10'd2 : 10'd1);
+                t2_bad <= t2_bad | nb;
+            end
+        end else if (boff + (w16 ? 10'd2 : 10'd1) >= 10'd512) begin   // write_buffer_full
             boff   <= 10'd0;
             status <= (status & ~ST_DRQ) | ST_BSY;
             bparam <= B_WRITE;

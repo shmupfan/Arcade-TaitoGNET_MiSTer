@@ -8,7 +8,7 @@ declaration, rtl/**/*.vhd), Altera primitives and PLL IP (stub port lists
 below). Only PSX.sv-level problems are of interest: widths are not checked
 (-Wno-WIDTH; VHDL record and integer ports become wide vectors).
 
-  tools/lint_psx.py GNET_Z1FULL [extra verilator args]
+  tools/lint_psx.py GNET_Z1FULLO [extra verilator args]
 """
 import re
 import subprocess

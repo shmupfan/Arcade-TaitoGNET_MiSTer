@@ -180,7 +180,11 @@ module zoom_board #(
         else if (p_wr[1]) p1_lat <= p1_out;
 
     mn10200 #(.PACE_CAP(PACE_CAP), .PACE_SUB(42336 * CLK_H), .DEBUG(DEBUG), .TIMER_EXACT(TIMER_EXACT),
-             .PIPE(CLK_H == 4)) u_cpu (
+             .PIPE(CLK_H == 4),
+             // register file in flip-flops: the MLAB's write-address register
+             // left clk_2x hold at +0.035 ns in the 2026-10-06 z1full fit
+             // (tools/sta/clk1x_hold.tcl); same timing and contents
+             .RF_MLAB(0)) u_cpu (
         .clk(fclk), .rst(cpu_rst), .pace_en, .ext_go(!feed_sp && !ev_hold),
         .bus_addr, .bus_rd, .bus_wr, .bus_be, .bus_wdata, .bus_rdata, .bus_ack,
         .irq_pin, .p0_in(8'hFF), .p1_in(p1_lat), .p2_in(8'hFF), .p3_in(8'hFF),

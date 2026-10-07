@@ -10,7 +10,7 @@
 //
 // Minimum standard: CRT H/V position moves the sync pulses, never the
 // picture, the totals or the game's timing, and the new setting is taken at
-// vsync. As in Lee's other cores: crt_h moves the picture right by 2 dots a
+// vsync. As in my other cores: crt_h moves the picture right by 2 dots a
 // step (-16..+14), crt_v moves it down by 1 line a step (-4..+3).
 //
 // The video source's own raster is not touched. This block regenerates

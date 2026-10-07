@@ -9,14 +9,13 @@
 // (0x1F801D80/82, spureg.mvol_l/r stored, never applied), which the games set
 // low (Ray Crisis 0x1125, Shikigami 0x0C99, Psyvariar 0x2FDF) and the core's
 // spu.vhd applies. So the SPU gain is selectable (spu_lvl, the shell's OSD
-// "SFX level"): 0 = G_SPU (0.7, estimated from a real Psyvariar Revision
-// board, docs/m4_shell.md), 1 = 0.3 (MAME), 2 = 0.45, 3 = 0.6, 4 = 0.9
-// (the pre-2018 MAME ratio), 5 = 1.2, 6 = 1.5, 7 = G_SPU. Gains are
+// "SFX level"): 0 = G_SPU (0.3, MAME), 1 = 0.45, 2 = 0.6, 3 = 0.9 (the
+// pre-2018 MAME ratio), 4 = 1.2, 5 = 1.5, 6 and 7 = G_SPU. Gains are
 // unsigned Q16 (65536 = 1.0). Each input is held between its own sample
 // ticks and the sum is formed every clock, saturated to 16 bits; MiSTer's
 // audio_out resamples the result.
 module zoom_mix #(
-    parameter int G_SPU  = 45875,       // 0.7
+    parameter int G_SPU  = 19661,       // 0.3
     parameter int G_ZOOM = 65536        // 1.0
 ) (
     input  logic               clk,
@@ -34,13 +33,12 @@ module zoom_mix #(
     logic signed [18:0] k_spu = 19'(G_SPU);
     always_ff @(posedge clk) begin
         case (spu_lvl)
-            3'd1:    k_spu <= 19'sd19661;   // 0.3 (MAME)
-            3'd2:    k_spu <= 19'sd29491;   // 0.45
-            3'd3:    k_spu <= 19'sd39322;   // 0.6
-            3'd4:    k_spu <= 19'sd58982;   // 0.9
-            3'd5:    k_spu <= 19'sd78643;   // 1.2
-            3'd6:    k_spu <= 19'sd98304;   // 1.5
-            default: k_spu <= 19'(G_SPU);   // 0.7
+            3'd1:    k_spu <= 19'sd29491;   // 0.45
+            3'd2:    k_spu <= 19'sd39322;   // 0.6
+            3'd3:    k_spu <= 19'sd58982;   // 0.9
+            3'd4:    k_spu <= 19'sd78643;   // 1.2
+            3'd5:    k_spu <= 19'sd98304;   // 1.5
+            default: k_spu <= 19'(G_SPU);   // 0.3
         endcase
     end
 

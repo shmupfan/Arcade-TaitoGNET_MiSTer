@@ -1,7 +1,7 @@
 // TI TMS57002 "DASP" effects DSP for the Taito Zoom sound board (FC PCB).
 // Own implementation from docs/zoom_zsg2_tms57002_design.md and the
 // TMS57002 User's Guide (TI 1992, "guide" below); MAME 0.288
-// (reference/mame0288/tms57002) is used only where the guide is silent,
+// (src/devices/cpu/tms57002 at tag mame0288) is used only where the guide is silent,
 // and the comments say so. Status and verification: docs/tms57002_rtl.md.
 //
 // Scope: the instructions and modes of the two programs the Zoom firmware

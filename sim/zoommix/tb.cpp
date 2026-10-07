@@ -1,6 +1,6 @@
 // zoom_mix bench (Verilator): every SFX level against a reference model
-// (s * k + z * 65536) >> 16 with 16-bit saturation, k = 0.7/0.3/0.45/0.6/
-// 0.9/1.2/1.5 in Q16 (level 7 = the default 0.7); extremes, then random
+// (s * k + z * 65536) >> 16 with 16-bit saturation, k = 0.3/0.45/0.6/0.9/
+// 1.2/1.5 in Q16 (levels 6 and 7 fall back to 0.3); extremes, then random
 // pairs. Also the gain itself: a full-scale SPU sine with the Zoom at 0
 // gives an output RMS of k times the input RMS.
 #include "Vzoom_mix.h"
@@ -13,7 +13,7 @@
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     auto *m = new Vzoom_mix;
-    static const int K[8] = {45875, 19661, 29491, 39322, 58982, 78643, 98304, 45875};
+    static const int K[8] = {19661, 29491, 39322, 58982, 78643, 98304, 19661, 19661};
     std::mt19937 rng(1);
     long errors = 0, n = 0, sat = 0;
     auto step = [&](int lvl, int s, int z) {
@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
         for (int i = 0; i < 20000; i++) step(lvl, (int)(rng() % 65536) - 32768, (int)(rng() % 65536) - 32768);
     }
     printf("random and extreme pairs: %ld compared, %ld saturated in the reference, %ld errors\n", n, sat, errors);
-    for (int lvl = 0; lvl < 7; lvl++) {
+    for (int lvl = 0; lvl < 6; lvl++) {
         double si = 0, so = 0;
         for (int i = 0; i < 48000; i++) {
             int s = (int)lround(20000 * sin(2 * M_PI * 1000 * i / 48000.0));

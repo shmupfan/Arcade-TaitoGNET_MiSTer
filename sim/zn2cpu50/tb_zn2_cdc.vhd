@@ -62,8 +62,15 @@ architecture sim of tb_zn2_cdc is
 
    -- DUT
    signal board_rst : std_logic := '0';
-   signal p_in      : std_logic_vector(38 downto 0) := (others => '1');
-   signal c_in      : std_logic_vector(38 downto 0);
+   signal p_in      : std_logic_vector(63 downto 0) := (others => '1');   -- 63:40 mahjong rows, 39 mahjong enable
+   signal c_in      : std_logic_vector(63 downto 0);
+   signal c_in_mj   : std_logic_vector(23 downto 0);
+   signal c_in_mj_en : std_logic;
+   -- znmcu analog 0 and 1 (cdc_bus_sync): every value seen must be one the
+   -- source held, and the held value must arrive
+   signal p_an, p_an_prev, c_an : std_logic_vector(15 downto 0) := x"FFFF";
+   signal t_an       : time := 0 fs;
+   signal errs_an, an_checks : natural := 0;
    signal c_in_p1, c_in_p2, c_in_service, c_in_system : std_logic_vector(7 downto 0);
    signal c_dsw     : std_logic_vector(3 downto 0);
    signal c_jp1, c_card_present, c_key_valid : std_logic;
@@ -140,7 +147,7 @@ begin
       end loop;
    end process;
 
-   c_in <= c_in_p1 & c_in_p2 & c_in_service & c_in_system & c_dsw & c_jp1 & c_card_present & c_key_valid;
+   c_in <= c_in_mj & c_in_mj_en & c_in_p1 & c_in_p2 & c_in_service & c_in_system & c_dsw & c_jp1 & c_card_present & c_key_valid;
 
    dut : entity work.zn2_cdc
       generic map (SIM_META_WINDOW => WIN)
@@ -149,6 +156,8 @@ begin
          p_in_p1 => p_in(38 downto 31), p_in_p2 => p_in(30 downto 23), p_in_service => p_in(22 downto 15),
          p_in_system => p_in(14 downto 7), p_dsw => p_in(6 downto 3), p_jp1 => p_in(2),
          p_card_present => p_in(1), p_key_valid => p_in(0),
+         p_in_mj => p_in(63 downto 40), p_in_mj_en => p_in(39), p_in_an0 => p_an(7 downto 0), p_in_an1 => p_an(15 downto 8),
+         c_in_mj => c_in_mj, c_in_mj_en => c_in_mj_en, c_in_an0 => c_an(7 downto 0), c_in_an1 => c_an(15 downto 8),
          c_in_p1 => c_in_p1, c_in_p2 => c_in_p2, c_in_service => c_in_service, c_in_system => c_in_system,
          c_dsw => c_dsw, c_jp1 => c_jp1, c_card_present => c_card_present, c_key_valid => c_key_valid,
          p_ld_wr => ld_wr, p_ld_target => ld_target, p_ld_addr => ld_addr, p_ld_data => ld_data,
@@ -439,7 +448,7 @@ begin
       wait for 1 us;
       while not cm_finished loop
          wait until rising_edge(clk1x);
-         for b in 0 to 38 loop
+         for b in 0 to 63 loop
             if rng.int(0, 2) = 0 then p_in(b) <= not p_in(b); end if;
          end loop;
          t_in <= now;
@@ -476,6 +485,39 @@ begin
             n := n + 1;
          end if;
          errs_in <= e; in_checks <= n;
+      end if;
+   end process;
+
+   -- analog: a new random pair every 20 to 60 clk1x cycles
+   process
+      variable rng : rng_t;
+   begin
+      rng.init(SEED * 29 + 3, 31);
+      wait for 1 us;
+      while not cm_finished loop
+         wait until rising_edge(clk1x);
+         p_an_prev <= p_an;
+         p_an <= std_logic_vector(to_unsigned(rng.int(0, 65535), 16));
+         t_an <= now;
+         for k in 1 to rng.int(20, 60) loop wait until rising_edge(clk1x); end loop;
+      end loop;
+      wait;
+   end process;
+
+   process (clk_cpu)
+      variable e, n : natural := 0;
+   begin
+      if rising_edge(clk_cpu) then
+         if now > 2 us and c_an /= p_an and c_an /= p_an_prev and c_an /= x"FFFF" and c_an /= x"0000" then
+            report "analog: " & to_hstring(c_an) & " was never held (now " & to_hstring(p_an) & ")" severity error;
+            e := e + 1;
+         elsif now - t_an > 12 * TB + 12 * TA and c_an /= p_an then
+            report "analog: " & to_hstring(c_an) & " for " & to_hstring(p_an) severity error;
+            e := e + 1;
+         elsif now - t_an > 12 * TB + 12 * TA then
+            n := n + 1;
+         end if;
+         errs_an <= e; an_checks <= n;
       end if;
    end process;
 
@@ -534,7 +576,7 @@ begin
       if ld_seen /= N_LD then
          report "loader: " & integer'image(N_LD) & " words sent, " & integer'image(ld_seen) & " seen" severity error;
       end if;
-      total := errs_cm + errs_ack + errs_ld + errs_ovf + errs_in + errs_coin;
+      total := errs_cm + errs_ack + errs_ld + errs_ovf + errs_in + errs_coin + errs_an;
       if wd_dst /= wd_src then total := total + 1; end if;
       if ld_seen /= N_LD then total := total + 1; end if;
       say("RESULT " & OUTTAG & " zn2_cdc PA=" & integer'image(PA) & " PB=" & integer'image(PB) & " SEED=" & integer'image(SEED) &
@@ -542,6 +584,7 @@ begin
           " abandoned " & integer'image(n_abandon) & " either " & integer'image(n_either) &
           " loader " & integer'image(ld_seen) & " held " & integer'image(ld_held) & " wd " & integer'image(wd_dst) & "/" & integer'image(wd_src) &
           " input_checks " & integer'image(in_checks) & " coin_checks " & integer'image(coin_checks) &
+          " analog_checks " & integer'image(an_checks) &
           " errors " & integer'image(total));
       stop;
    end process;

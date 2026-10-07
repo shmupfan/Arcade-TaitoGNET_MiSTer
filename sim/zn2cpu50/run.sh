@@ -35,7 +35,7 @@ P50=20000000; P35=35000000; P33=29525699
 
 analyse() {   # analyse <dir> <zn2_cdc.vhd> <zn2_ch3_arb.vhd>
   ( cd "$1" && nvc --std=2008 -a $C/cdc_pkg.vhd $C/cdc_sync.vhd $C/cdc_capture.vhd $C/cdc_pulse.vhd \
-      $C/cdc_handshake.vhd $C/cdc_fifo.vhd $R/zn2_cardmem.vhd "$2" "$3" \
+      $C/cdc_handshake.vhd $C/cdc_bus_sync.vhd $C/cdc_fifo.vhd $R/zn2_cardmem.vhd "$2" "$3" \
       $ROOT/sim/cdc/cdc_tb_pkg.vhd $HERE/tb_zn2_cdc.vhd $HERE/tb_zn2_ch3_arb.vhd > analyse.log 2>&1 ) \
     || { grep -m 10 -A6 Error "$1/analyse.log"; exit 1; }
 }

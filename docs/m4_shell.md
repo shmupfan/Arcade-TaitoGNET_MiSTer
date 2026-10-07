@@ -83,9 +83,46 @@ brvbladeg); ROT0 for raycris, raycrisj, nightrai (R19 stays open for Night
 Raid).
 
 - Game configuration byte, MRA ioctl index 7 (not used by PSX.sv
-  otherwise): bit 0 = vertical set. Default (no byte) horizontal. MRA
-  part: `<rom index="7"><part>01</part></rom>` for the six ROT270 sets,
-  `00` for the others.
+  otherwise): bit 0 = vertical set, bit 1 = no Taito Zoom board. Default
+  (no byte) horizontal, Zoom present. MRA part: `<rom index="7"><part>01</part></rom>`
+  for the six ROT270 sets, `02` for the sets without a Zoom board, `00` for
+  the others (`03` for a vertical set without one: aerofgtsg and brvbladeg
+  among the 2011 conversions).
+- No Zoom board (bit 1, `gnet_nozoom` to psx_top `zn_nozoom`): MAME's
+  init_nozoom (taitogn.cpp 416-419) for otenamih, otenamhf, zokuoten,
+  zokuotena, zooo, sianniv and the 2011 conversions (aerofgtsg, brvbladeg,
+  flamegung, shngmtkbg, tblkkuzug). MAME holds the Zoom MN10200 in reset at
+  machine reset (467) and, for these sets, never releases it: control_w
+  skips the reset line, the Zoom reset and the sound flash read-mode writes
+  (519-535). The core ORs the bit into the Zoom board's reset, so the board
+  is never released. The host side answers as with the board (shared RAM,
+  sound_irq_r reads 0, taito_zm.cpp 87-149) and the Zoom output stays
+  silent.
+  Bits 3:2 = the controls (`gnet_inmode`): 0 joysticks (every other set), 1
+  mahjong panel and P1 joystick (mahjngoh, part `04`), 2 mahjong panel
+  (usagi, `08`), 3 RC wheel and trigger (gobyrc, rcdego, `0C`). As MAME
+  0.288 taitogn.cpp INPUT_PORTS, the bits MAME marks unused read as
+  released: P2 bits 0-6 for 1-3, P1 bits 0-6 for 2-3, START1/START2 for 2,
+  START2 for 3. The MRA generator (tools/gnet/make_release_mras.py) writes
+  these bits.
+- Mahjong panel (taitogn.cpp ttgnmp_state mahjong_panel_r; rows KEY0-KEY3
+  of mame shared/mahjong.cpp mahjong_matrix_1p): zn2_io answers A10100
+  (P4) with the AND of the rows that coin bits 2, 3, 6, 7 select, bits 6-7
+  of a selected row 0 (MAME's KEY ports define bits 0-5), FFh with no row
+  selected. Keys on the keyboard, MAME's defaults (emu/inpttype.ipp): A to
+  N, Kan LCtrl, Pon LAlt, Chi Space, Reach LShift, Ron Z, Start 1 (KEY0
+  bit 5, also the pad's Start). LCtrl, LAlt, Space stay P1 buttons 1-3 as
+  in MAME. Not on the pad: Psikyo SH2's convention (mahjong keys as
+  joystick buttons 4-23, MiSTer-devel Arcade-PsikyoSH2 rtl/hps2input.sv)
+  would collide with this core's joystick bits 16-17 (savestate, fast
+  forward of the PSX base).
+- RC wheel and trigger (gobyrc ANALOG1 IPT_PADDLE, ANALOG2 IPT_PADDLE_V
+  PORT_REVERSE, 00h-FFh, centre 80h): znmcu analog channels 0 and 1. Wheel
+  from the analog stick's X, or the paddle once it moves (the source that
+  moved last); trigger from the stick's Y reversed (stick up = FFh); the
+  D-pad or arrows give full deflection. FFh on both for every other set
+  (MAME's unused ANALOG ports). Crossed to clk_cpu by cdc_bus_sync in
+  zn2_cdc (whole bytes); the mahjong rows join the cdc_sync input group.
 - Flip Screen (status 104, shown for vertical sets only, forced off for
   horizontal ones): the GPU video out's rotate180 (upstream PSX_MiSTer
   "Rotate" path, gpu_videoout_async.vhd: lines fetched bottom to top,
@@ -141,40 +178,21 @@ Raid).
 - Volume (status 106:105): Normal, +6 dB (x2, saturating), -6 dB, -12 dB on
   the 16-bit stereo output, one register on clk_1x, after which AUDIO_L/R
   go to the framework. With the Taito Zoom board (GNET_ZOOM, branch
-  gnet-full revision GNET_Z1FULL) zoom_mix (SPU x 0.3 + Zoom x 1.0, MAME
+  gnet-full revisions GNET_Z1FULL and the release's GNET_Z1FULLO) zoom_mix (SPU x 0.3 + Zoom x 1.0, MAME
   taitogn.cpp) drives `snd_l`/`snd_r`, so the volume applies to the mix.
   Level matching against the reference (-16.4 dBFS gameplay RMS): not
   done.
-- SFX Level (status 119:117, GNET_ZOOM builds): the SPU's gain in zoom_mix
-  (the analog route of the PS1 sound against the Zoom), saturating
-  (sim/zoommix): 0.7 (default, estimated from a real board, below), 0.3
-  (MAME's route), 0.45, 0.6, 0.9 (MAME's pre-2018 ratio: SPU 0.45 against
-  Zoom 0.5), 1.2, 1.5.
-  - MAME's spu.cpp stores but never applies the SPU main volume
-    (0x1F801D80/82, fixed mode: bits 14:0 x 2 / 32768); spu.vhd applies it,
-    as the chip does. The games set it below full scale, logged in MAME
-    0.288 from warm NVRAM: Ray Crisis 0x1125 (0.27), Shikigami 0x0C99
-    (0.20), Psyvariar and Psyvariar Revision 0x2FDF (0.748, written once
-    at 9.7 s and 11.7 s and unchanged to 90 s, through the attract demo).
-    So MAME's 0.3 route, applied after a main volume of 1.0, is not the
-    board's route.
-  - The board's route G, from a real Psyvariar Revision cabinet
-    (board_evidence S11, M5 on branch gnet-games: phone recording of the
-    attract demo, band power fitted as g x (Zoom + k x SPU_MAME), SPU_MAME
-    being MAME's SPU without the main volume): the SPU-to-Zoom ratio k is
-    0.465 at 1.2 to 4.8 kHz (+3.8 dB against MAME's 0.3; 90% range 0.386
-    to 0.606) and 0.578 at 2.4 to 4.8 kHz, the best-fitting band (+5.7 dB;
-    0.515 to 0.687). The board applies the main volume, so
-    G = k / 0.748: 0.62 (0.52 to 0.81) and 0.77 (0.69 to 0.92). The two
-    bands agree within their ranges (overlap 0.69 to 0.81); their geometric
-    mean is 0.69, so the default is 0.7.
-  - Caveat: one phone recording of a cabinet with an unknown volume dial
-    and mono/stereo setting, an uncalibrated microphone, the fit explaining
-    65 to 72% of the variance; one game. A line-out recording or the
-    board's analog mix (schematic) would settle it. With G = 0.7 the
-    effects relative to the music are 0.7 x main volume: 0.52 in
-    Psyvariar (MAME 0.3), 0.19 in Ray Crisis and 0.14 in Shikigami (MAME
-    0.3 for both).
+- SFX Level (status 119:117, GNET_ZOOM builds): the SPU's gain in zoom_mix,
+  0.3 (MAME's route, default), 0.45, 0.6, 0.9 (MAME's pre-2018 ratio:
+  SPU 0.45 against Zoom 0.5), 1.2, 1.5, saturating (sim/zoommix). Why:
+  MAME's spu.cpp stores but never applies the SPU main volume
+  (0x1F801D80/82); the games set it low (Ray Crisis 0x1125 = 0.27 of full
+  scale, Shikigami 0x0C99 = 0.20, Psyvariar 0x2FDF = 0.75, logged in
+  MAME 0.288 from warm NVRAM) and spu.vhd applies it. At the same 0.3 route
+  the core's effects are therefore 11.4 dB (Ray Crisis), 14.1 dB
+  (Shikigami) and 2.5 dB (Psyvariar) below MAME's against the same music.
+  MAME's 0.3 itself was set by ear in 2018; the PCB's analog balance is
+  unknown (R13).
 - Keyboard, MAME defaults: P1 arrows, LCtrl/LAlt/Space = B1-B3, 1 Start,
   5 Coin; P2 R/F/D/G, A/S/Q = B1-B3, 2 Start, 6 Coin; 9 Service, F2 Test,
   P Pause. G-NET games use three buttons, so LShift (B4) is not mapped.
@@ -195,7 +213,7 @@ Shell menu (GNET_SHELL):
 | CRT V Position (0, +1 .. +3, -4 .. -1 lines) | 113:111 | always |
 | Pause when OSD is open | 64 | always |
 | Volume | 106:105 | always |
-| SFX Level (PS1 SPU gain in the mix: 0.7 default, 0.3 MAME, 0.45, 0.6, 0.9, 1.2, 1.5) | 119:117 | GNET_ZOOM builds (zoom_mix) |
+| SFX Level (PS1 SPU gain in the mix: 0.3 MAME default, 0.45, 0.6, 0.9, 1.2, 1.5) | 119:117 | GNET_ZOOM builds (zoom_mix) |
 | DIP | MRA | always |
 | Watchdog | 100 | always |
 | Debug overlay | 101 | always (docs/hw_debug_overlay.md) |

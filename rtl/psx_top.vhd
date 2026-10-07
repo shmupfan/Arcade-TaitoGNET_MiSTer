@@ -282,8 +282,13 @@ entity psx_top is
       zn_in_system          : in  std_logic_vector(7 downto 0) := x"FF";
       zn_dsw                : in  std_logic_vector(3 downto 0) := x"F";
       zn_jp1                : in  std_logic := '0';
+      zn_nozoom             : in  std_logic := '0';   -- no Taito Zoom board (MAME init_nozoom), clk1x, set at load
       zn_card_present       : in  std_logic := '0';
       zn_key_valid          : in  std_logic := '0';
+      zn_in_mj              : in  std_logic_vector(23 downto 0) := (others => '1');
+      zn_in_mj_en           : in  std_logic := '0';
+      zn_in_an0             : in  std_logic_vector(7 downto 0) := x"FF";
+      zn_in_an1             : in  std_logic_vector(7 downto 0) := x"FF";
       zn_coin               : out std_logic_vector(7 downto 0);
       zn_wd_reset           : out std_logic;
       zn_ld_wr              : in  std_logic := '0';
@@ -2993,6 +2998,10 @@ begin
          in_p2          => zn_in_p2,
          in_service     => zn_in_service,
          in_system      => zn_in_system,
+         in_mj          => zn_in_mj,
+         in_mj_en       => zn_in_mj_en,
+         in_an0         => zn_in_an0,
+         in_an1         => zn_in_an1,
          dsw            => zn_dsw,
          jp1            => zn_jp1,
          card_present   => zn_card_present,
@@ -3086,6 +3095,10 @@ begin
          p_jp1            : in  std_logic;
          p_card_present   : in  std_logic;
          p_key_valid      : in  std_logic;
+         p_in_mj          : in  std_logic_vector(23 downto 0);
+         p_in_mj_en       : in  std_logic;
+         p_in_an0         : in  std_logic_vector(7 downto 0);
+         p_in_an1         : in  std_logic_vector(7 downto 0);
          c_in_p1          : out std_logic_vector(7 downto 0);
          c_in_p2          : out std_logic_vector(7 downto 0);
          c_in_service     : out std_logic_vector(7 downto 0);
@@ -3094,6 +3107,10 @@ begin
          c_jp1            : out std_logic;
          c_card_present   : out std_logic;
          c_key_valid      : out std_logic;
+         c_in_mj          : out std_logic_vector(23 downto 0);
+         c_in_mj_en       : out std_logic;
+         c_in_an0         : out std_logic_vector(7 downto 0);
+         c_in_an1         : out std_logic_vector(7 downto 0);
          p_ld_wr          : in  std_logic;
          p_ld_target      : in  std_logic_vector(1 downto 0);
          p_ld_addr        : in  unsigned(10 downto 0);
@@ -3127,6 +3144,9 @@ begin
       signal c_dsw                 : std_logic_vector(3 downto 0);
       signal c_jp1, c_card_present : std_logic;
       signal c_key_valid           : std_logic;
+      signal c_in_mj               : std_logic_vector(23 downto 0);
+      signal c_in_mj_en            : std_logic;
+      signal c_in_an0, c_in_an1    : std_logic_vector(7 downto 0);
       signal c_ld_wr               : std_logic;
       signal c_ld_target           : std_logic_vector(1 downto 0);
       signal c_ld_addr             : unsigned(10 downto 0);
@@ -3183,6 +3203,10 @@ begin
          in_p2          => c_in_p2,
          in_service     => c_in_service,
          in_system      => c_in_system,
+         in_mj          => c_in_mj,
+         in_mj_en       => c_in_mj_en,
+         in_an0         => c_in_an0,
+         in_an1         => c_in_an1,
          dsw            => c_dsw,
          jp1            => c_jp1,
          card_present   => c_card_present,
@@ -3240,6 +3264,10 @@ begin
          p_jp1            => zn_jp1,
          p_card_present   => zn_card_present,
          p_key_valid      => zn_key_valid,
+         p_in_mj          => zn_in_mj,
+         p_in_mj_en       => zn_in_mj_en,
+         p_in_an0         => zn_in_an0,
+         p_in_an1         => zn_in_an1,
          c_in_p1          => c_in_p1,
          c_in_p2          => c_in_p2,
          c_in_service     => c_in_service,
@@ -3248,6 +3276,10 @@ begin
          c_jp1            => c_jp1,
          c_card_present   => c_card_present,
          c_key_valid      => c_key_valid,
+         c_in_mj          => c_in_mj,
+         c_in_mj_en       => c_in_mj_en,
+         c_in_an0         => c_in_an0,
+         c_in_an1         => c_in_an1,
          p_ld_wr          => zn_ld_wr,
          p_ld_target      => zn_ld_target,
          p_ld_addr        => zn_ld_addr,
@@ -3404,8 +3436,14 @@ begin
          signal p_h_ack, p_h_hit      : std_logic;
          signal p_h_rdata             : std_logic_vector(31 downto 0);
          signal p_zoom_reset          : std_logic;
+         signal p_zoom_hold           : std_logic;
       begin
          zoom_rst <= reset_intern_p;
+         -- a set without the Zoom board (MAME init_nozoom, taitogn.cpp 416-419,
+         -- 519-535): the MN10200 stays in reset as at power-on (taitogn.cpp
+         -- 467), the game's control bit 4 is ignored; the host side (shared
+         -- RAM, sound_irq_r reads 0) answers as with the board
+         p_zoom_hold <= p_zoom_reset or zn_nozoom;
 
          izoom_cdc : zoom_cdc
          port map
@@ -3442,7 +3480,7 @@ begin
             rst         => reset_intern_p,
             hclk        => clk1x,
             hrst        => reset_intern_p,
-            zoom_reset  => p_zoom_reset,
+            zoom_reset  => p_zoom_hold,
             h_req       => p_h_req,
             h_we        => p_h_we,
             h_addr      => p_h_addr,

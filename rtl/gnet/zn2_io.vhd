@@ -17,7 +17,13 @@
 --   A00000 P1, A00100 P2, A00200 SERVICE, A00300 SYSTEM (8-bit, lane 0;
 --          active low; writes ignored: the BIOS writes 1-7 and 0Fh to
 --          A00000 during POST, MAME ignores them, needs-review)
---   A10000 P3, A10100 P4 (unused on G-NET: FFh)
+--   A10000 P3 (unused on G-NET: FFh)
+--   A10100 P4: FFh, or with in_mj_en the mahjong panel of Mahjong Oh and
+--          Usagi (taitogn.cpp ttgnmp_state::mahjong_panel_r 700-710): the
+--          AND of the key rows that coin bits 2, 3, 6 and 7 select (rows 0
+--          to 3, in_mj 6 bits each, active low), FFh with no row selected.
+--          MAME's KEY ports define bits 0-5 only, so a selected row reads
+--          bits 6 and 7 as 0 (mahjong.cpp mahjong_matrix_1p)
 --   A10200 board configuration (BOARDCFG; MAME 69h = 4 MB RAM, 2 MB VRAM,
 --          512 KB SPU RAM, revision 1)
 --   A10300 znsecsel (R/W): bit 2 CAT702 #1 select, bit 3 CAT702 #2 select
@@ -79,6 +85,9 @@ entity zn2_io is
       in_p2        : in  std_logic_vector(7 downto 0);
       in_service   : in  std_logic_vector(7 downto 0);
       in_system    : in  std_logic_vector(7 downto 0);
+      -- mahjong panel rows 3 downto 0, 6 bits each, active low (A10100)
+      in_mj        : in  std_logic_vector(23 downto 0) := (others => '1');
+      in_mj_en     : in  std_logic := '0';
 
       znsecsel     : out std_logic_vector(7 downto 0) := (others => '0');
       coin         : out std_logic_vector(7 downto 0) := (others => '0');
@@ -282,7 +291,14 @@ begin
                   when 16#A00200# / 4 => r(7 downto 0) := in_service;
                   when 16#A00300# / 4 => r(7 downto 0) := in_system;
                   when 16#A10000# / 4 => r(7 downto 0) := x"FF";
-                  when 16#A10100# / 4 => r(7 downto 0) := x"FF";
+                  when 16#A10100# / 4 =>
+                     r(7 downto 0) := x"FF";
+                     if (in_mj_en = '1') then
+                        if (coin(2) = '1') then r(7 downto 0) := r(7 downto 0) and ("00" & in_mj( 5 downto  0)); end if;
+                        if (coin(3) = '1') then r(7 downto 0) := r(7 downto 0) and ("00" & in_mj(11 downto  6)); end if;
+                        if (coin(6) = '1') then r(7 downto 0) := r(7 downto 0) and ("00" & in_mj(17 downto 12)); end if;
+                        if (coin(7) = '1') then r(7 downto 0) := r(7 downto 0) and ("00" & in_mj(23 downto 18)); end if;
+                     end if;
                   when 16#A10200# / 4 => r(7 downto 0) := BOARDCFG;
                   when 16#A10300# / 4 => r(7 downto 0) := znsecsel;
                   when 16#A20000# / 4 => r(7 downto 0) := coin;

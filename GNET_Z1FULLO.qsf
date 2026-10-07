@@ -1,4 +1,4 @@
-# G-NET Z1 FULL: GNET_Z1SHELL (release shell, docs/m4_shell.md) plus the DDR3 arbiter (GNET_DDR3_ARB, docs/ddr3_arbiter.md: rotation through screen_rotate on arcade_video's output and a dual-clock FIFO, the Taito Zoom flash-area port, the channel 3 flash mirror into DDR3, the core behind it) and GNET_ROT_DDR (Orientation and Rotate Direction OSD items shown); the Taito Zoom sound board (GNET_ZOOM, docs/zoom_board_design.md 14) on the arbiter's Zoom port with the flash mirror; arbiter status in the debug overlay's DR row (docs/hw_debug_overlay.md).
+# G-NET Z1 FULLO: GNET_Z1FULL plus the ZN-2 read overlap (GNET_READ_OVERLAP: memorymux ZN2_READ_OVERLAP, a ZN-2 read step's SDRAM request issued as its delay starts); fullsys warm boots of Ray Crisis, Psyvariar and Night Raid match overlap 0 in content with 1 to 2% faster loading and no watchdog pulse.
 # --------------------------------------------------------------------------
 #
 # MiSTer project
@@ -50,7 +50,6 @@ set_global_assignment -name PERIPHERY_TO_CORE_PLACEMENT_AND_ROUTING_OPTIMIZATION
 set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
 set_global_assignment -name ALM_REGISTER_PACKING_EFFORT LOW
 set_global_assignment -name PLACEMENT_EFFORT_MULTIPLIER 1.0
-set_global_assignment -name SEED 1
 
 set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
 
@@ -146,3 +145,9 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_out.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_mix.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_board.sv
 set_global_assignment -name VHDL_FILE rtl/gnet/zoom_cdc.vhd
+
+# ZN-2 read overlap (memorymux ZN2_READ_OVERLAP)
+set_global_assignment -name VERILOG_MACRO "GNET_READ_OVERLAP=1"
+
+# Fitter seed (2026-10-07: seed 1 left spu RamVoice_addrA -> VOICEREGS MLAB hold at -0.060 ns)
+set_global_assignment -name SEED 2
