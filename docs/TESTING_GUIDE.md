@@ -14,8 +14,8 @@ the game zips: they are made from your own files.
 In order of value:
 
 1. **Each game from its main MRA to the attract mode and into play**
-   (test 1). Ray Crisis, XII Stag and Night Raid have not been run on real
-   hardware by me yet.
+   (test 1), most of all the sets the README's game list marks Boots or
+   Not tested.
 2. **A first-boot copy with a first boot MRA** (test 2): does the copy
    finish and the game start?
 3. **Sound balance** between the music and the sound effects (test 3),
@@ -43,7 +43,8 @@ are worth more to the core than any test on the MiSTer.
 
 ## Test 1: boot to attract and play (main MRAs)
 
-Load `<Game>.mra` from the Arcade menu. Every game starts the same way:
+Load `<Game>.mra` from the Arcade menu. The game's other versions are in
+its folder under `_alternatives`. Every game starts the same way:
 
 | Time | What you should see |
 |---|---|
@@ -137,7 +138,8 @@ power or remove the card. In MAME the copy takes about 2 to 2.3 minutes
 depending on the game (XII Stag is the shortest); on the core about
 2.5 minutes. Do not reset or power off during it. The core does not keep
 the flash between loads, so this happens at every load of a first boot
-MRA.
+MRA. The two CompactFlash sets (Kollon (V2.04JC) and Otenami Haiken
+Final) have no first boot MRA.
 
 Report: whether the copy finishes and the game starts, and the time from
 the copy screen appearing to it going away.
@@ -178,7 +180,8 @@ On a CRT (15 kHz, direct video or an analog output):
 
 ## Test 5: rotation and Flip Screen
 
-The vertical games are Psyvariar (both), XII Stag and Shikigami no Shiro.
+The vertical games are Psyvariar (both), XII Stag, Shikigami no Shiro
+and Space Invaders Anniversary.
 
 - **HDMI**: with Orientation set to Vertical, the picture should stand
   upright. Try both Rotate Direction settings. A photo of the screen
@@ -314,6 +317,6 @@ I'll credit anything I use.
 
 **Documents**
 
-16. The G card instruction manual for any of the five games: the test mode
+16. The G card instruction manual for any G-NET game: the test mode
     and DIP switch pages, the button names, and for Night Raid whether the
     monitor is mounted horizontally or vertically.
