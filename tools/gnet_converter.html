@@ -1,0 +1,2370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; worker-src blob:; style-src 'unsafe-inline'; img-src data:; connect-src blob: data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>G-NET Card Converter</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='1' width='12' height='14' rx='1' fill='%23456'/%3E%3Crect x='4' y='3' width='8' height='4' fill='%23ddd'/%3E%3C/svg%3E">
+<style>:root {
+  --bg: #fafaf8;
+  --fg: #1d1d1b;
+  --muted: #5c5c57;
+  --line: #d9d8d2;
+  --panel: #ffffff;
+  --accent: #2357a6;
+  --accent-fg: #ffffff;
+  --ok: #1e6b35;
+  --bad: #a3271d;
+  --warn: #8a5a00;
+  --bar: #e6e5df;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18191b;
+    --fg: #e6e6e3;
+    --muted: #a3a3a0;
+    --line: #36383b;
+    --panel: #212225;
+    --accent: #7aa7ec;
+    --accent-fg: #0d1520;
+    --ok: #7cc98f;
+    --bad: #f08a80;
+    --warn: #e3b55a;
+    --bar: #33353a;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+main { max-width: 780px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.6rem; margin: 0 0 12px; }
+h2 { font-size: 1.15rem; margin: 0 0 6px; display: flex; align-items: center; gap: 10px; }
+h3 { font-size: 1rem; margin: 16px 0 4px; }
+p { margin: 0 0 10px; }
+a { color: var(--accent); }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg); font-size: 0.9rem; flex: none;
+}
+.privacy { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+.pick { position: relative; display: inline-block; }
+.pick input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; font-size: 0; }
+.pick span, button {
+  display: inline-block;
+  font: inherit;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+}
+.pick.secondary span { background: transparent; color: var(--accent); }
+.pick input:focus-visible + span, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.45; cursor: default; }
+.status { margin-top: 10px; min-height: 1.5em; }
+.status.ok, .ok { color: var(--ok); }
+.status.bad, .bad { color: var(--bad); }
+.warn { color: var(--warn); }
+.note { color: var(--muted); margin-left: 8px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.95rem; }
+th, td { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); }
+td code { font-size: 0.85em; }
+#unmatched ul { margin: 0; padding-left: 20px; }
+#unmatched li { margin: 2px 0; overflow-wrap: anywhere; }
+progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.phase { font-size: 0.85rem; color: var(--muted); }
+#all { margin-top: 14px; }
+.note-line { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; }
+footer { color: var(--muted); font-size: 0.85rem; }
+@media (max-width: 560px) {
+  #matched th:nth-child(4), #matched td:nth-child(4) { display: none; }
+  h1 { font-size: 1.35rem; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>G-NET Card Converter</h1>
+<p>This page turns your MAME files for Taito G-NET games into the zips the
+<a href="https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer">Taito G-NET MiSTer core</a> loads.
+It does the same job as the command-line converter, <code>gnet_tester_zips.py</code>, and writes the same files.</p>
+<p class="privacy">Your files are processed in this browser. Nothing is uploaded.</p>
+
+<section id="step1">
+<h2><span class="num">1</span> Select coh3002t.zip</h2>
+<p>The G-NET BIOS set from MAME 0.288.</p>
+<label class="pick"><input type="file" id="bios" accept=".zip,application/zip"><span>Choose coh3002t.zip</span></label>
+<div id="bios-status" class="status" role="status"></div>
+</section>
+
+<section id="step2">
+<h2><span class="num">2</span> Select your CHD files</h2>
+<p>The card images from MAME 0.288 (for example <code>raycris/raycris.chd</code>). Each file is
+recognised from the SHA1 inside it, so file and folder names do not matter.</p>
+<div class="row">
+<label class="pick"><input type="file" id="chds" multiple accept=".chd"><span>Choose CHD files</span></label>
+<label class="pick secondary"><input type="file" id="folder" webkitdirectory directory multiple><span>Or choose a folder</span></label>
+</div>
+<div id="chd-status" class="status" role="status"></div>
+<table id="matched" hidden>
+<thead><tr><th>Set</th><th>Game</th><th>Card</th><th>File</th></tr></thead>
+<tbody></tbody>
+</table>
+<div id="unmatched" hidden>
+<h3>Not used</h3>
+<ul></ul>
+</div>
+</section>
+
+<section id="step3">
+<h2><span class="num">3</span> Convert</h2>
+<p>Games are converted one at a time. Each zip can be saved as soon as it is ready. Keep this tab in view while it runs: browsers slow down tabs that are hidden.</p>
+<button type="button" id="convert" disabled>Convert</button>
+<table id="jobs" hidden>
+<thead><tr><th>Set</th><th>Progress</th><th>Result</th></tr></thead>
+<tbody></tbody>
+</table>
+<div id="all" hidden>
+<button type="button" id="save-all">Download all as one zip</button>
+<span id="all-note" class="note"></span>
+<p class="note-line">Unzip this first: the MiSTer needs each gnet_&lt;set&gt;.zip in games/mame, not the bundle.</p>
+</div>
+</section>
+
+<section id="howto">
+<h2>Then, on the MiSTer</h2>
+<ol>
+<li>Copy <code>coh3002t.zip</code> and every <code>gnet_&lt;set&gt;.zip</code> to <code>games/mame</code> on the MiSTer SD card
+(if you downloaded them as one zip, unzip it first).</li>
+<li>Get the core and MRAs. With Update All and the shmupfan database added (see the guide below), they install automatically: the core to <code>_Arcade/cores</code>, the main MRAs to <code>_Arcade</code>, other versions to <code>_Arcade/_alternatives</code>. Without Update All, copy them from the <a href="https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/tree/main/releases">releases folder</a> to the same places.</li>
+</ol>
+<p>Step by step guide: <a href="https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/blob/main/docs/INSTALL.md">INSTALL.md</a>.
+The zips hold game data made from your own files, so keep them to yourself.</p>
+</section>
+
+<footer>
+<p>Runs offline: you can save this page and open the saved file. Build: 1173dad, gnet_tester_zips.py sha256 0a8ccb6f0e60.</p>
+</footer>
+</main>
+<script id="gnet-lib">"use strict";
+const __m_util = (() => {
+// Small helpers shared by the converter modules: errors, CRC16, CRC32, SHA1
+// and the Python string and bytearray behaviour that build_flash.py relies on.
+
+class ConvertError extends Error {}
+
+// ---------------------------------------------------------------- CRC16
+
+const CRC16_TABLE = (() => {
+  const t = new Uint16Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i << 8;
+    for (let k = 0; k < 8; k++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) : (c << 1);
+    t[i] = c & 0xffff;
+  }
+  return t;
+})();
+
+// CRC-16-CCITT (polynomial 1021h, start FFFFh), MAME's crc16_creator (chd.py crc16)
+function crc16(data) {
+  let crc = 0xffff;
+  const t = CRC16_TABLE;
+  for (let i = 0, n = data.length; i < n; i++) crc = ((crc << 8) & 0xff00) ^ t[(crc >> 8) ^ data[i]];
+  return crc;
+}
+
+// ---------------------------------------------------------------- CRC32 (zip)
+
+const CRC32_TABLES = (() => {
+  const t = new Int32Array(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  for (let i = 0; i < 256; i++) {
+    for (let s = 1; s < 4; s++) {
+      const p = t[(s - 1) * 256 + i];
+      t[s * 256 + i] = t[p & 0xff] ^ (p >>> 8);
+    }
+  }
+  return t;
+})();
+
+// crc32(data[, previous crc]) as zlib.crc32
+function crc32(data, prev = 0) {
+  const t = CRC32_TABLES;
+  let c = ~prev;
+  let i = 0;
+  const n = data.length;
+  const n4 = n - (n & 3);
+  for (; i < n4; i += 4) {
+    c ^= data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24);
+    c = t[768 + (c & 0xff)] ^ t[512 + ((c >>> 8) & 0xff)] ^ t[256 + ((c >>> 16) & 0xff)] ^ t[c >>> 24];
+  }
+  for (; i < n; i++) c = t[(c ^ data[i]) & 0xff] ^ (c >>> 8);
+  return (~c) >>> 0;
+}
+
+// ---------------------------------------------------------------- SHA1
+
+// SHA1 hex digest of a Uint8Array (own implementation: crypto.subtle is not
+// available to pages opened from file:// in every browser)
+function sha1hex(data) {
+  let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
+  const w = new Int32Array(80);
+  const n = data.length;
+  const full = n - (n % 64);
+  const tail = new Uint8Array(((n % 64) + 9 > 64) ? 128 : 64);
+  tail.set(data.subarray(full));
+  tail[n % 64] = 0x80;
+  const bits = n * 8;
+  const tl = tail.length;
+  tail[tl - 1] = bits & 0xff;
+  tail[tl - 2] = (bits >>> 8) & 0xff;
+  tail[tl - 3] = (bits >>> 16) & 0xff;
+  tail[tl - 4] = (bits >>> 24) & 0xff;
+  const hi = Math.floor(bits / 0x100000000);
+  tail[tl - 5] = hi & 0xff;
+  tail[tl - 6] = (hi >>> 8) & 0xff;
+  tail[tl - 7] = (hi >>> 16) & 0xff;
+  tail[tl - 8] = (hi >>> 24) & 0xff;
+  const block = (buf, off) => {
+    for (let i = 0; i < 16; i++) {
+      const o = off + i * 4;
+      w[i] = (buf[o] << 24) | (buf[o + 1] << 16) | (buf[o + 2] << 8) | buf[o + 3];
+    }
+    for (let i = 16; i < 80; i++) {
+      const x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+      w[i] = (x << 1) | (x >>> 31);
+    }
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let i = 0; i < 80; i++) {
+      let f, k;
+      if (i < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
+      else if (i < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
+      else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
+      else { f = b ^ c ^ d; k = 0xca62c1d6; }
+      const t = (((a << 5) | (a >>> 27)) + f + e + k + w[i]) | 0;
+      e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = t;
+    }
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0;
+  };
+  for (let off = 0; off < full; off += 64) block(data, off);
+  for (let off = 0; off < tl; off += 64) block(tail, off);
+  return [h0, h1, h2, h3, h4].map((v) => (v >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+// ---------------------------------------------------------------- streams
+
+// bytes through a CompressionStream or DecompressionStream. Written to the
+// stream directly, not through a Blob: Safari cannot read Blobs in a page
+// opened from file://.
+async function transform(stream, data) {
+  const writer = stream.writable.getWriter();
+  const done = writer.write(data).then(() => writer.close());
+  done.catch(() => {});
+  const reader = stream.readable.getReader();
+  const chunks = [];
+  for (;;) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    chunks.push(value);
+  }
+  await done;
+  return chunks.length === 1 ? chunks[0] : concatBytes(chunks);
+}
+
+// ---------------------------------------------------------------- bytes
+
+function hex(b) {
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += b[i].toString(16).padStart(2, "0");
+  return s;
+}
+
+function concatBytes(parts) {
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+
+// Python bytes.ljust(width, fill): pad, never truncate
+function ljust(b, width, fill) {
+  if (b.length >= width) return b;
+  const out = new Uint8Array(width).fill(fill);
+  out.set(b);
+  return out;
+}
+
+// Python bytearray slice assignment a[lo:hi] = v (the length may change)
+function sliceAssign(a, lo, hi, v) {
+  lo = Math.min(lo, a.length);
+  hi = Math.max(lo, Math.min(hi, a.length));
+  if (hi - lo === v.length) {
+    a.set(v, lo);
+    return a;
+  }
+  return concatBytes([a.subarray(0, lo), v, a.subarray(hi)]);
+}
+
+// build_flash.swap16: exchange the bytes of each 16-bit word (Python raises
+// ValueError on an odd length)
+function swap16(b) {
+  if (b.length & 1) throw new ConvertError("swap16: odd length");
+  const a = new Uint8Array(b.length);
+  for (let i = 0; i < b.length; i += 2) {
+    a[i] = b[i + 1];
+    a[i + 1] = b[i];
+  }
+  return a;
+}
+
+// ---------------------------------------------------------------- Python str (latin-1 range)
+
+function latin1(b) {
+  let s = "";
+  for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+  return s;
+}
+
+function encodeLatin1(s) {
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c > 0xff) throw new ConvertError("'latin-1' codec can't encode character");
+    out[i] = c;
+  }
+  return out;
+}
+
+// str.isspace for the characters latin-1 text can hold
+const PY_SPACE = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0]);
+const isSpace = (s, i) => PY_SPACE.has(s.charCodeAt(i));
+
+function pyStrip(s, chars) {
+  const drop = chars === undefined ? (i) => isSpace(s, i) : (i) => chars.includes(s[i]);
+  let a = 0, b = s.length;
+  while (a < b && drop(a)) a++;
+  while (b > a && drop(b - 1)) b--;
+  return s.slice(a, b);
+}
+
+function pyRstrip(s) {
+  let b = s.length;
+  while (b > 0 && isSpace(s, b - 1)) b--;
+  return s.slice(0, b);
+}
+
+// str.split() / str.split(None, maxsplit)
+function pySplit(s, maxsplit = -1) {
+  const out = [];
+  let i = 0;
+  const n = s.length;
+  while (true) {
+    while (i < n && isSpace(s, i)) i++;
+    if (i >= n) break;
+    if (maxsplit >= 0 && out.length === maxsplit) {
+      let e = n;
+      while (e > i && isSpace(s, e - 1)) e--;
+      out.push(s.slice(i, e));
+      break;
+    }
+    let j = i;
+    while (j < n && !isSpace(s, j)) j++;
+    out.push(s.slice(i, j));
+    i = j;
+  }
+  return out;
+}
+
+// str.splitlines() (no line ends kept)
+function pySplitlines(s) {
+  const out = [];
+  let start = 0;
+  let i = 0;
+  const n = s.length;
+  while (i < n) {
+    const c = s.charCodeAt(i);
+    if (c === 0x0a || c === 0x0b || c === 0x0c || c === 0x0d || c === 0x1c || c === 0x1d || c === 0x1e || c === 0x85) {
+      out.push(s.slice(start, i));
+      if (c === 0x0d && i + 1 < n && s.charCodeAt(i + 1) === 0x0a) i++;
+      i++;
+      start = i;
+    } else {
+      i++;
+    }
+  }
+  if (start < n) out.push(s.slice(start));
+  return out;
+}
+
+// int(x) / int(x, 10) for a decimal string
+function pyInt(s) {
+  const t = pyStrip(s);
+  if (!/^[+-]?\d+(_\d+)*$/.test(t)) throw new ConvertError(`invalid literal for int() with base 10: '${s}'`);
+  return Number(t.replace(/_/g, ""));
+}
+
+return { ConvertError, crc16, crc32, sha1hex, transform, hex, concatBytes, ljust, sliceAssign, swap16, latin1, encodeLatin1, pyStrip, pyRstrip, pySplit, pySplitlines, pyInt };
+})();
+const __m_lzma = (() => {
+  const {ConvertError} = __m_util;
+// Raw LZMA1 decoder for CHD 'lzma' hunks: no header, no end marker, known
+// output size. Written from the LZMA specification (Igor Pavlov's LzmaSpec.cpp,
+// public domain). chd.py hands these hunks to Python's lzma module (liblzma,
+// FORMAT_RAW) with lc=3 lp=0 pb=2; like liblzma with max_length, decoding stops
+// when the output is full.
+
+
+const NUM_STATES = 12;
+const LEN_LOW_BITS = 3, LEN_MID_BITS = 3, LEN_HIGH_BITS = 8;
+const LEN_LOW_SYMBOLS = 1 << LEN_LOW_BITS, LEN_MID_SYMBOLS = 1 << LEN_MID_BITS;
+const POS_STATES_MAX = 16;
+const END_POS_MODEL_INDEX = 14;
+const NUM_FULL_DISTANCES = 1 << (END_POS_MODEL_INDEX >> 1);
+const NUM_ALIGN_BITS = 4;
+const NUM_LEN_TO_POS_STATES = 4;
+const MATCH_MIN_LEN = 2;
+
+// length decoder layout (offsets inside its block of probabilities)
+const LEN_CHOICE = 0, LEN_CHOICE2 = 1, LEN_LOW = 2;
+const LEN_MID = LEN_LOW + POS_STATES_MAX * LEN_LOW_SYMBOLS;
+const LEN_HIGH = LEN_MID + POS_STATES_MAX * LEN_MID_SYMBOLS;
+const LEN_SIZE = LEN_HIGH + (1 << LEN_HIGH_BITS);
+
+function layout(lc, lp) {
+  let o = 0;
+  const L = {};
+  const take = (name, n) => { L[name] = o; o += n; };
+  take("isMatch", NUM_STATES << 4);
+  take("isRep", NUM_STATES);
+  take("isRepG0", NUM_STATES);
+  take("isRepG1", NUM_STATES);
+  take("isRepG2", NUM_STATES);
+  take("isRep0Long", NUM_STATES << 4);
+  take("posSlot", NUM_LEN_TO_POS_STATES << 6);
+  take("posDecoders", 1 + NUM_FULL_DISTANCES - END_POS_MODEL_INDEX);
+  take("align", 1 << NUM_ALIGN_BITS);
+  take("lenDec", LEN_SIZE);
+  take("repLenDec", LEN_SIZE);
+  take("literal", 0x300 << (lc + lp));
+  L.size = o;
+  return L;
+}
+
+function makeLzmaDecoder(dictSize, lc = 3, lp = 0, pb = 2) {
+  const L = layout(lc, lp);
+  const probs = new Uint16Array(L.size);
+  const pbMask = (1 << pb) - 1, lpMask = (1 << lp) - 1;
+
+  return function decode(src, outSize) {
+    const out = new Uint8Array(outSize);
+    probs.fill(1024);
+    const inLen = src.length;
+    if (inLen < 5 || src[0] !== 0) throw new ConvertError("lzma: bad stream start");
+    let ip = 1;
+    let range = 0xffffffff;
+    let code = ((src[1] << 24) >>> 0) + (src[2] << 16) + (src[3] << 8) + src[4];
+    ip = 5;
+    if (code === range) throw new ConvertError("lzma: corrupted stream");
+
+    const bit = (i) => {
+      const p = probs[i];
+      const bound = (range >>> 11) * p;
+      let b;
+      if (code < bound) {
+        range = bound;
+        probs[i] = p + ((2048 - p) >>> 5);
+        b = 0;
+      } else {
+        range -= bound;
+        code -= bound;
+        probs[i] = p - (p >>> 5);
+        b = 1;
+      }
+      if (range < 0x1000000) {
+        if (ip >= inLen) throw new ConvertError("lzma: input too short");
+        range *= 256;
+        code = code * 256 + src[ip++];
+      }
+      return b;
+    };
+    const tree = (base, numBits) => {
+      let m = 1;
+      for (let i = 0; i < numBits; i++) m = (m << 1) + bit(base + m);
+      return m - (1 << numBits);
+    };
+    const reverse = (base, numBits) => {
+      let m = 1, sym = 0;
+      for (let i = 0; i < numBits; i++) {
+        const b = bit(base + m);
+        m = (m << 1) + b;
+        sym |= b << i;
+      }
+      return sym;
+    };
+    const direct = (numBits) => {
+      let res = 0;
+      for (let i = 0; i < numBits; i++) {
+        range = range >>> 1;
+        let b = 0;
+        if (code >= range) {
+          code -= range;
+          b = 1;
+        }
+        if (range < 0x1000000) {
+          if (ip >= inLen) throw new ConvertError("lzma: input too short");
+          range *= 256;
+          code = code * 256 + src[ip++];
+        }
+        res = res * 2 + b;
+      }
+      return res;
+    };
+    const len = (base, posState) => {
+      if (bit(base + LEN_CHOICE) === 0) return tree(base + LEN_LOW + (posState << LEN_LOW_BITS), LEN_LOW_BITS);
+      if (bit(base + LEN_CHOICE2) === 0) return LEN_LOW_SYMBOLS + tree(base + LEN_MID + (posState << LEN_MID_BITS), LEN_MID_BITS);
+      return LEN_LOW_SYMBOLS + LEN_MID_SYMBOLS + tree(base + LEN_HIGH, LEN_HIGH_BITS);
+    };
+
+    let state = 0, rep0 = 0, rep1 = 0, rep2 = 0, rep3 = 0;
+    let pos = 0;
+    while (pos < outSize) {
+      const posState = pos & pbMask;
+      if (bit(L.isMatch + (state << 4) + posState) === 0) {
+        const prev = pos > 0 ? out[pos - 1] : 0;
+        const litState = ((pos & lpMask) << lc) + (prev >> (8 - lc));
+        const base = L.literal + 0x300 * litState;
+        let sym = 1;
+        if (state >= 7) {
+          if (rep0 >= pos) throw new ConvertError("lzma: distance beyond output");
+          let matchByte = out[pos - rep0 - 1];
+          do {
+            const matchBit = (matchByte >> 7) & 1;
+            matchByte <<= 1;
+            const b = bit(base + ((1 + matchBit) << 8) + sym);
+            sym = (sym << 1) | b;
+            if (matchBit !== b) break;
+          } while (sym < 0x100);
+        }
+        while (sym < 0x100) sym = (sym << 1) | bit(base + sym);
+        out[pos++] = sym - 0x100;
+        state = state < 4 ? 0 : state < 10 ? state - 3 : state - 6;
+        continue;
+      }
+      let n;
+      if (bit(L.isRep + state) !== 0) {
+        if (pos === 0) throw new ConvertError("lzma: repeat at start");
+        if (bit(L.isRepG0 + state) === 0) {
+          if (bit(L.isRep0Long + (state << 4) + posState) === 0) {
+            state = state < 7 ? 9 : 11;
+            out[pos] = out[pos - rep0 - 1];
+            pos++;
+            continue;
+          }
+        } else {
+          let dist;
+          if (bit(L.isRepG1 + state) === 0) {
+            dist = rep1;
+          } else {
+            if (bit(L.isRepG2 + state) === 0) {
+              dist = rep2;
+            } else {
+              dist = rep3;
+              rep3 = rep2;
+            }
+            rep2 = rep1;
+          }
+          rep1 = rep0;
+          rep0 = dist;
+        }
+        n = len(L.repLenDec, posState);
+        state = state < 7 ? 8 : 11;
+      } else {
+        rep3 = rep2;
+        rep2 = rep1;
+        rep1 = rep0;
+        n = len(L.lenDec, posState);
+        state = state < 7 ? 7 : 10;
+        const lenState = n < NUM_LEN_TO_POS_STATES - 1 ? n : NUM_LEN_TO_POS_STATES - 1;
+        const posSlot = tree(L.posSlot + (lenState << 6), 6);
+        if (posSlot < 4) {
+          rep0 = posSlot;
+        } else {
+          const numDirect = (posSlot >> 1) - 1;
+          let dist = (2 | (posSlot & 1)) * 2 ** numDirect;
+          if (posSlot < END_POS_MODEL_INDEX) {
+            dist += reverse(L.posDecoders + dist - posSlot, numDirect);
+          } else {
+            dist += direct(numDirect - NUM_ALIGN_BITS) * 16;
+            dist += reverse(L.align, NUM_ALIGN_BITS);
+          }
+          rep0 = dist;
+        }
+        if (rep0 === 0xffffffff) throw new ConvertError("lzma: end marker before the end of the hunk");
+        if (rep0 >= dictSize || rep0 >= pos) throw new ConvertError("lzma: distance beyond output");
+      }
+      n += MATCH_MIN_LEN;
+      const end = Math.min(pos + n, outSize);
+      const from = pos - rep0 - 1;
+      for (let k = 0; pos < end; k++) out[pos++] = out[from + k];
+    }
+    return out;
+  };
+}
+
+return { makeLzmaDecoder };
+})();
+const __m_flac = (() => {
+  const {ConvertError} = __m_util;
+// CHD 'flac' hunk decoder, ported from chd.py flac_decode (itself written
+// from MAME 0.288 flac.cpp and chdcodec.cpp).
+
+
+const err = (m) => new ConvertError("flac: " + m);
+
+class Bits {
+  constructor(d) {
+    this.d = d;
+    this.p = 0;
+    this.n = d.length * 8;
+  }
+
+  u(n) {
+    if (n === 0) return 0;
+    let p = this.p;
+    if (p + n > this.n) throw err("data ends early");
+    this.p = p + n;
+    const d = this.d;
+    let v = 0;
+    while (n > 0) {
+      const avail = 8 - (p & 7);
+      const take = avail < n ? avail : n;
+      v = v * (1 << take) + ((d[p >> 3] >> (avail - take)) & ((1 << take) - 1));
+      p += take;
+      n -= take;
+    }
+    return v;
+  }
+
+  s(n) {
+    const v = this.u(n);
+    return n && v >= 2 ** (n - 1) ? v - 2 ** n : v;
+  }
+
+  // count of 0 bits before the next 1, which is consumed
+  unary() {
+    const d = this.d;
+    let p = this.p;
+    let i = p >> 3;
+    let byte = (d[i] << (p & 7)) & 0xff;
+    let count = 0;
+    if (byte === 0) {
+      count = 8 - (p & 7);
+      i++;
+      while (i < d.length && d[i] === 0) {
+        count += 8;
+        i++;
+      }
+      if (i >= d.length) throw err("data ends early");
+      byte = d[i];
+    }
+    const z = Math.clz32(byte) - 24;
+    count += z;
+    this.p = p + count + 1;
+    return count;
+  }
+
+  align() {
+    this.p = (this.p + 7) & ~7;
+  }
+}
+
+function residual(b, blocksize, order) {
+  const method = b.u(2);
+  if (method > 1) throw err("bad residual coding method");
+  const pbits = method === 0 ? 4 : 5;
+  const escape = method === 0 ? 15 : 31;
+  const porder = b.u(4);
+  const out = [];
+  for (let part = 0; part < 1 << porder; part++) {
+    const n = (blocksize >> porder) - (part === 0 ? order : 0);
+    const k = b.u(pbits);
+    if (k === escape) {
+      const nb = b.u(5);
+      for (let j = 0; j < n; j++) out.push(b.s(nb));
+      continue;
+    }
+    for (let j = 0; j < n; j++) {
+      const q = b.unary();
+      const u = k ? q * 2 ** k + b.u(k) : q;
+      // zigzag: (u >> 1) ^ -(u & 1)
+      out.push(u % 2 ? -(u - 1) / 2 - 1 : u / 2);
+    }
+    if (b.p > b.n) throw err("data ends early");
+  }
+  return out;
+}
+
+function subframe(b, blocksize, bps) {
+  if (b.u(1)) throw err("bad subframe padding");
+  const t = b.u(6);
+  let wasted = 0;
+  if (b.u(1)) {
+    wasted = b.unary() + 1;
+    bps -= wasted;
+  }
+  let x;
+  if (t === 0) {
+    x = new Array(blocksize).fill(b.s(bps));
+  } else if (t === 1) {
+    x = [];
+    for (let i = 0; i < blocksize; i++) x.push(b.s(bps));
+  } else if (t >= 8 && t <= 12) {
+    const order = t - 8;
+    x = [];
+    for (let i = 0; i < order; i++) x.push(b.s(bps));
+    const res = residual(b, blocksize, order);
+    if (order === 0) {
+      x = res;
+    } else {
+      let i = x.length;
+      for (const r of res) {
+        let v;
+        if (order === 1) v = r + x[i - 1];
+        else if (order === 2) v = r + 2 * x[i - 1] - x[i - 2];
+        else if (order === 3) v = r + 3 * x[i - 1] - 3 * x[i - 2] + x[i - 3];
+        else v = r + 4 * x[i - 1] - 6 * x[i - 2] + 4 * x[i - 3] - x[i - 4];
+        x.push(v);
+        i++;
+      }
+    }
+  } else if (t >= 32) {
+    const order = t - 31;
+    x = [];
+    for (let i = 0; i < order; i++) x.push(b.s(bps));
+    const precision = b.u(4) + 1;
+    if (precision === 16) throw err("bad LPC precision");
+    const shift = b.s(5);
+    if (shift < 0) throw err("negative LPC shift");
+    const coefs = [];
+    for (let i = 0; i < order; i++) coefs.push(b.s(precision));
+    const res = residual(b, blocksize, order);
+    const div = 2 ** shift;
+    let i = 0;
+    for (const r of res) {
+      // coefs[0] applies to the newest sample
+      let sum = 0;
+      for (let j = 0; j < order; j++) sum += coefs[j] * x[i + order - 1 - j];
+      x.push(r + Math.floor(sum / div));
+      i++;
+    }
+  } else {
+    throw err(`reserved subframe type ${t}`);
+  }
+  if (wasted) {
+    const m = 2 ** wasted;
+    x = x.map((v) => v * m);
+  }
+  return x;
+}
+
+const BPS = { 0: 16, 1: 8, 2: 12, 4: 16, 5: 20, 6: 24, 7: 32 };
+
+// chd_flac_decompressor: 'L' or 'B' (byte order of the output words), then
+// FLAC frames for 2 channels of 16-bit samples, without the stream header
+function flacDecode(src, destlen) {
+  let little;
+  if (src[0] === 0x4c) little = true;
+  else if (src[0] === 0x42) little = false;
+  else throw err("bad byte order marker");
+  const want = Math.floor(destlen / 4);
+  const b = new Bits(src.subarray(1));
+  let left = [], right = [];
+  while (left.length < want) {
+    b.align();
+    if (b.u(14) !== 0x3ffe) throw err("frame sync not found");
+    b.u(2);
+    const bscode = b.u(4), srcode = b.u(4);
+    const chan = b.u(4), sscode = b.u(3);
+    b.u(1);
+    const lead = b.u(8);
+    let extra = 0;
+    while (lead & (0x80 >> extra)) extra++;
+    for (let i = 0; i < extra - 1; i++) b.u(8);
+    let blocksize;
+    if (bscode === 0) throw err("reserved block size");
+    else if (bscode === 1) blocksize = 192;
+    else if (bscode <= 5) blocksize = 576 << (bscode - 2);
+    else if (bscode === 6) blocksize = b.u(8) + 1;
+    else if (bscode === 7) blocksize = b.u(16) + 1;
+    else blocksize = 256 << (bscode - 8);
+    if (srcode === 12) b.u(8);
+    else if (srcode === 13 || srcode === 14) b.u(16);
+    else if (srcode === 15) throw err("bad sample rate code");
+    const bps = BPS[sscode];
+    if (bps === undefined) throw err("bad sample size");
+    b.u(8);
+    let a, c;
+    if (chan === 1) {
+      a = subframe(b, blocksize, bps);
+      c = subframe(b, blocksize, bps);
+    } else if (chan === 8) {
+      a = subframe(b, blocksize, bps);
+      const sd = subframe(b, blocksize, bps + 1);
+      c = a.map((x, i) => x - sd[i]);
+      if (sd.length < a.length) c.length = sd.length;
+    } else if (chan === 9) {
+      const sd = subframe(b, blocksize, bps + 1);
+      c = subframe(b, blocksize, bps);
+      a = sd.map((x, i) => x + c[i]);
+      if (c.length < sd.length) a.length = c.length;
+    } else if (chan === 10) {
+      const m = subframe(b, blocksize, bps);
+      const sd = subframe(b, blocksize, bps + 1);
+      const n = Math.min(m.length, sd.length);
+      a = new Array(n);
+      c = new Array(n);
+      for (let i = 0; i < n; i++) {
+        const y = sd[i];
+        const x = m[i] * 2 + (y & 1);
+        a[i] = Math.floor((x + y) / 2);
+        c[i] = Math.floor((x - y) / 2);
+      }
+    } else {
+      throw err(`channel layout ${chan} is not 2-channel`);
+    }
+    if (bps !== 16) throw err(`${bps}-bit samples (only 16-bit is supported)`);
+    b.align();
+    b.u(16);
+    for (const v of a) left.push(v);
+    for (const v of c) right.push(v);
+  }
+  const out = new Uint8Array(4 * want);
+  const put = (o, v) => {
+    v &= 0xffff;
+    if (little) {
+      out[o] = v & 0xff;
+      out[o + 1] = v >> 8;
+    } else {
+      out[o] = v >> 8;
+      out[o + 1] = v & 0xff;
+    }
+  };
+  for (let i = 0; i < want; i++) {
+    put(4 * i, left[i]);
+    put(4 * i + 2, right[i]);
+  }
+  return out;
+}
+
+return { flacDecode };
+})();
+const __m_chd = (() => {
+  const {ConvertError, crc16, transform} = __m_util;
+  const {makeLzmaDecoder} = __m_lzma;
+  const {flacDecode} = __m_flac;
+// MAME CHD version 5 hard-disk reader, ported from tools/gnet/chd.py (which
+// is written from MAME 0.288 chd.cpp, chdcodec.cpp, huffman.cpp, bitstream.h
+// and flac.cpp). Same scope: the compressed v5 map (and the plain map), hunks
+// stored with zlib, lzma, huff and flac, uncompressed hunks, copies of other
+// hunks in the same file, and the metadata chain. Every hunk is checked against
+// its CRC16 in the map.
+
+
+const V5_HEADER_SIZE = 124;
+
+const COMPRESSION_TYPE_3 = 3;
+const COMPRESSION_NONE = 4;
+const COMPRESSION_SELF = 5;
+const COMPRESSION_PARENT = 6;
+const COMPRESSION_RLE_SMALL = 7;
+const COMPRESSION_RLE_LARGE = 8;
+const COMPRESSION_SELF_0 = 9;
+const COMPRESSION_SELF_1 = 10;
+const COMPRESSION_PARENT_SELF = 11;
+const COMPRESSION_PARENT_0 = 12;
+const COMPRESSION_PARENT_1 = 13;
+
+const CODEC_NAMES = {
+  zlib: "Deflate", lzma: "LZMA", huff: "Huffman", flac: "FLAC", zstd: "Zstandard",
+  cdzl: "CD Deflate", cdlz: "CD LZMA", cdfl: "CD FLAC", cdzs: "CD Zstandard", avhu: "A/V Huffman",
+};
+
+const tagStr = (b) => String.fromCharCode(...b);
+const hexOf = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+
+// ---------------------------------------------------------------- bit reader
+
+// MSB-first bit reader (bitstream_in); reads past the end return zeros
+class BitReader {
+  constructor(data) {
+    this.data = data;
+    this.pos = 0;
+  }
+
+  read(n) {
+    let v = 0;
+    const d = this.data;
+    let p = this.pos;
+    this.pos = p + n;
+    while (n > 0) {
+      const i = p >> 3;
+      const byte = i < d.length ? d[i] : 0;
+      const avail = 8 - (p & 7);
+      const take = avail < n ? avail : n;
+      v = v * (1 << take) + ((byte >> (avail - take)) & ((1 << take) - 1));
+      p += take;
+      n -= take;
+    }
+    return v;
+  }
+}
+
+// ---------------------------------------------------------------- Huffman
+
+// assign_canonical_codes: code value for each symbol (-1 if unused)
+function canonicalCodes(lengths, maxbits) {
+  const histo = new Array(33).fill(0);
+  for (const n of lengths) {
+    if (n > maxbits) throw new ConvertError("huffman: code length above maximum");
+    histo[n]++;
+  }
+  let start = 0;
+  for (let codelen = 32; codelen > 0; codelen--) {
+    const nxt = (start + histo[codelen]) >> 1;
+    if (codelen !== 1 && nxt * 2 !== start + histo[codelen]) throw new ConvertError("huffman: inconsistent code lengths");
+    histo[codelen] = start;
+    start = nxt;
+  }
+  return lengths.map((n) => (n > 0 ? histo[n]++ : -1));
+}
+
+class HuffmanDecoder {
+  constructor(numcodes, maxbits) {
+    this.numcodes = numcodes;
+    this.maxbits = maxbits;
+    this.tablebits = 0;
+  }
+
+  setLengths(lengths) {
+    const codes = canonicalCodes(lengths, this.maxbits);
+    let tb = 1;
+    for (const n of lengths) if (n > tb) tb = n;
+    this.tablebits = tb;
+    const size = 1 << tb;
+    this.sym = new Uint16Array(size);
+    this.len = new Uint8Array(size);
+    for (let s = 0; s < lengths.length; s++) {
+      const n = lengths[s];
+      if (n > 0) {
+        const shift = tb - n;
+        const lo = codes[s] << shift, hi = Math.min((codes[s] + 1) << shift, size);
+        this.sym.fill(s, lo, hi);
+        this.len.fill(n, lo, hi);
+      }
+    }
+  }
+
+  decodeOne(bits) {
+    const v = bits.read(this.tablebits);
+    bits.pos -= this.tablebits - this.len[v];
+    return this.sym[v];
+  }
+
+  importTreeRle(bits) {
+    const numbits = this.maxbits >= 16 ? 5 : this.maxbits >= 8 ? 4 : 3;
+    const lengths = [];
+    while (lengths.length < this.numcodes) {
+      let nodebits = bits.read(numbits);
+      if (nodebits !== 1) {
+        lengths.push(nodebits);
+      } else {
+        nodebits = bits.read(numbits);
+        if (nodebits === 1) {
+          lengths.push(1);
+        } else {
+          const rep = bits.read(numbits) + 3;
+          for (let i = 0; i < rep; i++) lengths.push(nodebits);
+        }
+      }
+    }
+    if (lengths.length !== this.numcodes) throw new ConvertError("huffman: bad RLE tree");
+    this.setLengths(lengths);
+  }
+
+  importTreeHuffman(bits) {
+    const small = new HuffmanDecoder(24, 6);
+    const sl = new Array(24).fill(0);
+    sl[0] = bits.read(3);
+    const start = bits.read(3) + 1;
+    let count = 0;
+    for (let index = 1; index < 24; index++) {
+      if (index < start || count === 7) {
+        sl[index] = 0;
+      } else {
+        count = bits.read(3);
+        sl[index] = count === 7 ? 0 : count;
+      }
+    }
+    small.setLengths(sl);
+    let temp = this.numcodes - 9;
+    let rlefullbits = 0;
+    while (temp) {
+      temp >>= 1;
+      rlefullbits++;
+    }
+    const lengths = [];
+    let last = 0;
+    while (lengths.length < this.numcodes) {
+      const value = small.decodeOne(bits);
+      if (value !== 0) {
+        last = value - 1;
+        lengths.push(last);
+      } else {
+        let c = bits.read(3) + 2;
+        if (c === 7 + 2) c += bits.read(rlefullbits);
+        c = Math.min(c, this.numcodes - lengths.length);
+        for (let i = 0; i < c; i++) lengths.push(last);
+      }
+    }
+    this.setLengths(lengths);
+  }
+}
+
+// huffman_8bit_decoder::decode (codec 'huff')
+function huffman8bitDecode(src, destlen) {
+  const bits = new BitReader(src);
+  const dec = new HuffmanDecoder(256, 16);
+  dec.importTreeHuffman(bits);
+  const sym = dec.sym, ln = dec.len, maxlen = dec.tablebits;
+  const mask = (1 << maxlen) - 1;
+  const n = src.length;
+  let i = bits.pos >> 3;
+  let acc = i < n ? src[i] & (0xff >> (bits.pos & 7)) : 0;
+  let have = 8 - (bits.pos & 7);
+  i++;
+  const out = new Uint8Array(destlen);
+  for (let k = 0; k < destlen; k++) {
+    while (have < maxlen) {
+      acc = (acc << 8) | (i < n ? src[i] : 0);
+      i++;
+      have += 8;
+    }
+    const v = (acc >> (have - maxlen)) & mask;
+    out[k] = sym[v];
+    have -= ln[v];
+    acc &= (1 << have) - 1;
+  }
+  if ((i * 8 - have + 7) >> 3 > n) throw new ConvertError("huffman: input too short");
+  return out;
+}
+
+// ---------------------------------------------------------------- codecs
+
+const inflateRaw = (src) => transform(new DecompressionStream("deflate-raw"), src);
+
+async function decompressZlib(src, hunkbytes) {
+  let out;
+  try {
+    out = await inflateRaw(src);
+  } catch (e) {
+    throw new ConvertError(`zlib: ${e.message}`);
+  }
+  if (out.length < hunkbytes) throw new ConvertError("zlib: wrong output length");
+  return out.length === hunkbytes ? out : out.subarray(0, hunkbytes);
+}
+
+// LzmaEncProps_Normalize for level 8 with reduceSize = hunkbytes
+function lzmaDictSize(hunkbytes) {
+  const dictSize = 1 << 26;
+  if (dictSize > hunkbytes) {
+    for (let i = 11; i < 31; i++) {
+      if (hunkbytes <= 2 * 2 ** i) return 2 * 2 ** i;
+      if (hunkbytes <= 3 * 2 ** i) return 3 * 2 ** i;
+    }
+  }
+  return dictSize;
+}
+
+// ---------------------------------------------------------------- the file
+
+class Chd {
+  constructor(data) {
+    this.data = data;
+    if (data.length < V5_HEADER_SIZE || tagStr(data.subarray(0, 8)) !== "MComprHD") throw new ConvertError("not a CHD file");
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    this.dv = dv;
+    const length = dv.getUint32(8), version = dv.getUint32(12);
+    if (version !== 5) throw new ConvertError(`CHD version ${version}: only version 5 is supported (chdman copy converts older files)`);
+    if (length !== V5_HEADER_SIZE) throw new ConvertError("bad v5 header length");
+    this.compressors = [0, 1, 2, 3].map((k) => data.subarray(16 + 4 * k, 20 + 4 * k));
+    this.logicalBytes = Number(dv.getBigUint64(32));
+    this.mapOffset = Number(dv.getBigUint64(40));
+    this.metaOffset = Number(dv.getBigUint64(48));
+    this.hunkBytes = dv.getUint32(56);
+    this.unitBytes = dv.getUint32(60);
+    this.rawSha1 = hexOf(data.subarray(64, 84));
+    this.sha1 = hexOf(data.subarray(84, 104));
+    this.parentSha1 = hexOf(data.subarray(104, 124));
+    if (this.hunkBytes === 0) throw new ConvertError("hunk size is 0");
+    this.hunkCount = Math.ceil(this.logicalBytes / this.hunkBytes);
+    this.compressed = this.compressors[0].some((x) => x !== 0);
+    if (/[^0]/.test(this.parentSha1)) throw new ConvertError("this CHD needs a parent CHD, which is not supported");
+    this.codecs = this.compressors.map((t) => {
+      const tag = tagStr(t);
+      if (tag === "zlib") return decompressZlib;
+      if (tag === "lzma") {
+        const dec = makeLzmaDecoder(lzmaDictSize(this.hunkBytes));
+        return (src, n) => dec(src, n);
+      }
+      if (tag === "huff") return huffman8bitDecode;
+      if (tag === "flac") return flacDecode;
+      if (tag === "\0\0\0\0") return null;
+      const name = CODEC_NAMES[tag] || tag;
+      return () => { throw new ConvertError(`codec ${tag} (${name}) is not supported`); };
+    });
+    if (this.compressed) this.readCompressedMap();
+    else {
+      this.map = new Array(this.hunkCount);
+      for (let h = 0; h < this.hunkCount; h++) this.map[h] = dv.getUint32(this.mapOffset + 4 * h);
+    }
+  }
+
+  // decompress_v5_map: [type, length, offset, crc16] per hunk
+  readCompressedMap() {
+    const d = this.data, dv = this.dv, mo = this.mapOffset;
+    const mapbytes = dv.getUint32(mo);
+    const firstoffs = dv.getUint16(mo + 4) * 2 ** 32 + dv.getUint32(mo + 6);
+    const mapcrc = dv.getUint16(mo + 10);
+    const lengthbits = d[mo + 12], selfbits = d[mo + 13], parentbits = d[mo + 14];
+    const bits = new BitReader(d.subarray(mo + 16, mo + 16 + mapbytes));
+    const dec = new HuffmanDecoder(16, 8);
+    dec.importTreeRle(bits);
+    const n = this.hunkCount;
+    const types = new Uint8Array(n);
+    let lastcomp = 0, rep = 0;
+    for (let h = 0; h < n; h++) {
+      if (rep > 0) {
+        types[h] = lastcomp;
+        rep--;
+        continue;
+      }
+      const val = dec.decodeOne(bits);
+      if (val === COMPRESSION_RLE_SMALL) {
+        rep = 2 + dec.decodeOne(bits);
+        types[h] = lastcomp;
+      } else if (val === COMPRESSION_RLE_LARGE) {
+        rep = 2 + 16 + (dec.decodeOne(bits) << 4);
+        rep += dec.decodeOne(bits);
+        types[h] = lastcomp;
+      } else {
+        lastcomp = val;
+        types[h] = val;
+      }
+    }
+    const entries = new Array(n);
+    const raw = new Uint8Array(n * 12);
+    let cur = firstoffs, lastSelf = 0, lastParent = 0;
+    const hb = this.hunkBytes, ub = this.unitBytes;
+    for (let h = 0; h < n; h++) {
+      let t = types[h];
+      let offset = cur, length = 0, crc = 0;
+      if (t <= COMPRESSION_TYPE_3) {
+        length = bits.read(lengthbits);
+        cur += length;
+        crc = bits.read(16);
+      } else if (t === COMPRESSION_NONE) {
+        length = hb;
+        cur += length;
+        crc = bits.read(16);
+      } else if (t === COMPRESSION_SELF) {
+        lastSelf = offset = bits.read(selfbits);
+      } else if (t === COMPRESSION_PARENT) {
+        lastParent = offset = bits.read(parentbits);
+      } else if (t === COMPRESSION_SELF_0 || t === COMPRESSION_SELF_1) {
+        if (t === COMPRESSION_SELF_1) lastSelf += 1;
+        t = COMPRESSION_SELF;
+        offset = lastSelf;
+      } else if (t === COMPRESSION_PARENT_SELF) {
+        t = COMPRESSION_PARENT;
+        lastParent = offset = Math.floor((h * hb) / ub);
+      } else if (t === COMPRESSION_PARENT_0 || t === COMPRESSION_PARENT_1) {
+        if (t === COMPRESSION_PARENT_1) lastParent += Math.floor(hb / ub);
+        t = COMPRESSION_PARENT;
+        offset = lastParent;
+      } else {
+        throw new ConvertError(`map: unknown entry type ${t} at hunk ${h}`);
+      }
+      entries[h] = [t, length, offset, crc];
+      const o = h * 12;
+      raw[o] = t;
+      raw[o + 1] = (length >>> 16) & 0xff;
+      raw[o + 2] = (length >>> 8) & 0xff;
+      raw[o + 3] = length & 0xff;
+      let off = offset;
+      for (let k = 5; k >= 0; k--) {
+        raw[o + 4 + k] = off % 256;
+        off = Math.floor(off / 256);
+      }
+      raw[o + 10] = crc >> 8;
+      raw[o + 11] = crc & 0xff;
+    }
+    if (crc16(raw) !== mapcrc) throw new ConvertError("map CRC mismatch (damaged file?)");
+    this.map = entries;
+  }
+
+  hunkTypeCounts() {
+    if (!this.compressed) return { uncompressed: this.hunkCount };
+    const names = { [COMPRESSION_NONE]: "uncompressed", [COMPRESSION_SELF]: "self", [COMPRESSION_PARENT]: "parent" };
+    const out = {};
+    for (const [t] of this.map) {
+      const k = t <= 3 ? tagStr(this.compressors[t]) : names[t];
+      out[k] = (out[k] || 0) + 1;
+    }
+    return out;
+  }
+
+  async readHunk(hunk, depth = 0) {
+    if (!(hunk >= 0 && hunk < this.hunkCount)) throw new ConvertError(`hunk ${hunk} out of range`);
+    const hb = this.hunkBytes, d = this.data;
+    if (!this.compressed) {
+      const off = this.map[hunk] * hb;
+      return off ? d.slice(off, off + hb) : new Uint8Array(hb);
+    }
+    const [t, length, offset, crc] = this.map[hunk];
+    let out;
+    if (t <= COMPRESSION_TYPE_3) {
+      try {
+        out = await this.codecs[t](d.subarray(offset, offset + length), hb);
+      } catch (e) {
+        if (!(e instanceof ConvertError || e instanceof RangeError || e instanceof TypeError)) throw e;
+        throw new ConvertError(`hunk ${hunk}: ${tagStr(this.compressors[t])} data is damaged (${e.message})`);
+      }
+    } else if (t === COMPRESSION_NONE) {
+      out = d.slice(offset, offset + hb);
+    } else if (t === COMPRESSION_SELF) {
+      if (depth > 16) throw new ConvertError(`hunk ${hunk}: self reference loop`);
+      return this.readHunk(offset, depth + 1);
+    } else {
+      throw new ConvertError(`hunk ${hunk} is stored in a parent CHD, which is not supported`);
+    }
+    if (out.length !== hb || crc16(out) !== crc) throw new ConvertError(`hunk ${hunk}: CRC mismatch (damaged file?)`);
+    return out;
+  }
+
+  // the whole logical image as one Uint8Array; progress(done, total) is
+  // called every 256 hunks
+  async readAll(progress) {
+    const hb = this.hunkBytes, n = this.hunkCount;
+    const img = new Uint8Array(n * hb);
+    for (let h = 0; h < n; h++) {
+      const e = this.compressed ? this.map[h] : null;
+      if (e && e[0] === COMPRESSION_SELF && e[2] < h) {
+        img.copyWithin(h * hb, e[2] * hb, e[2] * hb + hb);   // an earlier hunk, already checked
+      } else {
+        img.set(await this.readHunk(h), h * hb);
+      }
+      if (progress && (h & 255) === 255) progress(h + 1, n);
+    }
+    if (progress) progress(n, n);
+    return img.length === this.logicalBytes ? img : img.subarray(0, this.logicalBytes);
+  }
+
+  // metadata entry data by 4-character tag, the index-th match
+  metadata(tag, index = 0) {
+    if (tag.length !== 4) throw new ConvertError("metadata tag must be 4 characters");
+    const d = this.data, dv = this.dv;
+    let off = this.metaOffset;
+    let seen = 0;
+    while (off) {
+      if (off + 16 > d.length) throw new ConvertError("metadata chain points past the end of the file");
+      const mtag = tagStr(d.subarray(off, off + 4));
+      const length = (d[off + 5] << 16) | (d[off + 6] << 8) | d[off + 7];
+      const nxt = Number(dv.getBigUint64(off + 8));
+      if (mtag === tag) {
+        if (seen === index) return d.slice(off + 16, off + 16 + length);
+        seen++;
+      }
+      off = nxt;
+    }
+    throw new ConvertError(`metadata '${tag}' index ${index} not found`);
+  }
+}
+
+// identify a CHD from its first 124 bytes without reading the rest:
+// { ok, version, sha1, rawSha1, logicalBytes, error }
+function chdHeaderInfo(head) {
+  if (head.length < 16 || tagStr(head.subarray(0, 8)) !== "MComprHD") return { ok: false, error: "not a CHD file" };
+  const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  const version = dv.getUint32(12);
+  if (version !== 5 || head.length < V5_HEADER_SIZE) return { ok: false, version, error: `CHD version ${version}` };
+  return {
+    ok: true,
+    version,
+    logicalBytes: Number(dv.getBigUint64(32)),
+    rawSha1: hexOf(head.subarray(64, 84)),
+    sha1: hexOf(head.subarray(84, 104)),
+  };
+}
+
+return { V5_HEADER_SIZE, huffman8bitDecode, Chd, chdHeaderInfo };
+})();
+const __m_zip = (() => {
+  const {ConvertError, crc32, transform} = __m_util;
+// Minimal zip reading (central directory, stored and deflated entries) and
+// writing (deflated with the browser's CompressionStream, or stored).
+
+
+const CP437_HIGH =
+  "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀" +
+  "αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ";
+
+function decodeName(b, utf8) {
+  if (utf8) return new TextDecoder().decode(b);
+  let s = "";
+  for (const c of b) s += c < 0x80 ? String.fromCharCode(c) : CP437_HIGH[c - 0x80];
+  return s;
+}
+
+// { name: {crc, method, compSize, size, offset} }, the last entry of a name
+// winning, as in Python's zipfile
+function readZipDirectory(z) {
+  const dv = new DataView(z.buffer, z.byteOffset, z.byteLength);
+  let eocd = -1;
+  for (let i = z.length - 22; i >= Math.max(0, z.length - 22 - 65535); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new ConvertError("not a zip file");
+  const count = dv.getUint16(eocd + 10, true);
+  const cdSize = dv.getUint32(eocd + 12, true);
+  let cdOff = dv.getUint32(eocd + 16, true);
+  if (cdOff === 0xffffffff || count === 0xffff) throw new ConvertError("zip64 files are not supported");
+  // data in front of the zip (self-extractors): shift offsets like zipfile does
+  const concat = eocd - cdSize - cdOff;
+  cdOff += concat;
+  const out = {};
+  let p = cdOff;
+  for (let k = 0; k < count; k++) {
+    if (p + 46 > z.length || dv.getUint32(p, true) !== 0x02014b50) throw new ConvertError("bad zip central directory");
+    const flags = dv.getUint16(p + 8, true);
+    const method = dv.getUint16(p + 10, true);
+    const crc = dv.getUint32(p + 16, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const size = dv.getUint32(p + 24, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const offset = dv.getUint32(p + 42, true) + concat;
+    const name = decodeName(z.subarray(p + 46, p + 46 + nlen), flags & 0x800);
+    out[name] = { crc, method, compSize, size, offset };
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
+}
+
+const inflateRaw = (data) => transform(new DecompressionStream("deflate-raw"), data);
+
+// an entry's data, checked against its CRC (ZipFile.read)
+async function readZipEntry(z, dir, name) {
+  const e = dir[name];
+  if (!e) throw new ConvertError(`There is no item named '${name}' in the archive`);
+  const dv = new DataView(z.buffer, z.byteOffset, z.byteLength);
+  const p = e.offset;
+  if (p + 30 > z.length || dv.getUint32(p, true) !== 0x04034b50) throw new ConvertError(`${name}: bad local header`);
+  const start = p + 30 + dv.getUint16(p + 26, true) + dv.getUint16(p + 28, true);
+  const comp = z.subarray(start, start + e.compSize);
+  let data;
+  if (e.method === 0) data = comp.slice();
+  else if (e.method === 8) data = await inflateRaw(comp);
+  else throw new ConvertError(`${name}: zip compression method ${e.method} is not supported`);
+  if (data.length !== e.size || crc32(data) !== e.crc) throw new ConvertError(`Bad CRC-32 for file '${name}'`);
+  return data;
+}
+
+// ---------------------------------------------------------------- writing
+
+function dosDateTime(d) {
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  return [time, date];
+}
+
+const deflateRaw = (data) => transform(new CompressionStream("deflate-raw"), data);
+
+// A zip writer that collects its parts (Uint8Array or Blob) in memory.
+// add(name, data) deflates; addStored(name, blobOrBytes, crc, size) stores.
+class ZipWriter {
+  constructor(date = new Date()) {
+    this.parts = [];
+    this.central = [];
+    this.offset = 0;
+    this.count = 0;
+    [this.time, this.date] = dosDateTime(date);
+  }
+
+  _entry(name, method, crc, compSize, size, body) {
+    const nb = new TextEncoder().encode(name);
+    const utf8 = /[^\x00-\x7f]/.test(name) ? 0x800 : 0;
+    if (this.offset + 30 + nb.length + compSize > 0xffffffff) throw new ConvertError("zip larger than 4 GB");
+    const lh = new Uint8Array(30 + nb.length);
+    const l = new DataView(lh.buffer);
+    l.setUint32(0, 0x04034b50, true);
+    l.setUint16(4, 20, true);
+    l.setUint16(6, utf8, true);
+    l.setUint16(8, method, true);
+    l.setUint16(10, this.time, true);
+    l.setUint16(12, this.date, true);
+    l.setUint32(14, crc, true);
+    l.setUint32(18, compSize, true);
+    l.setUint32(22, size, true);
+    l.setUint16(26, nb.length, true);
+    lh.set(nb, 30);
+    const ch = new Uint8Array(46 + nb.length);
+    const c = new DataView(ch.buffer);
+    c.setUint32(0, 0x02014b50, true);
+    c.setUint16(4, 20, true);
+    c.setUint16(6, 20, true);
+    c.setUint16(8, utf8, true);
+    c.setUint16(10, method, true);
+    c.setUint16(12, this.time, true);
+    c.setUint16(14, this.date, true);
+    c.setUint32(16, crc, true);
+    c.setUint32(20, compSize, true);
+    c.setUint32(24, size, true);
+    c.setUint16(28, nb.length, true);
+    c.setUint32(38, 0x81a40000, true);    // external attributes: -rw-r--r--
+    c.setUint32(42, this.offset, true);
+    ch.set(nb, 46);
+    this.parts.push(lh, body);
+    this.central.push(ch);
+    this.offset += lh.length + compSize;
+    this.count++;
+  }
+
+  async add(name, data) {
+    const comp = await deflateRaw(data);
+    this._entry(name, 8, crc32(data), comp.length, data.length, comp);
+  }
+
+  addStored(name, body, crc, size) {
+    this._entry(name, 0, crc, size, size, body);
+  }
+
+  // the zip as a list of parts (for new Blob(parts))
+  finish() {
+    let cdSize = 0;
+    for (const c of this.central) cdSize += c.length;
+    const end = new Uint8Array(22);
+    const e = new DataView(end.buffer);
+    e.setUint32(0, 0x06054b50, true);
+    e.setUint16(8, this.count, true);
+    e.setUint16(10, this.count, true);
+    e.setUint32(12, cdSize, true);
+    e.setUint32(16, this.offset, true);
+    return [...this.parts, ...this.central, end];
+  }
+}
+
+return { readZipDirectory, readZipEntry, ZipWriter };
+})();
+const __m_buildflash = (() => {
+  const {ConvertError, concatBytes, encodeLatin1, latin1, ljust, pyInt, pyRstrip, pySplit, pySplitlines, pyStrip,
+  sliceAssign, swap16,} = __m_util;
+// The five G-NET flash images from a PC card image and the BIOS files, ported
+// from tools/build_flash.py (what the BIOS writes on its first-boot copy; see
+// that file for the details). Python's slice and string behaviour is kept
+// (util.js) so odd inputs fail or pass the same way.
+
+
+const SECTOR = 512;
+
+class Fat16 {
+  constructor(img) {
+    this.img = img;
+    const dv = new DataView(img.buffer, img.byteOffset, img.byteLength);
+    const plba = dv.getUint32(0x1be + 8, true);
+    const bs = plba * SECTOR;
+    const bps = dv.getUint16(bs + 11, true), spc = img[bs + 13], rsv = dv.getUint16(bs + 14, true);
+    const nfats = img[bs + 16], nroot = dv.getUint16(bs + 17, true), spf = dv.getUint16(bs + 22, true);
+    this.fat = img.subarray(bs + rsv * bps, bs + rsv * bps + spf * bps);
+    this.root = bs + (rsv + nfats * spf) * bps;
+    this.nroot = nroot;
+    this.data = this.root + nroot * 32;
+    this.clus = spc * bps;
+  }
+
+  *chain(c) {
+    const f = this.fat;
+    let guard = 0;
+    while (c >= 2 && c < 0xfff8) {
+      yield c;
+      if (c * 2 + 2 > f.length) throw new ConvertError("FAT: cluster chain runs past the FAT");
+      c = f[c * 2] | (f[c * 2 + 1] << 8);
+      if (++guard > 0x10000) throw new ConvertError("FAT: cluster chain loops");
+    }
+  }
+
+  // a file from the root directory (case-insensitive 8.3 name)
+  read(name) {
+    const want = name.toUpperCase();
+    const img = this.img;
+    const raw = img.subarray(this.root, this.root + this.nroot * 32);
+    for (let i = 0; i < raw.length; i += 32) {
+      const e = raw.subarray(i, i + 32);
+      if (e[0] === 0) break;
+      if (e[0] === 0xe5 || e[11] & 0x18) continue;
+      const n = pyRstrip(latin1(e.subarray(0, 8)));
+      const x = pyRstrip(latin1(e.subarray(8, 11)));
+      if ((n + (x ? "." + x : "")).toUpperCase() === want) {
+        const start = e[26] | (e[27] << 8);
+        const size = (e[28] | (e[29] << 8) | (e[30] << 16) | (e[31] << 24)) >>> 0;
+        const parts = [];
+        let total = 0;
+        for (const c of this.chain(start)) {
+          if (total >= size) break;            // the rest is cut off by [:size] anyway
+          const p = img.subarray(this.data + (c - 2) * this.clus, this.data + (c - 1) * this.clus);
+          parts.push(p);
+          total += p.length;
+        }
+        const b = concatBytes(parts);
+        return b.length > size ? b.slice(0, size) : b;
+      }
+    }
+    throw new ConvertError(`${name} not found on the card`);
+  }
+}
+
+// SDH: Huffman then LZSS (build_flash.sdh_decode)
+function sdhDecode(sdh) {
+  const u16 = (k) => sdh[k] | (sdh[k + 1] << 8);
+  const u32 = (b, k) => (b[k] | (b[k + 1] << 8) | (b[k + 2] << 16) | (b[k + 3] << 24)) >>> 0;
+  const nodes = [];
+  for (let k = 0; k < 1020; k += 4) nodes.push([u16(k), u16(k + 2)]);
+  if (!(sdh[1020] === 0xff && sdh[1021] === 0xff && sdh[1022] === 0xff && sdh[1023] === 0xff)) throw new ConvertError("SDH marker");
+  const hlen = u32(sdh, 1024);
+  const out = new Uint8Array(hlen);
+  let olen0 = 0;
+  let n = 0x100;
+  outer:
+  for (let i = 1028; i < sdh.length; i++) {
+    const byte = sdh[i];
+    for (let b = 7; b >= 0; b--) {
+      const node = nodes[n - 0x100];
+      if (!node) throw new ConvertError("SDH: bad Huffman tree");
+      n = node[(byte >> b) & 1];
+      if (n < 0x100) {
+        out[olen0++] = n;
+        n = 0x100;
+        if (olen0 === hlen) break outer;
+      }
+    }
+  }
+  const huff = out.subarray(0, olen0);
+  if (huff.length < 4) throw new ConvertError("SDH: data ends early");
+  const olen = u32(huff, 0);
+  const src = huff.subarray(4);
+  const N = 4096, F = 18;
+  const ring = new Uint8Array(N);
+  let r = N - F;
+  let res = new Uint8Array(Math.max(olen + 18, 64));
+  let rl = 0;
+  const push = (c) => {
+    if (rl === res.length) {
+      const g = new Uint8Array(res.length * 2);
+      g.set(res);
+      res = g;
+    }
+    res[rl++] = c;
+  };
+  const at = (k) => {
+    if (k >= src.length) throw new ConvertError("SDH: data ends early");
+    return src[k];
+  };
+  let i = 0;
+  while (rl < olen) {
+    const flags = at(i++);
+    for (let b = 0; b < 8; b++) {
+      if (rl >= olen) break;
+      if ((flags >> b) & 1) {
+        const c = at(i++);
+        push(c);
+        ring[r] = c;
+        r = (r + 1) % N;
+      } else {
+        const b1 = at(i), b2 = at(i + 1);
+        i += 2;
+        const off = b1 | ((b2 & 0xf0) << 4);
+        for (let k = 0; k < (b2 & 0x0f) + 3; k++) {
+          const c = ring[(off + k) % N];
+          push(c);
+          ring[r] = c;
+          r = (r + 1) % N;
+        }
+      }
+    }
+  }
+  return res.slice(0, rl);
+}
+
+// SYSTEM.INF: one key per line, fields separated by tabs or spaces
+function parseInf(text) {
+  const inf = { wave: [] };
+  for (const line of pySplitlines(text.replace(/\x1a/g, ""))) {
+    const parts = pySplit(pyStrip(line), 1);
+    if (!parts.length) continue;
+    const k = parts[0], rest = parts.length > 1 ? parts[1] : "";
+    if (k === "title") inf[k] = [pyStrip(pyStrip(rest), '"')];
+    else if (k === "wave") inf.wave.push(pySplit(rest));
+    else inf[k] = pySplit(rest);
+  }
+  return inf;
+}
+
+const need = (arr, i, what) => {
+  if (!arr || arr.length <= i) throw new ConvertError(`SYSTEM.INF: ${what} missing`);
+  return arr[i];
+};
+
+// build(card image, {"flash.u30": bytes, "f35-01_m27c800.bin": bytes}, cf)
+// -> { images: {name: bytes (MAME NVRAM word order)}, inf }
+function buildFlash(img, bios, cf = false) {
+  const fs = new Fat16(img);
+  const inf = parseInf(latin1(fs.read("SYSTEM.INF")));
+  const out = {};
+  inf.wave.forEach((w, n) => {
+    const data = fs.read(need(w, 0, "wave file name"));
+    out["wave" + n] = swap16(ljust(data, 0x200000, 0xff));
+  });
+  if ("zoomprog" in inf) {
+    const zname = need(inf.zoomprog, 0, "zoomprog file name");
+    let z = fs.read(zname);
+    if (zname.toUpperCase().endsWith(".SDH")) z = sdhDecode(z);
+    out.zoomprog = swap16(ljust(z, 0x80000, 0xff));
+  }
+  if (!bios["flash.u30"]) throw new ConvertError("flash.u30 missing from the BIOS");
+  const firm = swap16(bios["flash.u30"]);
+  const gname = need(inf.gameprog, 0, "gameprog"), gver = need(inf.gameprog, 1, "gameprog version");
+  const game = fs.read(gname);
+  const ver = gver.split(".");
+  if (ver.length !== 2) throw new ConvertError(`SYSTEM.INF: gameprog version ${gver} is not major.minor`);
+  const [major, minor] = ver.map(pyInt);
+  const title = ljust(encodeLatin1(need(inf.title, 0, "title").toUpperCase()).slice(0, 16), 16, 0);
+  const gparts = gname.toUpperCase().split(".");
+  if (gparts.length < 2) throw new ConvertError(`SYSTEM.INF: gameprog ${gname} has no extension`);
+  const ext = encodeLatin1(gparts[1]).slice(0, 3);
+  const area = encodeLatin1(need(inf.area, 0, "area")).slice(0, 1);
+  const lotno = pyInt(need(inf.lotno, 0, "lotno"));
+  const mask = 2 ** inf.wave.length - 1;
+  for (const [v, what] of [[major, "major version"], [minor, "minor version"], [mask, "wave count"]]) {
+    if (v < 0 || v > 255) throw new ConvertError(`SYSTEM.INF: ${what} out of range`);
+  }
+  if (lotno < 0 || lotno > 0xffffffff) throw new ConvertError("SYSTEM.INF: lotno out of range");
+  const head = new Uint8Array(8);
+  const hv = new DataView(head.buffer);
+  hv.setUint32(0, lotno, true);
+  hv.setUint32(4, game.length, true);
+  const header = concatBytes([head, title, ext, area, Uint8Array.of(major, minor, mask)]);
+  const hl = header.length;
+  // file view (unswapped) of the firm chip, patched, then swapped back
+  let fv = swap16(firm);
+  fv = sliceAssign(fv, 0x50000, 0x50000 + hl, header);
+  fv = sliceAssign(fv, 0x50000 + hl, 0x50000 + hl + 5, Uint8Array.of(0xff, 0xff, 0, 0, 0));
+  let tim = fs.read("SYSTEM.TIM");
+  tim = sliceAssign(tim, 12, 16, Uint8Array.of(0x00, 0x03, 0xfe, 0x00));
+  tim = sliceAssign(tim, 56, 60, Uint8Array.of(0x00, 0x03, 0x00, 0x00));
+  tim = concatBytes([tim, new Uint8Array((0x100 - (tim.length % 0x100)) % 0x100)]);
+  fv = sliceAssign(fv, 0x54000, 0x54000 + tim.length, tim);
+  const gamePadded = concatBytes([game, new Uint8Array((0x10000 - (game.length % 0x10000)) % 0x10000)]);
+  fv = sliceAssign(fv, 0x60000, 0x60000 + gamePadded.length, gamePadded);
+  if (cf) {
+    const b = bios["f35-01_m27c800.bin"];
+    if (!b) throw new ConvertError("f35-01_m27c800.bin missing from the BIOS");
+    fv = sliceAssign(fv, 0x00000, 0x50000, new Uint8Array(0x50000));
+    fv = sliceAssign(fv, 0x00000, 0x03000, b.subarray(0x2c000, 0x2f000));
+    fv = sliceAssign(fv, 0x10000, 0x40000, b.subarray(0x30000, 0x60000));
+    fv = sliceAssign(fv, 0x50000 + hl, 0x50000 + hl + 2, Uint8Array.of(0x01, 0x00));
+  }
+  out.firm = swap16(fv);
+  return { images: out, inf };
+}
+
+return { Fat16, sdhDecode, parseInf, buildFlash };
+})();
+const __m_tables = (() => {
+// Generated by web/converter/build.py from tools/gnet/gnet_tester_zips.py. Do not edit.
+const SETS = {
+ "chaoshea": {
+  "title": "Chaos Heat (V2.09O 1998/10/02 17:00)",
+  "chd": "chaosheat",
+  "sha1": "c13b7d7025eee05f1f696d108801c7bafb3f1356",
+  "card_type": 1,
+  "parent": ""
+ },
+ "chaosheaj": {
+  "title": "Chaos Heat (V2.08J 1998/09/25 17:00)",
+  "chd": "chaosheatj",
+  "sha1": "2f211ac08675ea8ec33c7659a13951db94eaa627",
+  "card_type": 1,
+  "parent": "chaoshea"
+ },
+ "raycris": {
+  "title": "Ray Crisis (V2.03O 1998/11/15 15:43)",
+  "chd": "raycris",
+  "sha1": "9d255710c87c3286542d357820d828807cc6ca07",
+  "card_type": 1,
+  "parent": ""
+ },
+ "raycrisj": {
+  "title": "Ray Crisis (V2.03J 1998/11/15 15:43)",
+  "chd": "raycrisj",
+  "sha1": "015cb0e6c4421cc38809de28c4793b4491386aee",
+  "card_type": 1,
+  "parent": "raycris"
+ },
+ "spuzbobl": {
+  "title": "Super Puzzle Bobble (V2.05O 1999/2/24 18:00)",
+  "chd": "spuzbobl",
+  "sha1": "1b1c72fb7e5656021485fefaef8f2ba48e2b4ea8",
+  "card_type": 2,
+  "parent": ""
+ },
+ "spuzboblj": {
+  "title": "Super Puzzle Bobble (V2.04J 1999/2/17 02:10)",
+  "chd": "spuzbobj",
+  "sha1": "dac433cf88543d2499bf797d7406b82ae4338726",
+  "card_type": 2,
+  "parent": "spuzbobl"
+ },
+ "gobyrc": {
+  "title": "Go By RC (V2.03O 1999/05/25 13:31)",
+  "chd": "gobyrc",
+  "sha1": "0bee1f495fc8b033fd56aad9260ae94abb35eb58",
+  "card_type": 2,
+  "parent": ""
+ },
+ "rcdego": {
+  "title": "RC De Go (V2.03J 1999/05/22 19:29)",
+  "chd": "rcdego",
+  "sha1": "9e177f2a3954cfea0c8c5a288e116324d10f5dd1",
+  "card_type": 1,
+  "parent": "gobyrc"
+ },
+ "flipmaze": {
+  "title": "Flip Maze (V2.04J 1999/09/02 20:00)",
+  "chd": "flipmaze",
+  "sha1": "423b6c06f4f2d9a608ce20b61a3ac11687d22c40",
+  "card_type": 1,
+  "parent": ""
+ },
+ "shikigam": {
+  "title": "Shikigami no Shiro (V2.03J 2001/08/07 18:11)",
+  "chd": "shikigam",
+  "sha1": "fa49a0bc47f5cb7c30d7e49e2c3696b21bafb840",
+  "card_type": 1,
+  "parent": ""
+ },
+ "shikigama": {
+  "title": "Shikigami no Shiro - internal build (V1.02J 2001/09/27 18:45)",
+  "chd": "shikigama",
+  "sha1": "a6fe194c86730963301be9710782ca4ac1bf3e8d",
+  "card_type": 1,
+  "parent": ""
+ },
+ "sianniv": {
+  "title": "Space Invaders Anniversary (V2.02J 2003/09/12 20:00)",
+  "chd": "sianniv",
+  "sha1": "1e08b813190a9e1baf29bc16884172d6c8da7ae3",
+  "card_type": 1,
+  "parent": ""
+ },
+ "kollon": {
+  "title": "Kollon (V2.04JA 2003/11/01 12:00)",
+  "chd": "kollon",
+  "sha1": "d8ea5b5b0ee99004b16ef89883e23de6c7ddd7ce",
+  "card_type": 1,
+  "parent": ""
+ },
+ "kollonc": {
+  "title": "Kollon (V2.04JC 2003/11/01 12:00)",
+  "chd": "kollonc",
+  "sha1": "ce62181659701cfb8f7c564870ab902be4d8e060",
+  "card_type": 3,
+  "parent": "kollon"
+ },
+ "otenamih": {
+  "title": "Otenami Haiken (V2.04J 1999/02/01 18:00:00)",
+  "chd": "otenamih",
+  "sha1": "b3babe3a1876c43745616ee1e7d87276ce7dad0b",
+  "card_type": 1,
+  "parent": ""
+ },
+ "psyvaria": {
+  "title": "Psyvariar -Medium Unit- (V2.02O 2000/02/22 13:00)",
+  "chd": "psyvaria",
+  "sha1": "3c7fca5180356190a8bf94b22a847fdd2e6a4e13",
+  "card_type": 1,
+  "parent": ""
+ },
+ "psyvarij": {
+  "title": "Psyvariar -Medium Unit- (V2.04J 2000/02/15 11:00)",
+  "chd": "psyvarij",
+  "sha1": "b981a42a10069322b77f7a268beae1d409b4156d",
+  "card_type": 1,
+  "parent": "psyvaria"
+ },
+ "psyvarrv": {
+  "title": "Psyvariar -Revision- (V2.04J 2000/08/11 22:00)",
+  "chd": "psyvarrv",
+  "sha1": "277c4f52502bcd7acc1889840962ec80d56465f3",
+  "card_type": 1,
+  "parent": ""
+ },
+ "zokuoten": {
+  "title": "Zoku Otenamihaiken (V2.05J 2003/05/12 18:00)",
+  "chd": "zokuoten",
+  "sha1": "116e58c90f39a3c18ca6fe0216c998ba02c58814",
+  "card_type": 2,
+  "parent": ""
+ },
+ "zokuotena": {
+  "title": "Zoku Otenamihaiken (V2.03J 2001/02/16 16:00)",
+  "chd": "zokuotena",
+  "sha1": "5ce13db00518f96af64935176c71ec68d2a51938",
+  "card_type": 1,
+  "parent": "zokuoten"
+ },
+ "zooo": {
+  "title": "Zooo (V2.01JA 2004/04/13 12:00)",
+  "chd": "zooo",
+  "sha1": "e275b3141b2bc49142990e6b497a5394a314a30b",
+  "card_type": 1,
+  "parent": ""
+ },
+ "otenamhf": {
+  "title": "Otenami Haiken Final (V2.07JC 2005/04/20 15:36)",
+  "chd": "otenamhf",
+  "sha1": "5b15c33bf401e5546d78e905f538513d6ffcf562",
+  "card_type": 3,
+  "parent": ""
+ },
+ "mahjngoh": {
+  "title": "Mahjong Oh (V2.06J 1999/11/23 08:52:22)",
+  "chd": "mahjngoh",
+  "sha1": "3ef1110d15582d7c0187438d7ad61765dd121cff",
+  "card_type": 1,
+  "parent": ""
+ },
+ "shanghss": {
+  "title": "Shanghai Shoryu Sairin (V2.03J 2000/05/26 12:45:28)",
+  "chd": "shanghss",
+  "sha1": "7964f71ec5c81d2120d83b63a82f97fbad5a8e6d",
+  "card_type": 1,
+  "parent": ""
+ },
+ "soutenry": {
+  "title": "Soutenryu (V2.07J 2000/12/14 11:13:02)",
+  "chd": "soutenry",
+  "sha1": "9204d0be833d29f37b8cd3fbdf09da69b622254b",
+  "card_type": 1,
+  "parent": ""
+ },
+ "usagi": {
+  "title": "Usagi (V2.02J 2001/10/02 12:41:19)",
+  "chd": "usagi",
+  "sha1": "edf9dd271957f6cb06feed238ae21100514bef8e",
+  "card_type": 2,
+  "parent": ""
+ },
+ "shangtou": {
+  "title": "Shanghai Sangokuhai Tougi (Ver 2.01J 2002/01/18 18:26:58)",
+  "chd": "shanghaito",
+  "sha1": "9901db5a9aae77e3af4157aa2c601eaab5b7ca85",
+  "card_type": 1,
+  "parent": ""
+ },
+ "nightrai": {
+  "title": "Night Raid (V2.03J 2001/02/26 17:00)",
+  "chd": "nightrai",
+  "sha1": "74d0458f851cbcf10453c5cc4c47bb4388244cdf",
+  "card_type": 1,
+  "parent": ""
+ },
+ "otenki": {
+  "title": "Otenki Kororin (V2.01J 2001/07/02 10:00)",
+  "chd": "otenki",
+  "sha1": "7e745ca4c4570215f452fd09cdd56a42c39caeba",
+  "card_type": 1,
+  "parent": ""
+ },
+ "xiistag": {
+  "title": "XII Stag (V2.01J 2002/6/26 22:27)",
+  "chd": "xiistag",
+  "sha1": "586e37c8d926293b2bd928e5f0d693910cfb05a2",
+  "card_type": 1,
+  "parent": ""
+ }
+};
+const BIOS_PARTS = {"m534002c-60.ic353": 60194727, "tt10.ic652": 592777393, "tt16.u17": 1806788531, "flash.u30": 3297542710};
+const CARD_MAX = 67108864;
+const CARD_TYPE_NAME = {"1": "Type 1", "2": "Type 2", "3": "CompactFlash"};
+const TABLES_SOURCE = "gnet_tester_zips.py sha256 0a8ccb6f0e60";
+
+return { SETS, BIOS_PARTS, CARD_MAX, CARD_TYPE_NAME, TABLES_SOURCE };
+})();
+const __m_convert = (() => {
+  const {ConvertError, crc32, sha1hex, swap16} = __m_util;
+  const {Chd} = __m_chd;
+  const {readZipDirectory, readZipEntry, ZipWriter} = __m_zip;
+  const {buildFlash} = __m_buildflash;
+  const {SETS, BIOS_PARTS, CARD_MAX, CARD_TYPE_NAME} = __m_tables;
+// gnet_tester_zips.py make() and check_bios() in JavaScript: one CHD and the
+// BIOS zip in, gnet_<set>.zip out (<set>.img, <set>.meta, <set>.flash).
+// SETS, BIOS_PARTS, CARD_MAX and CARD_TYPE_NAME come from tables.js, which
+// the build generates from gnet_tester_zips.py.
+
+
+// the set whose MAME 0.288 CHD has this header SHA1, or null
+function setForSha1(sha1) {
+  for (const [s, v] of Object.entries(SETS)) if (v.sha1 === sha1) return s;
+  return null;
+}
+
+// check_bios: every file the MRAs load is there with its MAME 0.288 CRC32.
+// Returns the BIOS files build_flash needs; throws ConvertError otherwise.
+async function checkBios(zipBytes, label = "coh3002t.zip") {
+  let dir;
+  try {
+    dir = readZipDirectory(zipBytes);
+  } catch (e) {
+    throw new ConvertError(`${label}: ${e.message}`);
+  }
+  for (const [name, crc] of Object.entries(BIOS_PARTS)) {
+    const got = dir[name] ? dir[name].crc : 0;
+    if (!dir[name] || got !== crc) {
+      throw new ConvertError(`${label}: ${name} missing or not the MAME 0.288 version ` +
+        `(CRC ${got.toString(16).padStart(8, "0")}, want ${crc.toString(16).padStart(8, "0")})`);
+    }
+  }
+  return {
+    zip: zipBytes,
+    dir,
+    async file(name) {
+      return readZipEntry(zipBytes, dir, name);
+    },
+  };
+}
+
+const FLASH_AREAS = [["firm", 0x000000, 0x200000], ["zoomprog", 0x200000, 0x80000],
+  ["wave0", 0x400000, 0x200000], ["wave1", 0x600000, 0x200000], ["wave2", 0x800000, 0x200000]];
+
+// make(): returns { name, parts (for a Blob), size, crc (of the zip), log }.
+// progress(phase, fraction) is optional.
+async function convert(chdBytes, bios, s, { quick = true, progress = null, date = new Date() } = {}) {
+  const fail = (m) => { throw new ConvertError(`${s}: ${m}`); };
+  if (!SETS[s]) fail("unknown set");
+  const { title, sha1, card_type: ctype } = SETS[s];
+  const c = new Chd(chdBytes);
+  if (c.sha1 !== sha1) fail(`CHD SHA1 ${c.sha1} is not MAME 0.288's ${sha1}`);
+  const cardBytes = c.logicalBytes;
+  if (!cardBytes || cardBytes > CARD_MAX || cardBytes % 512) {
+    fail(`card size ${cardBytes} bytes is not a whole number of sectors up to ${CARD_MAX}`);
+  }
+  const img = await c.readAll(progress ? (done, total) => progress("card", done / total) : null);
+  if (progress) progress("check", 0);
+  const got = sha1hex(img);
+  if (got !== c.rawSha1) fail(`card image SHA1 ${got} is not the CHD's data SHA1 ${c.rawSha1}`);
+  if (img.length !== cardBytes) fail(`card image is ${img.length} bytes, the CHD says ${cardBytes}`);
+  const idnt = c.metadata("IDNT"), key = c.metadata("KEY "), cis = c.metadata("CIS ");
+  if (idnt.length !== 512 || key.length !== 5 || cis.length > 256) {
+    fail(`unexpected card metadata sizes [${idnt.length}, ${key.length}, ${cis.length}]`);
+  }
+  const meta = new Uint8Array(1024);
+  meta.set(idnt, 0);
+  meta.set(cis, 0x200);
+  meta.set(key, 0x300);
+  meta[0x3f0] = ctype;
+  const lba = (idnt[120] | (idnt[121] << 8) | (idnt[122] << 16) | (idnt[123] << 24)) >>> 0;
+  if (lba * 512 !== cardBytes) fail(`IDENTIFY gives ${lba} sectors, the card has ${cardBytes / 512}`);
+  let area = null;
+  if (quick) {
+    if (progress) progress("flash", 0);
+    const biosFiles = { "flash.u30": await bios.file("flash.u30") };
+    if (ctype === 3) biosFiles["f35-01_m27c800.bin"] = await bios.file("f35-01_m27c800.bin");
+    const { images } = buildFlash(img, biosFiles, ctype === 3);
+    area = new Uint8Array(0xa00000).fill(0xff);
+    for (const [name, off, size] of FLASH_AREAS) {
+      if (images[name]) {
+        const d = swap16(images[name]);       // MAME NVRAM words -> the core's order
+        if (d.length !== size) fail(`${name} is ${d.length} bytes, expected ${size}`);
+        area.set(d, off);
+      }
+    }
+  }
+  if (progress) progress("zip", 0);
+  const z = new ZipWriter(date);
+  await z.add(s + ".img", img);
+  await z.add(s + ".meta", meta);
+  if (area) await z.add(s + ".flash", area);
+  const parts = z.finish();
+  let crc = 0, size = 0;
+  for (const p of parts) {
+    crc = crc32(p, crc);
+    size += p.length;
+  }
+  return {
+    name: `gnet_${s}.zip`,
+    parts,
+    size,
+    crc,
+    log: `${s}: ${title}, ${CARD_TYPE_NAME[ctype]} card, ${cardBytes.toLocaleString("en")} bytes`,
+    files: { img, meta, flash: area },
+  };
+}
+
+return { setForSha1, checkBios, convert };
+})();
+const GNET = Object.freeze(Object.assign({}, __m_util, __m_lzma, __m_flac, __m_chd, __m_zip, __m_buildflash, __m_tables, __m_convert));
+</script>
+<script id="gnet-worker">// Conversion worker. build.py places the bundled library (GNET) in front of
+// this code; the page starts it from a Blob, so the single HTML file needs no
+// other files. The page runs the same handler on its own thread if a worker
+// cannot be started.
+
+function gnetHandler(post) {
+  let bios = null;
+  return async function onMessage(msg) {
+    if (msg.type === "init") {
+      bios = await GNET.checkBios(new Uint8Array(msg.bios));
+      return;
+    }
+    if (msg.type !== "convert") return;
+    // the CHD comes in and the zip goes out as ArrayBuffers, not File or Blob
+    // objects: Safari cannot read a page's File in a Blob worker on file://
+    const { id, set, bytes } = msg;
+    const t0 = Date.now();
+    try {
+      const r = await GNET.convert(new Uint8Array(bytes), bios, set, {
+        progress: (phase, frac) => post({ type: "progress", id, phase, frac }),
+      });
+      const parts = r.parts;
+      const buffers = [...new Set(parts.map((p) => p.buffer))];
+      post({ type: "done", id, set, name: r.name, parts, size: r.size, crc: r.crc, log: r.log, ms: Date.now() - t0 },
+        buffers);
+    } catch (e) {
+      post({ type: "error", id, set, message: e && e.message ? e.message : String(e) });
+    }
+  };
+}
+
+if (typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope) {
+  const handle = gnetHandler((m, transfer) => self.postMessage(m, transfer || []));
+  let queue = Promise.resolve();
+  self.onmessage = (e) => {
+    queue = queue.then(() => handle(e.data)).catch((err) => self.postMessage({ type: "fatal", message: String(err && err.message || err) }));
+  };
+}
+</script>
+<script>// Page logic: pick files, identify CHDs by header SHA1, convert in a worker.
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, text, cls) => {
+    const e = document.createElement(tag);
+    if (text !== undefined) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  };
+  const mb = (n) => (n / 1048576).toFixed(1) + " MB";
+  const ALL_LIMIT = 2 * 1024 ** 3;       // offer one combined zip up to this total
+
+  const state = {
+    bios: null,          // ArrayBuffer of coh3002t.zip, once it passed the check
+    games: new Map(),    // set -> File
+    results: new Map(),  // set -> {name, blob, size, crc}
+    running: false,
+  };
+
+  // ---------------------------------------------------------------- worker
+
+  let worker = null;
+  let local = null;      // fallback: the handler on this thread
+  const listeners = new Set();
+  const dispatch = (m) => listeners.forEach((f) => f(m));
+
+  function startWorker() {
+    try {
+      const src = $("gnet-lib").textContent + "\n" + $("gnet-worker").textContent;
+      const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+      worker = new Worker(url);
+      worker.onmessage = (e) => dispatch(e.data);
+      worker.onerror = (e) => {
+        e.preventDefault();
+        useLocal(e.message || "worker error");
+      };
+    } catch (e) {
+      useLocal(e.message);
+    }
+  }
+
+  function useLocal(why) {
+    if (local) return;
+    console.warn("converting on the page thread:", why);
+    if (worker) worker.terminate();
+    worker = null;
+    local = gnetHandler(dispatch);
+    if (state.bios) local({ type: "init", bios: state.bios });
+  }
+
+  function send(msg, transfer) {
+    if (worker) worker.postMessage(msg, transfer || []);
+    else local(msg);
+  }
+
+  // ---------------------------------------------------------------- step 1
+
+  async function setBios(file) {
+    const st = $("bios-status");
+    st.className = "status";
+    st.textContent = "Checking " + file.name + " ...";
+    try {
+      const buf = await file.arrayBuffer();
+      await GNET.checkBios(new Uint8Array(buf), file.name);
+      state.bios = buf;
+      send({ type: "init", bios: buf.slice(0) });
+      st.className = "status ok";
+      st.textContent = file.name + ": OK, the MAME 0.288 version.";
+    } catch (e) {
+      state.bios = null;
+      st.className = "status bad";
+      st.textContent = e instanceof GNET.ConvertError ? e.message +
+        ". This page needs coh3002t.zip from MAME 0.288." : file.name + ": could not be read (" + e.message + ").";
+    }
+    refresh();
+  }
+
+  $("bios").addEventListener("change", (e) => {
+    if (e.target.files[0]) setBios(e.target.files[0]);
+  });
+
+  // ---------------------------------------------------------------- step 2
+
+  async function identify(files) {
+    const st = $("chd-status");
+    st.className = "status";
+    st.textContent = "Reading " + files.length + " file(s) ...";
+    const notes = [];
+    let others = 0;
+    let biosFile = null;
+    const known = new Map();      // chd base name -> set
+    for (const [s, v] of Object.entries(GNET.SETS)) known.set(v.chd.toLowerCase(), s);
+    for (const f of files) {
+      const label = f.webkitRelativePath || f.name;
+      const lower = f.name.toLowerCase();
+      if (lower === "coh3002t.zip") biosFile = biosFile || f;
+      let info;
+      try {
+        info = GNET.chdHeaderInfo(new Uint8Array(await f.slice(0, 124).arrayBuffer()));
+      } catch (e) {
+        notes.push([label, "could not be read (" + e.message + ")"]);
+        continue;
+      }
+      const isChdName = lower.endsWith(".chd");
+      if (!info.ok && info.error === "not a CHD file") {
+        if (isChdName) notes.push([label, "not a CHD file"]);
+        else others++;
+        continue;
+      }
+      if (!info.ok) {
+        notes.push([label, `CHD version ${info.version}: an older MAME format, not the MAME 0.288 file`]);
+        continue;
+      }
+      const s = GNET.setForSha1(info.sha1);
+      if (!s) {
+        const base = lower.replace(/\.chd$/, "");
+        const hint = known.get(base);
+        notes.push([label, hint
+          ? `named like the ${hint} CHD, but it is not the MAME 0.288 file (a different MAME version or a changed file; SHA1 ${info.sha1})`
+          : `unknown CHD: not a MAME 0.288 G-NET game on a Taito card (SHA1 ${info.sha1})`]);
+        continue;
+      }
+      if (state.games.has(s) && state.games.get(s) !== f) {
+        const prev = state.games.get(s);
+        notes.push([label, `same game as ${prev.webkitRelativePath || prev.name} (${s}), already listed`]);
+        continue;
+      }
+      state.games.set(s, f);
+    }
+    const parts = [`${state.games.size} game(s) ready.`];
+    if (others) parts.push(`${others} other file(s) ignored.`);
+    st.textContent = parts.join(" ");
+    showMatched();
+    const ul = $("unmatched").querySelector("ul");
+    ul.textContent = "";
+    for (const [name, why] of notes) {
+      const li = el("li");
+      li.append(el("code", name), document.createTextNode(": " + why));
+      ul.append(li);
+    }
+    $("unmatched").hidden = notes.length === 0;
+    if (biosFile && !state.bios) await setBios(biosFile);
+    refresh();
+  }
+
+  function showMatched() {
+    const body = $("matched").querySelector("tbody");
+    body.textContent = "";
+    const order = Object.keys(GNET.SETS);
+    const sets = [...state.games.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    for (const s of sets) {
+      const v = GNET.SETS[s];
+      const f = state.games.get(s);
+      const tr = el("tr");
+      tr.append(el("td", s), el("td", v.title), el("td", GNET.CARD_TYPE_NAME[v.card_type]),
+        el("td", f.webkitRelativePath || f.name));
+      body.append(tr);
+    }
+    $("matched").hidden = sets.length === 0;
+  }
+
+  $("chds").addEventListener("change", (e) => identify([...e.target.files]));
+  $("folder").addEventListener("change", (e) => identify([...e.target.files]));
+
+  // ---------------------------------------------------------------- step 3
+
+  function refresh() {
+    $("convert").disabled = state.running || !state.bios || state.games.size === 0;
+  }
+
+  const PHASES = { read: "reading the CHD", card: "decoding the card", check: "checking the SHA1",
+    flash: "building the flash data", zip: "writing the zip" };
+
+  function convertOne(s, file, row) {
+    return new Promise((resolve) => {
+      const id = Math.random().toString(36).slice(2);
+      const bar = row.querySelector("progress"), phase = row.querySelector(".phase"), result = row.cells[2];
+      const t0 = performance.now();
+      const on = (m) => {
+        if (m.id !== id && m.type !== "fatal") return;
+        if (m.type === "progress") {
+          const base = { read: 0, card: 0.02, check: 0.8, flash: 0.83, zip: 0.86 }[m.phase];
+          const span = { read: 0.02, card: 0.78, check: 0.03, flash: 0.03, zip: 0.14 }[m.phase];
+          bar.value = base + span * (m.frac || 0);
+          phase.textContent = PHASES[m.phase] || m.phase;
+          return;
+        }
+        listeners.delete(on);
+        if (m.type === "done") {
+          bar.value = 1;
+          const secs = ((performance.now() - t0) / 1000).toFixed(1);
+          phase.textContent = `done in ${secs} s`;
+          const blob = new Blob(m.parts, { type: "application/zip" });
+          const url = URL.createObjectURL(blob);
+          state.results.set(s, { name: m.name, blob, size: m.size, crc: m.crc, url });
+          const a = el("a", m.name);
+          a.href = url;
+          a.download = m.name;
+          result.textContent = "";
+          result.append(a, el("span", " " + mb(blob.size), "note"));
+        } else {
+          phase.textContent = "failed";
+          result.textContent = m.message;
+          result.className = "bad";
+        }
+        resolve();
+      };
+      listeners.add(on);
+      on({ type: "progress", id, phase: "read", frac: 0 });
+      file.arrayBuffer().then(
+        (bytes) => send({ type: "convert", id, set: s, bytes }, [bytes]),
+        (e) => on({ type: "error", id, message: `${file.name}: could not be read (${e.message})` }));
+    });
+  }
+
+  $("convert").addEventListener("click", async () => {
+    state.running = true;
+    refresh();
+    for (const r of state.results.values()) URL.revokeObjectURL(r.url);
+    state.results.clear();
+    $("all").hidden = true;
+    const body = $("jobs").querySelector("tbody");
+    body.textContent = "";
+    $("jobs").hidden = false;
+    const order = Object.keys(GNET.SETS);
+    const sets = [...state.games.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const rows = new Map();
+    for (const s of sets) {
+      const tr = el("tr");
+      const td = el("td");
+      const bar = el("progress");
+      bar.max = 1;
+      bar.value = 0;
+      td.append(bar, el("div", "waiting", "phase"));
+      tr.append(el("td", s), td, el("td"));
+      body.append(tr);
+      rows.set(s, tr);
+    }
+    for (const s of sets) await convertOne(s, state.games.get(s), rows.get(s));
+    state.running = false;
+    refresh();
+    showAll();
+  });
+
+  function showAll() {
+    const done = [...state.results.values()];
+    if (done.length < 2) return;
+    const total = done.reduce((n, r) => n + r.size, 0);
+    $("all").hidden = false;
+    if (total > ALL_LIMIT) {
+      $("save-all").disabled = true;
+      $("all-note").textContent = `The zips add up to ${mb(total)}, too much for one download here. Save them one by one.`;
+    } else {
+      $("save-all").disabled = false;
+      $("all-note").textContent = `${done.length} zips, ${mb(total)}`;
+    }
+  }
+
+  $("save-all").addEventListener("click", () => {
+    const z = new GNET.ZipWriter();
+    for (const r of state.results.values()) z.addStored(r.name, r.blob, r.crc, r.size);
+    const blob = new Blob(z.finish(), { type: "application/zip" });
+    const a = el("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "gnet_games.zip";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  });
+
+  startWorker();
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' blob:; worker-src blob:; style-src 'unsafe-inline'; img-src data:; connect-src blob: data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>G-NET Card Converter</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='1' width='12' height='14' rx='1' fill='%23456'/%3E%3Crect x='4' y='3' width='8' height='4' fill='%23ddd'/%3E%3C/svg%3E">
+<style>/*@STYLE@*/</style>
+</head>
+<body>
+<main>
+<h1>G-NET Card Converter</h1>
+<p>This page turns your MAME files for Taito G-NET games into the zips the
+<a href="https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer">Taito G-NET MiSTer core</a> loads.
+It does the same job as the command-line converter, <code>gnet_tester_zips.py</code>, and writes the same files.</p>
+<p class="privacy">Your files are processed in this browser. Nothing is uploaded.</p>
+
+<section id="step1">
+<h2><span class="num">1</span> Select coh3002t.zip</h2>
+<p>The G-NET BIOS set from MAME 0.288.</p>
+<label class="pick"><input type="file" id="bios" accept=".zip,application/zip"><span>Choose coh3002t.zip</span></label>
+<div id="bios-status" class="status" role="status"></div>
+</section>
+
+<section id="step2">
+<h2><span class="num">2</span> Select your CHD files</h2>
+<p>The card images from MAME 0.288 (for example <code>raycris/raycris.chd</code>). Each file is
+recognised from the SHA1 inside it, so file and folder names do not matter.</p>
+<div class="row">
+<label class="pick"><input type="file" id="chds" multiple accept=".chd"><span>Choose CHD files</span></label>
+<label class="pick secondary"><input type="file" id="folder" webkitdirectory directory multiple><span>Or choose a folder</span></label>
+</div>
+<div id="chd-status" class="status" role="status"></div>
+<table id="matched" hidden>
+<thead><tr><th>Set</th><th>Game</th><th>Card</th><th>File</th></tr></thead>
+<tbody></tbody>
+</table>
+<div id="unmatched" hidden>
+<h3>Not used</h3>
+<ul></ul>
+</div>
+</section>
+
+<section id="step3">
+<h2><span class="num">3</span> Convert</h2>
+<p>Games are converted one at a time. Each zip can be saved as soon as it is ready. Keep this tab in view while it runs: browsers slow down tabs that are hidden.</p>
+<button type="button" id="convert" disabled>Convert</button>
+<table id="jobs" hidden>
+<thead><tr><th>Set</th><th>Progress</th><th>Result</th></tr></thead>
+<tbody></tbody>
+</table>
+<div id="all" hidden>
+<button type="button" id="save-all">Download all as one zip</button>
+<span id="all-note" class="note"></span>
+<p class="note-line">Unzip this first: the MiSTer needs each gnet_&lt;set&gt;.zip in games/mame, not the bundle.</p>
+</div>
+</section>
+
+<section id="howto">
+<h2>Then, on the MiSTer</h2>
+<ol>
+<li>Copy <code>coh3002t.zip</code> and every <code>gnet_&lt;set&gt;.zip</code> to <code>games/mame</code> on the MiSTer SD card
+(if you downloaded them as one zip, unzip it first).</li>
+<li>Get the core and MRAs. With Update All and the shmupfan database added (see the guide below), they install automatically: the core to <code>_Arcade/cores</code>, the main MRAs to <code>_Arcade</code>, other versions to <code>_Arcade/_alternatives</code>. Without Update All, copy them from the <a href="https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/tree/main/releases">releases folder</a> to the same places.</li>
+</ol>
+<p>Step by step guide: <a href="https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/blob/main/docs/INSTALL.md">INSTALL.md</a>.
+The zips hold game data made from your own files, so keep them to yourself.</p>
+</section>
+
+<footer>
+<p>Runs offline: you can save this page and open the saved file. @BUILD@</p>
+</footer>
+</main>
+<script id="gnet-lib">/*@LIB@*/</script>
+<script id="gnet-worker">/*@WORKER@*/</script>
+<script>/*@APP@*/</script>
+</body>
+</html>

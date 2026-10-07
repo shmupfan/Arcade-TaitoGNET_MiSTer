@@ -5,8 +5,8 @@ Follow the steps in order. Most problems people have reported come from
 skipping step 3 or doing it by hand.
 
 No BIOS, card or game data comes with the core. You make the game files
-yourself, from your own MAME files, with a converter script that runs on
-your computer.
+yourself, from your own MAME files, with a converter that runs on your
+computer: a web page you open in your browser, or a Python script.
 
 ## What you need
 
@@ -14,9 +14,8 @@ your computer.
 - From your own MAME 0.288 set:
   - `coh3002t.zip`, the G-NET BIOS set.
   - The CHD file of each game you want to play.
-- A computer (Windows, Mac or Linux) with:
-  - Python 3 (3.7 or newer). Nothing else: the converter reads the CHD
-    files itself, so MAME's `chdman` is not needed.
+- A computer (Windows, Mac or Linux) with Chrome, Firefox or Safari, or
+  with Python 3 (3.7 or newer). MAME's `chdman` is not needed.
 
 ## 1. Get the core
 
@@ -106,9 +105,26 @@ The games and their MAME CHD file names:
 
 MiSTer cannot read CHD files. The converter turns each game's CHD into
 one `gnet_<set>.zip` (for example `gnet_raycris.zip`). You do this once
-per game.
+per game. Use the browser converter or the Python script: both write the
+same files.
 
-### Download the converter
+### In your browser
+
+1. Open [tools/gnet_converter.html](../tools/gnet_converter.html) on
+   GitHub and click **Download raw file** (the download icon above the
+   file).
+2. Open the downloaded file in Chrome, Firefox or Safari. It runs on your
+   computer: nothing is uploaded.
+3. Choose `coh3002t.zip`, then your CHD files or the folder that holds
+   them.
+4. Click **Convert** and keep the tab in view. Save each zip, or use
+   **Download all as one zip** and unzip it.
+
+Then go to step 4.
+
+### With Python
+
+#### Download the converter
 
 1. Open the repository page on GitHub:
    <https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer>
@@ -119,7 +135,7 @@ The folder you need is the one that holds `README.md` and the `tools`
 folder. Windows "Extract All" often makes the same folder twice, one
 inside the other. In that case use the inner one.
 
-### Windows
+#### Windows
 
 Use Command Prompt. Do not type the commands into the Python window (the
 one with the `>>>` prompt): that gives `SyntaxError: invalid syntax`.
@@ -155,7 +171,7 @@ You can also give the full path to the script instead:
 python "C:\Users\Your Name\Downloads\Arcade-TaitoGNET_MiSTer-main\tools\gnet\gnet_tester_zips.py" --roms "C:\MAME\roms" --out "C:\gnet-zips"
 ```
 
-### Mac and Linux
+#### Mac and Linux
 
 1. Open Terminal and go to the repository folder. On a Mac without
    Python 3, the first `python3` command offers to install it.
@@ -176,7 +192,7 @@ python3 tools/gnet/gnet_tester_zips.py --roms "/path/to/MAME/roms" --out "/path/
 To convert only some games, add `--sets` and the set names, for example
 `--sets raycris shikigam`.
 
-### What it prints when it works
+#### What it prints when it works
 
 The converter checks `coh3002t.zip` first, then prints one line for each
 of the 30 sets. Games you do not have say `no CHD found, skipped`. That
@@ -257,7 +273,7 @@ The controls and OSD options are in the [README](../README.md#controls).
 | The game does not load and MiSTer reports a missing file such as `raycris.meta` | The zip was made by hand, or renamed, or the game files were put inside `coh3002t.zip` | Delete it. Make the zip with the converter (step 3). Put back an unchanged `coh3002t.zip` |
 | MiSTer reports a missing `gnet_<set>.zip` | There is no zip for the set this MRA loads (often an alternative version) | Convert that set, or load the MRA of a set you have |
 | Nothing starts, no TAITO G-NET logo | `coh3002t.zip` is missing from `games/mame` | Copy it there, still zipped |
-| SYSTEM ERROR after the TAITO G-NET logo | The game zip is wrong: made by hand, made from the wrong CHD, or made with an older version of the converter. Older versions fail on the Type 2 and CompactFlash sets, such as Super Puzzle Bobble | Download the repository again and convert again with the current script (step 3). Check the converter printed no warnings |
+| SYSTEM ERROR after the TAITO G-NET logo | The game zip is wrong: made by hand, made from the wrong CHD, or made with an older version of the converter. Older versions fail on the Type 2 and CompactFlash sets, such as Super Puzzle Bobble | Convert again with the current converter (step 3). Check the converter printed no warnings |
 | Go By RC or RC De Go stops on a CALIBRATION screen | Normal on a first boot | Leave the stick centred and press Start |
 | A "Loading now." screen for about 2.5 minutes | You loaded a first boot MRA | Normal. Wait, or load the main MRA instead |
 
