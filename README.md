@@ -190,11 +190,36 @@ NVRAM when the OSD opens after the game has written to it.
 
 ## Roadmap
 
+Roughly in this order. None of it has a date.
+
+- **Fixes for the [open issues](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues):**
+  Space Invaders Anniversary resets on Start ([#1](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/1)),
+  Usagi's mahjong controls ([#2](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/2)),
+  direct video in the 480i games ([#3](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/3)),
+  Go By RC calibration ([#4](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/4)),
+  Shikigami no Shiro slowdown, the same CPU timing as the slow loading in
+  Known issues ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)),
+  Super Puzzle Bobble animations ([#6](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/6))
+  and a Dash button for Chaos Heat ([#7](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/7)).
+- **Next core build:** more timing margin in the FPGA build (no change in
+  behaviour), with the fixes above as they are ready.
+- **[Known issues](#known-issues):** 480i on a CRT, sound balance, saving
+  card writes. Some need measurements from a real board.
+- **The 2011 conversions:** G-Darius, Ray Storm and Fighters' Impact first
+  (their originals run on the FX-1B core, which gives a check), then Aero
+  Fighters Special and Brave Blade, then Flame Gunner, Shanghai
+  Matekibuyuu and The Block Kuzushi. The core needs the modified BIOS
+  EPROM, the JP1 jumper and plain ATA cards, and the converter needs the
+  new card type. Plan: [docs/gnet_set_survey.md](docs/gnet_set_survey.md#5-second-wave), sections 2.6, 3 and 5.
+- **CompactFlash sets from a first boot:** Kollon (V2.04JC) and Otenami
+  Haiken Final run with quick start only, because the core cannot yet run
+  the BIOS EPROM's flasher. This comes with the same EPROM work.
+- **Mawasunda:** it runs on the ZN-1 G-NET board (`coh1002t`), a different
+  CPU board, so it comes last.
 - **Load MAME CHDs directly.** A pull request to
   [Main_MiSTer](https://github.com/MiSTer-devel/Main_MiSTer) so an MRA can
   load a game's CHD as it is, with no conversion step. Until then, CHDs
   need the one-off conversion in [Installation](#installation).
-- Fixes for the [open issues](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues).
 
 ## Accuracy
 
