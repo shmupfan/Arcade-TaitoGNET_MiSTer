@@ -3,7 +3,8 @@
 A MiSTer core for Taito G-NET: Sony's ZN-2 main board (a PlayStation
 derived arcade board) with Taito's FC PCB on top, which carries the
 Taito Zoom sound board, five flash chips and the PC card slot the games
-are sold on. The core is built on Robert Peip's PSX_MiSTer. I wrote the
+are sold on. The core is built on Robert Peip's
+[PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer). I wrote the
 ZN-2 board layer, the G-NET glue (flash, PC card, watchdog) and the Taito
 Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 
@@ -291,9 +292,11 @@ bitstream are GPL-3.0-or-later, because the MiSTer framework files are
 GPLv2 text and `LICENSE-GPL3` the GPLv3 text. Files from other projects
 keep their own licences and headers.
 
-- **PSX_MiSTer** by Robert Peip is the base of the core: CPU, GTE, GPU,
-  SPU and the rest of the PlayStation hardware. The MiSTer framework is by
-  Sorgelig and contributors.
+- **[PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer)** by Robert
+  Peip is the base of the core: CPU, GTE, GPU, SPU and the rest of the
+  PlayStation hardware, with contributions from kuba-j, birdybro and
+  others (the full upstream history is kept in this repository). The
+  MiSTer framework is by Sorgelig and contributors.
 - **MAME** is the behavioural reference for everything without a better
   source: the taitogn, zn and taito_zm drivers and the zsg2, tms57002,
   mn10200, psx, cat702, rf5c296, ataflash and mb3773 devices, by smf,
