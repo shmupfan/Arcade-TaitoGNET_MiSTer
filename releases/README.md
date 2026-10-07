@@ -27,7 +27,7 @@ converter.
 
 | File | md5 | Notes |
 |------|-----|-------|
-| `Arcade-TaitoGNET_20261006.rbf` | `e7d7995ed20a1568f1636d73ed46c5e0` | First public alpha. Revision GNET_Z1FULL, Quartus 17.0.2, every clock met timing. SFX Level option, default 0.7. |
+| `Arcade-TaitoGNET_20261007.rbf` | `3713d5dfa5bb7e2a2b7921abc8ca30b8` | Alpha. Revision GNET_Z1FULLO, Quartus 17.0.2, every clock met timing (worst setup slack +0.168 ns, worst hold slack +0.064 ns). Adds the Taito Type 2 and CompactFlash cards, the no Zoom board setting (config bit 1), the mahjong panel and RC wheel (config bits 3:2) and the ZN-2 read overlap. SFX Level default 0.3 (MAME). Replaces `Arcade-TaitoGNET_20261006.rbf` (first public alpha, revision GNET_Z1FULL, md5 `e7d7995ed20a1568f1636d73ed46c5e0`, SFX Level default 0.7). |
 
 | MRA | Loads |
 |---|---|
