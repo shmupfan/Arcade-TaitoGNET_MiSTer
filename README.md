@@ -161,7 +161,10 @@ Batch 3 has two other control types, as MAME 0.288 maps them:
   1 stick and buttons; Usagi has neither.
 - **RC wheel and trigger** (Go By RC, RC De Go), one player: the analog
   stick's X axis or a paddle steers, the stick's Y axis is the trigger;
-  the D-pad or arrow keys give full deflection.
+  the D-pad or arrow keys give full deflection. On a first boot (fresh
+  EEPROM) Go By RC stops on its CALIBRATION screen, as it does in MAME:
+  leave the stick centred and press Start; the game saves the calibration
+  to the EEPROM.
 
 ## OSD options
 
