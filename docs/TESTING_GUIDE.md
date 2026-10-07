@@ -146,14 +146,17 @@ the copy screen appearing to it going away.
 
 The music comes from the Taito Zoom board, most sound effects from the
 PlayStation sound chip (SPU). How loud the effects are against the music
-on a real board is not settled. MAME's balance was set by ear; the core's
-default of 0.7 comes from one phone recording of a real Psyvariar
-Revision cabinet; MAME's 0.3 is one of the OSD settings.
+on a real board is not settled. MAME's balance was set by ear, and the
+core's default is MAME's 0.3. One phone recording of a real Psyvariar
+Revision cabinet suggests more for that game, but a higher default
+sounded wrong for Night Raid, so the default stays at MAME's until there
+is board evidence per game.
 
 - Play a minute of each game and say whether the effects sound too quiet,
   right or too loud against the music.
 - Try the **SFX Level** settings in the OSD and tell me which one sounds
-  right in each game (0.7 is the board estimate, 0.3 is MAME's).
+  right in each game (0.3 is MAME's and the default; 0.45, 0.6, 0.9, 1.2
+  and 1.5 are louder).
 - Check for crackle, wrong pitch, drop-outs or missing music. The BIOS
   screens and the loading bars are silent; that is normal.
 - If you know the real board well, or have a recording of one, say so:

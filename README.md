@@ -14,8 +14,14 @@ Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 **Status: alpha.** All five target games boot and play in full-system
 simulation, and on my MiSTer Shikigami no Shiro and Psyvariar run with the
 Zoom music and the sound effects. On 2026-10-06 I played
-Psyvariar -Revision- to the end on a DE10-Nano with this release's RBF (md5
-e7d7995e); the sound and gameplay were both good. The other games, the
+Psyvariar -Revision- to the end on a DE10-Nano with the first alpha RBF
+(`Arcade-TaitoGNET_20261006.rbf`, md5 e7d7995e); the sound and gameplay
+were both good. On the same day I played Night Raid, Ray Crisis (V2.03J)
+and Chaos Heat on test builds of this core. The current RBF
+(`Arcade-TaitoGNET_20261007.rbf`, md5 3713d5df) adds the Type 2 and
+CompactFlash cards, the no Zoom board setting and the mahjong and RC
+controls, and sets the SFX Level default back to MAME's 0.3; the play
+reports above are from the earlier builds. The other games, the
 first-boot copy and several shell features still need testing on real
 hardware, and some timings are known to differ from the real board (see
 Known issues). I am
@@ -78,7 +84,7 @@ and others, which boot from a modified BIOS on a plain card.
 You need your own MAME 0.288 files. No BIOS, card, flash or game data is
 included in this repository.
 
-1. Copy `releases/Arcade-TaitoGNET_20261006.rbf` to
+1. Copy `releases/Arcade-TaitoGNET_20261007.rbf` to
    `/media/fat/_Arcade/cores/`, and the rest of `releases/` (the MRA
    files and the `_alternatives` and batch folders, as they are laid
    out) to `/media/fat/_Arcade/`.
@@ -177,11 +183,9 @@ Batch 3 has two other control types, as MAME 0.288 maps them:
 - **Pause when OSD is open**, plus the Pause button and the P key.
 - **Volume**: Normal, +6 dB, -6 dB, -12 dB.
 - **SFX Level**: the PlayStation SPU's
-  level in the mix against the Zoom board: 0.7 (the default, estimated
-  from a recording of a real Psyvariar Revision cabinet), 0.3 (MAME's
-  setting), 0.45, 0.6, 0.9, 1.2, 1.5. The estimate comes from one phone
-  recording, so treat it as provisional
-  ([docs/ACCURACY.md](docs/ACCURACY.md), SPU).
+  level in the mix against the Zoom board: 0.3 (MAME's setting, the
+  default), 0.45, 0.6, 0.9, 1.2, 1.5. The right level on a real board is
+  not settled ([docs/ACCURACY.md](docs/ACCURACY.md), SPU).
 - **DIP switches**: S551. Switch 4 is Test Mode (the operator manual says
   to use switch 4 only); switch 2 is the BIOS service mode in MAME;
   switches 1 and 3 are unknown. Leave them off for normal play.
@@ -209,10 +213,12 @@ OSD opens after the game has written to it.
 - **Sound balance.** MAME mixes the SPU at 0.3 under the Zoom board, a
   setting chosen by ear. The core also applies the SPU main volume the
   games set, which MAME ignores, so at MAME's setting the effects are
-  quieter than in MAME (by 2.5 to 14.1 dB depending on the game). This
-  release defaults to 0.7, estimated from one phone recording of a real
-  cabinet (Psyvariar Revision); MAME's 0.3 is one of the SFX Level
-  settings. A line-out recording of a board would settle it.
+  quieter than in MAME (by 2.5 to 14.1 dB depending on the game). One
+  phone recording of a real Psyvariar Revision cabinet suggests a level
+  of about 0.6 to 0.8 for that game, but on my MiSTer 0.7 sounded wrong
+  for Night Raid, so the default stays at MAME's 0.3 until there is board
+  evidence per game; the other levels are in the OSD. A line-out
+  recording of a board would settle it.
 - **First-boot copy.** The first boot MRAs repeat the 2.5 minute copy at
   every load, because the flash chips are not saved. I have not yet
   confirmed the copy on my own hardware, only the main MRAs.
@@ -267,8 +273,9 @@ Where the core differs from MAME, and why. Full detail and sources are in
 - ZN-2 board layer: 4 MB main RAM, 2 MB VRAM, BIOS, two CAT702 security
   chips, the I/O MCU model, the AT28C16 EEPROM, inputs.
 - G-NET FC PCB: five Intel flash chips with their command set, the
-  RF5C296 PC card controller, the Taito Type 1 ATA card with its unlock,
-  control registers and the MB3773 watchdog.
+  RF5C296 PC card controller, the Taito Type 1, Type 2 and CompactFlash
+  ATA cards with their unlocks, control registers and the MB3773
+  watchdog.
 - Taito Zoom: MN10200 sound CPU, ZSG-2 wavetable chip, TMS57002 effects
   DSP, M66220 mailbox, MB87078 volume.
 - Memory: main RAM, BIOS and flash in SDRAM; VRAM, SPU RAM, the card
@@ -279,7 +286,7 @@ Where the core differs from MAME, and why. Full detail and sources are in
 
 ```
 PSX.sv, PSX.qpf               MiSTer shell and Quartus project
-GNET_Z1FULL.qsf, GNET_*.sdc   release revision and its timing constraints
+GNET_Z1FULLO.qsf, GNET_*.sdc  release revision and its timing constraints
 PSX.qsf, PSX_DualSDRAM.*      upstream PSX_MiSTer revisions
 rtl/                          PSX_MiSTer core (upstream), with trims behind switches
 rtl/gnet/                     ZN-2 board layer, G-NET glue, shell blocks, DDR3 arbiter
@@ -298,9 +305,9 @@ with its md5.
 
 ## Building and verifying
 
-- Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULL`.
+- Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULLO`.
   Releases are built only from a fit with every clock meeting timing.
-  `Arcade-TaitoGNET_20261006.rbf` is the GNET_Z1FULL build of this
+  `Arcade-TaitoGNET_20261007.rbf` is the GNET_Z1FULLO build of this
   commit's sources (Quartus 17.0.2, every clock met).
 - The design documents in `docs/` are a development log. They name
   earlier experimental Quartus revisions (GNET_F0, GNET_B1, GNET_Z1,

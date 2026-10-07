@@ -1,8 +1,9 @@
 # Taito G-NET core plan (Ray Crisis, Psyvariar, XII Stag, Shikigami no Shiro, Night Raid)
 
-Status (2026-10-06): first alpha release, revision GNET_Z1FULL (README.md,
-docs/ACCURACY.md). The plan below is kept as written at the start, with
-later results added to the research items.
+Status (2026-10-07): alpha release, revision GNET_Z1FULLO (README.md,
+docs/ACCURACY.md); the first alpha (2026-10-06) was revision GNET_Z1FULL.
+The plan below is kept as written at the start, with later results added
+to the research items.
 
 Earlier status: F0 PASSED (2026-10-04): projected 82.4 to 87.5% ALM (docs/f0_budget.md 5).
 M0 in progress. No G-NET RTL yet.
