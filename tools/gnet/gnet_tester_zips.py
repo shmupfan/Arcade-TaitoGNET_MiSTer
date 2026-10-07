@@ -2,8 +2,9 @@
 """Make the game zips the Taito G-NET MiSTer core needs, from your own MAME files.
 
 MiSTer cannot read MAME's hard-disk CHD files, so each game's PC card is
-converted once on a computer. You need Python 3 and MAME's chdman (it comes
-with MAME; on Windows chdman.exe is in the MAME folder).
+converted once on a computer. You need Python 3 only: the CHD files are read
+by chd.py (in this folder). MAME's chdman is optional: pass --chdman <path>
+to have it read the CHDs instead (the output is the same).
 
   python3 gnet_tester_zips.py --roms <your MAME roms folder> --out <output folder>
           [--sets raycris shikigam ...] [--chdman <path to chdman>] [--no-quick]
@@ -45,6 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(1, os.path.dirname(HERE))      # in the repository build_flash.py is in tools/
 import build_flash  # noqa: E402  (tester package: same folder)
+import chd  # noqa: E402  (chd.py: same folder here and in the tester package)
 
 # set -> (title, CHD name, CHD SHA1, card type, parent set), from MAME 0.288
 # taitogn.cpp (card type: 1 taitopccard1, 2 taitopccard2, 3 taitocf)
@@ -109,16 +111,57 @@ def check_bios(path):
             fail(f"{path}: {name} missing or not the MAME 0.288 version (CRC {crcs.get(name, 0):08x}, want {crc:08x})")
 
 
-def chd_info(chdman, chd):
-    """(SHA1, logical size in bytes) from chdman info"""
-    sha1 = size = None
-    for line in run([chdman, "info", "-i", chd]).splitlines():
-        k, _, v = line.strip().partition(":")
-        if k == "SHA1":
-            sha1 = v.strip().lower()
-        elif k == "Logical size":
-            size = int(v.split()[0].replace(",", ""))
-    return sha1, size
+class ChdmanCard:
+    """the CHD read with MAME's chdman (--chdman)"""
+
+    def __init__(self, chdman, path):
+        self.chdman, self.path = chdman, path
+        self.sha1 = self.logical_bytes = None
+        for line in run([chdman, "info", "-i", path]).splitlines():
+            k, _, v = line.strip().partition(":")
+            if k == "SHA1":
+                self.sha1 = v.strip().lower()
+            elif k == "Logical size":
+                self.logical_bytes = int(v.split()[0].replace(",", ""))
+
+    def extract(self, img):
+        run([self.chdman, "extractraw", "-f", "-i", self.path, "-o", img])
+
+    def metadata(self, tag, t):
+        p = os.path.join(t, "meta.bin")
+        run([self.chdman, "dumpmeta", "-f", "-i", self.path, "-t", tag, "-o", p])
+        with open(p, "rb") as f:
+            return f.read()
+
+
+class PyCard:
+    """the CHD read with chd.py (default)"""
+
+    def __init__(self, path):
+        try:
+            self.c = chd.open(path)
+        except chd.ChdError as e:
+            fail(f"{path}: {e}")
+        self.path = path
+        self.sha1, self.logical_bytes = self.c.sha1, self.c.logical_bytes
+
+    def extract(self, img):
+        h = hashlib.sha1()
+        try:
+            with open(img, "wb") as f:
+                for b in self.c.iter_raw():
+                    h.update(b)
+                    f.write(b)
+        except chd.ChdError as e:
+            fail(f"{self.path}: {e}")
+        if h.hexdigest() != self.c.raw_sha1:
+            fail(f"{self.path}: card image SHA1 {h.hexdigest()} is not the CHD's data SHA1 {self.c.raw_sha1}")
+
+    def metadata(self, tag, t):
+        try:
+            return self.c.metadata(tag)
+        except chd.ChdError as e:
+            fail(f"{self.path}: {e}")
 
 
 def find_chd(roms, s):
@@ -133,11 +176,12 @@ def find_chd(roms, s):
 
 def make(chdman, roms, out, s, quick):
     title, _, sha1, ctype, _ = SETS[s]
-    chd = find_chd(roms, s)
-    if not chd:
+    chd_path = find_chd(roms, s)
+    if not chd_path:
         print(f"  {s}: no CHD found, skipped")
         return False
-    got, card_bytes = chd_info(chdman, chd)
+    card = ChdmanCard(chdman, chd_path) if chdman else PyCard(chd_path)
+    got, card_bytes = card.sha1, card.logical_bytes
     if got != sha1:
         other = [k for k, v in SETS.items() if v[2] == got]
         if other:
@@ -150,15 +194,13 @@ def make(chdman, roms, out, s, quick):
         fail(f"{s}: card size {card_bytes} bytes is not a whole number of sectors up to {CARD_MAX}")
     with tempfile.TemporaryDirectory() as t:
         img = os.path.join(t, s + ".img")
-        run([chdman, "extractraw", "-f", "-i", chd, "-o", img])
+        card.extract(img)
         if os.path.getsize(img) != card_bytes:
             fail(f"{s}: card image is {os.path.getsize(img)} bytes, the CHD says {card_bytes}")
         meta = bytearray(1024)
         parts = {}
         for tag, key in (("IDNT", "idnt"), ("KEY ", "key"), ("CIS ", "cis")):
-            p = os.path.join(t, key)
-            run([chdman, "dumpmeta", "-f", "-i", chd, "-t", tag, "-o", p])
-            parts[key] = open(p, "rb").read()
+            parts[key] = card.metadata(tag, t)
         if len(parts["idnt"]) != 512 or len(parts["key"]) != 5 or len(parts["cis"]) > 256:
             fail(f"{s}: unexpected card metadata sizes {[len(v) for v in parts.values()]}")
         meta[0:512] = parts["idnt"]
@@ -194,12 +236,15 @@ def main():
     ap.add_argument("--roms", required=True, help="your MAME roms folder")
     ap.add_argument("--out", required=True, help="folder for the gnet_<set>.zip files")
     ap.add_argument("--sets", nargs="*", default=list(SETS), help="sets to convert (default: every known set found)")
-    ap.add_argument("--chdman", default=None, help="path to chdman if it is not on the PATH")
+    ap.add_argument("--chdman", default=None,
+                    help="optional: read the CHDs with MAME's chdman at this path instead of chd.py")
     ap.add_argument("--no-quick", action="store_true", help="leave out the quick-start flash data")
     a = ap.parse_args()
-    chdman = a.chdman or shutil.which("chdman") or shutil.which("chdman.exe")
-    if not chdman:
-        fail("chdman not found: install MAME, or pass --chdman <path>")
+    chdman = None
+    if a.chdman:
+        chdman = shutil.which(a.chdman) or (a.chdman if os.path.isfile(a.chdman) else None)
+        if not chdman:
+            fail(f"chdman not found at {a.chdman}")
     for s in a.sets:
         if s not in SETS:
             fail(f"unknown set {s}; known: {', '.join(SETS)}")

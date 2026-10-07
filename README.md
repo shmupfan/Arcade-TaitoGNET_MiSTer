@@ -86,8 +86,8 @@ included in this repository.
 3. Copy your `coh3002t.zip` (the G-NET BIOS set, MAME 0.288) to
    `/media/fat/games/mame/`.
 4. Convert the game cards. MiSTer cannot read MAME's hard-disk CHD files,
-   so each card is converted once on a computer, with Python 3 and MAME's
-   `chdman`:
+   so each card is converted once on a computer, with Python 3 (the tool
+   reads the CHD files itself; MAME's `chdman` is not needed):
 
    ```
    python3 tools/gnet/gnet_tester_zips.py --roms <your MAME roms folder> --out <a new folder>
@@ -95,8 +95,8 @@ included in this repository.
 
    The roms folder holds `coh3002t.zip` and each game's CHD in its MAME
    folder, for example `shikigam/shikigam.chd`. On Windows use `python`
-   instead of `python3`. If `chdman` is not on your PATH, add
-   `--chdman <path to chdman.exe>`. The tool checks that `coh3002t.zip`
+   instead of `python3`. To read the CHDs with MAME's `chdman` instead,
+   add `--chdman <path to chdman>` (same output). The tool checks that `coh3002t.zip`
    is the MAME 0.288 version and warns if a CHD does not match. It writes
    one `gnet_<set>.zip` per game: card image, card data and the flash
    chips as the BIOS leaves them after its first-boot copy. These zips are
