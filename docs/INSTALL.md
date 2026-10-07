@@ -12,7 +12,8 @@ script.
 ## What you need
 
 - A MiSTer, with Update All (or you can copy the files by hand).
-- From your own MAME 0.288 set:
+- From your own MAME set, 0.288 or later (the converter checks the files,
+  not the MAME version; 0.288 and 0.289 have the same G-NET files):
   - `coh3002t.zip`, the G-NET BIOS set.
   - The CHD file of each game you want to play.
 - A computer (Windows, Mac or Linux) with Chrome, Firefox or Safari, or
@@ -61,8 +62,8 @@ roms/
 Points to check:
 
 - Leave `coh3002t.zip` zipped. Do not add files to it.
-- Use the MAME 0.288 CHDs listed below. A CHD from another version is
-  used only if it is in its MAME folder under its MAME name (for example
+- Use the CHDs listed below, from MAME 0.288 or later. A CHD with
+  different contents is used only if it is in its MAME folder under its MAME name (for example
   `chaoshea/chaosheat.chd`), and the converter warns about it.
 - You do not need every game. The converter skips the ones it does not
   find.
@@ -259,10 +260,10 @@ The controls and OSD options are in the [README](../README.md#controls).
 | `can't open file ... gnet_tester_zips.py ... No such file or directory` | Command Prompt or Terminal is not in the repository folder | Go to the folder that holds `README.md` and `tools`, or give the full path to the script |
 | `error: unrecognized arguments` | A path with a space in it has no quotes | Put quotes around every path |
 | `error: ...coh3002t.zip not found` | `coh3002t.zip` is not in the `--roms` folder | Put it in that folder, still zipped |
-| `error: ...coh3002t.zip: ... missing or not the MAME 0.288 version` | The BIOS zip is from another MAME version, or was changed | Use an unchanged `coh3002t.zip` from a MAME 0.288 set |
-| `<set>: no CHD found, skipped` for a game you have | No CHD in the `--roms` folder is the MAME 0.288 file for that game | Check the CHD is inside the `--roms` folder and is the version in the table in step 2 |
-| `warning, CHD SHA1 ... is not MAME 0.288's ...; continuing` | The CHD is not the one MAME 0.288 uses: another dump, a set from another MAME version, or a damaged file | The zip is still written, but the game may not start. Use the CHD from a MAME 0.288 set |
-| `<set>: warning, ... has SHA1 ..., not MAME 0.288's ...` | The CHD in the game's MAME folder is another version | The zip is still written. If the game does not start, use the MAME 0.288 CHD |
+| `error: ...coh3002t.zip: ... missing or not the expected file` | The BIOS zip holds other dumps, or was changed | Use an unchanged `coh3002t.zip` from a MAME 0.288 or later set |
+| `<set>: no CHD found, skipped` for a game you have | No CHD in the `--roms` folder is the expected file for that game | Check the CHD is inside the `--roms` folder and is the version in the table in step 2 |
+| `warning, CHD SHA1 ... is not the expected ...; continuing` | The CHD is not the one MAME uses: another dump or a damaged file | The zip is still written, but the game may not start. Use the CHD from a MAME 0.288 or later set |
+| `<set>: warning, ... has SHA1 ..., not the expected ...` | The CHD in the game's MAME folder is another dump | The zip is still written. If the game does not start, use the CHD from a MAME 0.288 or later set |
 
 ### On the MiSTer
 

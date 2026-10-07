@@ -66,12 +66,12 @@
       state.bios = buf;
       send({ type: "init", bios: buf.slice(0) });
       st.className = "status ok";
-      st.textContent = file.name + ": OK, the MAME 0.288 version.";
+      st.textContent = file.name + ": OK.";
     } catch (e) {
       state.bios = null;
       st.className = "status bad";
       st.textContent = e instanceof GNET.ConvertError ? e.message +
-        ". This page needs coh3002t.zip from MAME 0.288." : file.name + ": could not be read (" + e.message + ").";
+        ". This page needs an unchanged coh3002t.zip from MAME 0.288 or later." : file.name + ": could not be read (" + e.message + ").";
     }
     refresh();
   }
@@ -109,7 +109,7 @@
         continue;
       }
       if (!info.ok) {
-        notes.push([label, `CHD version ${info.version}: an older MAME format, not the MAME 0.288 file`]);
+        notes.push([label, `CHD version ${info.version}: an older MAME format, not the expected file`]);
         continue;
       }
       const s = GNET.setForSha1(info.sha1);
@@ -117,8 +117,8 @@
         const base = lower.replace(/\.chd$/, "");
         const hint = known.get(base);
         notes.push([label, hint
-          ? `named like the ${hint} CHD, but it is not the MAME 0.288 file (a different MAME version or a changed file; SHA1 ${info.sha1})`
-          : `unknown CHD: not a MAME 0.288 G-NET game on a Taito card (SHA1 ${info.sha1})`]);
+          ? `named like the ${hint} CHD, but it is not the expected file (another dump or a changed file; SHA1 ${info.sha1})`
+          : `unknown CHD: not a MAME G-NET game on a Taito card (SHA1 ${info.sha1})`]);
         continue;
       }
       if (state.games.has(s) && state.games.get(s) !== f) {

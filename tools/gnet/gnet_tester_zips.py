@@ -9,7 +9,8 @@ to have it read the CHDs instead (the output is the same).
   python3 gnet_tester_zips.py --roms <your MAME roms folder> --out <output folder>
           [--sets raycris shikigam ...] [--chdman <path to chdman>] [--no-quick]
 
-The roms folder must hold the MAME 0.288 files:
+The roms folder must hold the MAME files (0.288 or later; the files are
+checked, not the MAME version):
   coh3002t.zip                (the G-NET BIOS set)
   the games' CHD files        (anywhere in the folder or its subfolders; each
                                CHD is matched to its game by its SHA1, so
@@ -102,12 +103,12 @@ def run(cmd):
 
 def check_bios(path):
     if not os.path.exists(path):
-        fail(f"{path} not found (the MAME 0.288 coh3002t set)")
+        fail(f"{path} not found (the MAME coh3002t set)")
     with zipfile.ZipFile(path) as z:
         crcs = {i.filename: i.CRC for i in z.infolist()}
     for name, crc in BIOS_PARTS.items():
         if crcs.get(name) != crc:
-            fail(f"{path}: {name} missing or not the MAME 0.288 version (CRC {crcs.get(name, 0):08x}, want {crc:08x})")
+            fail(f"{path}: {name} missing or not the expected file (CRC {crcs.get(name, 0):08x}, want {crc:08x})")
 
 
 class ChdmanCard:
@@ -209,7 +210,7 @@ def make(chdman, roms, chds, out, s, quick):
     card = ChdmanCard(chdman, chd_path) if chdman else PyCard(chd_path)
     got, card_bytes = card.sha1, card.logical_bytes
     if got != sha1:
-        print(f"  {s}: warning, {chd_path} has SHA1 {got}, not MAME 0.288's {sha1}; continuing")
+        print(f"  {s}: warning, {chd_path} has SHA1 {got}, not the expected {sha1}; continuing")
     if not card_bytes or card_bytes > CARD_MAX or card_bytes % 512:
         fail(f"{s}: card size {card_bytes} bytes is not a whole number of sectors up to {CARD_MAX}")
     with tempfile.TemporaryDirectory() as t:

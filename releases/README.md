@@ -24,10 +24,10 @@ setup slack +0.168 ns, worst hold slack +0.064 ns).
   `coh3002t.zip` and erased chips, so the BIOS copies the card into the
   flash (about 2.5 minutes) at every load.
 
-Every MRA also needs `coh3002t.zip` (MAME 0.288) and the set's
+Every MRA also needs `coh3002t.zip` (MAME 0.288 or later) and the set's
 `gnet_<set>.zip`, both in `/media/fat/games/mame/`. Make the zips from
-your own MAME 0.288 files with `tools/gnet/gnet_tester_zips.py` (see the
-[install guide](../docs/INSTALL.md)). No game data is included here.
+your own MAME files with the converter at <https://gnet-converter.pages.dev>
+or `tools/gnet/gnet_tester_zips.py` (see the [install guide](../docs/INSTALL.md)). No game data is included here.
 
 ## Sets
 

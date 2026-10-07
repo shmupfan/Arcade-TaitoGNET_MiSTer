@@ -27,7 +27,7 @@ export async function checkBios(zipBytes, label = "coh3002t.zip") {
   for (const [name, crc] of Object.entries(BIOS_PARTS)) {
     const got = dir[name] ? dir[name].crc : 0;
     if (!dir[name] || got !== crc) {
-      throw new ConvertError(`${label}: ${name} missing or not the MAME 0.288 version ` +
+      throw new ConvertError(`${label}: ${name} missing or not the expected file ` +
         `(CRC ${got.toString(16).padStart(8, "0")}, want ${crc.toString(16).padStart(8, "0")})`);
     }
   }
@@ -50,7 +50,7 @@ export async function convert(chdBytes, bios, s, { quick = true, progress = null
   if (!SETS[s]) fail("unknown set");
   const { title, sha1, card_type: ctype } = SETS[s];
   const c = new Chd(chdBytes);
-  if (c.sha1 !== sha1) fail(`CHD SHA1 ${c.sha1} is not MAME 0.288's ${sha1}`);
+  if (c.sha1 !== sha1) fail(`CHD SHA1 ${c.sha1} is not the expected ${sha1}`);
   const cardBytes = c.logicalBytes;
   if (!cardBytes || cardBytes > CARD_MAX || cardBytes % 512) {
     fail(`card size ${cardBytes} bytes is not a whole number of sectors up to ${CARD_MAX}`);

@@ -112,14 +112,14 @@ It does the same job as the command-line converter, <code>gnet_tester_zips.py</c
 
 <section id="step1">
 <h2><span class="num">1</span> Select coh3002t.zip</h2>
-<p>The G-NET BIOS set from MAME 0.288.</p>
+<p>The G-NET BIOS set from MAME 0.288 or later. The page checks the files, not the MAME version.</p>
 <label class="pick"><input type="file" id="bios" accept=".zip,application/zip"><span>Choose coh3002t.zip</span></label>
 <div id="bios-status" class="status" role="status"></div>
 </section>
 
 <section id="step2">
 <h2><span class="num">2</span> Select your CHD files</h2>
-<p>The card images from MAME 0.288 (for example <code>raycris/raycris.chd</code>). Each file is
+<p>The card images from MAME 0.288 or later (for example <code>raycris/raycris.chd</code>). Each file is
 recognised from the SHA1 inside it, so file and folder names do not matter.</p>
 <div class="row">
 <label class="pick"><input type="file" id="chds" multiple accept=".chd"><span>Choose CHD files</span></label>
@@ -163,7 +163,7 @@ The zips hold game data made from your own files, so keep them to yourself.</p>
 </section>
 
 <footer>
-<p>Runs offline: you can save this page and open the saved file. Build: 1173dad, gnet_tester_zips.py sha256 0a8ccb6f0e60.</p>
+<p>Runs offline: you can save this page and open the saved file. Build: 81841e6, gnet_tester_zips.py sha256 5322cfac4259.</p>
 </footer>
 </main>
 <script id="gnet-lib">"use strict";
@@ -1933,7 +1933,7 @@ const SETS = {
 const BIOS_PARTS = {"m534002c-60.ic353": 60194727, "tt10.ic652": 592777393, "tt16.u17": 1806788531, "flash.u30": 3297542710};
 const CARD_MAX = 67108864;
 const CARD_TYPE_NAME = {"1": "Type 1", "2": "Type 2", "3": "CompactFlash"};
-const TABLES_SOURCE = "gnet_tester_zips.py sha256 0a8ccb6f0e60";
+const TABLES_SOURCE = "gnet_tester_zips.py sha256 5322cfac4259";
 
 return { SETS, BIOS_PARTS, CARD_MAX, CARD_TYPE_NAME, TABLES_SOURCE };
 })();
@@ -1967,7 +1967,7 @@ async function checkBios(zipBytes, label = "coh3002t.zip") {
   for (const [name, crc] of Object.entries(BIOS_PARTS)) {
     const got = dir[name] ? dir[name].crc : 0;
     if (!dir[name] || got !== crc) {
-      throw new ConvertError(`${label}: ${name} missing or not the MAME 0.288 version ` +
+      throw new ConvertError(`${label}: ${name} missing or not the expected file ` +
         `(CRC ${got.toString(16).padStart(8, "0")}, want ${crc.toString(16).padStart(8, "0")})`);
     }
   }
@@ -1990,7 +1990,7 @@ async function convert(chdBytes, bios, s, { quick = true, progress = null, date 
   if (!SETS[s]) fail("unknown set");
   const { title, sha1, card_type: ctype } = SETS[s];
   const c = new Chd(chdBytes);
-  if (c.sha1 !== sha1) fail(`CHD SHA1 ${c.sha1} is not MAME 0.288's ${sha1}`);
+  if (c.sha1 !== sha1) fail(`CHD SHA1 ${c.sha1} is not the expected ${sha1}`);
   const cardBytes = c.logicalBytes;
   if (!cardBytes || cardBytes > CARD_MAX || cardBytes % 512) {
     fail(`card size ${cardBytes} bytes is not a whole number of sectors up to ${CARD_MAX}`);
@@ -2158,12 +2158,12 @@ if (typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScop
       state.bios = buf;
       send({ type: "init", bios: buf.slice(0) });
       st.className = "status ok";
-      st.textContent = file.name + ": OK, the MAME 0.288 version.";
+      st.textContent = file.name + ": OK.";
     } catch (e) {
       state.bios = null;
       st.className = "status bad";
       st.textContent = e instanceof GNET.ConvertError ? e.message +
-        ". This page needs coh3002t.zip from MAME 0.288." : file.name + ": could not be read (" + e.message + ").";
+        ". This page needs an unchanged coh3002t.zip from MAME 0.288 or later." : file.name + ": could not be read (" + e.message + ").";
     }
     refresh();
   }
@@ -2201,7 +2201,7 @@ if (typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScop
         continue;
       }
       if (!info.ok) {
-        notes.push([label, `CHD version ${info.version}: an older MAME format, not the MAME 0.288 file`]);
+        notes.push([label, `CHD version ${info.version}: an older MAME format, not the expected file`]);
         continue;
       }
       const s = GNET.setForSha1(info.sha1);
@@ -2209,8 +2209,8 @@ if (typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScop
         const base = lower.replace(/\.chd$/, "");
         const hint = known.get(base);
         notes.push([label, hint
-          ? `named like the ${hint} CHD, but it is not the MAME 0.288 file (a different MAME version or a changed file; SHA1 ${info.sha1})`
-          : `unknown CHD: not a MAME 0.288 G-NET game on a Taito card (SHA1 ${info.sha1})`]);
+          ? `named like the ${hint} CHD, but it is not the expected file (another dump or a changed file; SHA1 ${info.sha1})`
+          : `unknown CHD: not a MAME G-NET game on a Taito card (SHA1 ${info.sha1})`]);
         continue;
       }
       if (state.games.has(s) && state.games.get(s) !== f) {
