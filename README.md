@@ -97,12 +97,10 @@ included in this repository.
    folder, for example `shikigam/shikigam.chd`. On Windows use `python`
    instead of `python3`. If `chdman` is not on your PATH, add
    `--chdman <path to chdman.exe>`. The tool checks that `coh3002t.zip`
-   is the MAME 0.288 version and warns if a CHD does not match MAME 0.288.
-   It writes one `gnet_<set>.zip` per game it finds, with the card image
-   (38.6 MB to 64.2 MB), the card's identify data, CIS, unlock key and
-   card type, and the flash chips as the BIOS leaves them after its
-   first-boot copy. These zips are made from your own files: keep them to
-   yourself.
+   is the MAME 0.288 version and warns if a CHD does not match. It writes
+   one `gnet_<set>.zip` per game: card image, card data and the flash
+   chips as the BIOS leaves them after its first-boot copy. These zips are
+   made from your own files: keep them to yourself.
 5. Copy every `gnet_<set>.zip` to `/media/fat/games/mame/`.
 
 Zips made with an earlier version of the converter can fail on the Type 2
@@ -202,8 +200,7 @@ NVRAM when the OSD opens after the game has written to it.
   picture does not look right yet (fine detail shimmers), and the
   Deinterlacing option is not offered in that mode. The 240-line games
   are not affected.
-- **Sound balance.** The SFX Level default follows MAME (0.3), a setting
-  chosen by ear. The core also applies the SPU main volume the games set,
+- **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real
   Psyvariar -Revision- cabinet suggests 0.6 to 0.8 for that game, but 0.7
@@ -244,8 +241,7 @@ by sample. The core differs from MAME 0.288 on purpose in three places:
 
 ## How to help
 
-Test reports are what move the core forward. The
-[testing guide](docs/TESTING_GUIDE.md) lists the tests, what each game
+The [testing guide](docs/TESTING_GUIDE.md) lists the tests, what each game
 should show, and how to report. The most useful reports are play
 reports for the sets marked Boots or Not tested, a first boot copy run
 to the end, and anything from a real G-NET board: timings, recordings
