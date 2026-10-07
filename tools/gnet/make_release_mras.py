@@ -110,7 +110,8 @@ ALT_OF = {
     "shikigama": "shikigam",
     "kollonc": "kollon",
     "spuzboblj": "spuzbobl",
-    "zokuotena": "zokuoten",
+    # zokuoten (V2.05J) is MAME's parent, but V2.03J is the version tested on hardware
+    "zokuoten": "zokuotena",
     "rcdego": "gobyrc",
 }
 
@@ -200,7 +201,7 @@ def main():
                  f"only in the converter {sorted(set(CONVERTER_SETS) - set(RELEASE))}")
     for s in CONVERTER_SETS:
         parent = CONVERTER_SETS[s][4]
-        if parent and ALT_OF.get(s) != parent:
+        if parent and ALT_OF.get(s) != parent and ALT_OF.get(parent) != s:
             sys.exit(f"error: {s} is a MAME clone of {parent}; ALT_OF must place it under {parent}")
     n = 0
     for s in CONVERTER_SETS:

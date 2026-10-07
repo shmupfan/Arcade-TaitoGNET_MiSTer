@@ -55,8 +55,8 @@ calibration screen on my MiSTer, not played. MRA: **main** is
 | Super Puzzle Bobble | V2.04J | spuzboblj | Type 2 | alt | Boots | |
 | Usagi | V2.02J | usagi | Type 2 | main | Boots | Mahjong panel |
 | XII Stag | V2.01J | xiistag | Type 1 | main | Boots | Vertical; runs to its gameplay demo |
-| Zoku Otenamihaiken | V2.05J | zokuoten | Type 2 | main | Not tested | No Zoom board; I do not have this card |
-| Zoku Otenamihaiken | V2.03J | zokuotena | Type 1 | alt | Boots | No Zoom board |
+| Zoku Otenamihaiken | V2.03J | zokuotena | Type 1 | main | Boots | No Zoom board |
+| Zoku Otenamihaiken | V2.05J | zokuoten | Type 2 | alt | Not tested | No Zoom board; I do not have this card |
 | Zooo | V2.01JA | zooo | Type 1 | main | Boots | No Zoom board |
 
 The main MRA of each game is MAME's parent set. Vertical games rotate for

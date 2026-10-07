@@ -65,8 +65,8 @@ stored in the zip, not the MRA.
 | spuzboblj | `gnet_spuzboblj.zip` | Type 2 | 00 | `_Super Puzzle Bobble` | `_Super Puzzle Bobble` |
 | usagi | `gnet_usagi.zip` | Type 2 | 08 | `Usagi (V2.02J).mra` | `_Usagi` |
 | xiistag | `gnet_xiistag.zip` | Type 1 | 01 | `XII Stag (V2.01J).mra` | `_XII Stag` |
-| zokuoten | `gnet_zokuoten.zip` | Type 2 | 02 | `Zoku Otenamihaiken (V2.05J).mra` | `_Zoku Otenamihaiken` |
-| zokuotena | `gnet_zokuotena.zip` | Type 1 | 02 | `_Zoku Otenamihaiken` | `_Zoku Otenamihaiken` |
+| zokuoten | `gnet_zokuoten.zip` | Type 2 | 02 | `_Zoku Otenamihaiken` | `_Zoku Otenamihaiken` |
+| zokuotena | `gnet_zokuotena.zip` | Type 1 | 02 | `Zoku Otenamihaiken (V2.03J).mra` | `_Zoku Otenamihaiken` |
 | zooo | `gnet_zooo.zip` | Type 1 | 02 | `Zooo (V2.01JA).mra` | `_Zooo` |
 
 A folder name such as `_Ray Crisis` means `_alternatives/_Ray Crisis/`.
