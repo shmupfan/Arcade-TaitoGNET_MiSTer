@@ -15,9 +15,8 @@ your computer.
   - `coh3002t.zip`, the G-NET BIOS set.
   - The CHD file of each game you want to play.
 - A computer (Windows, Mac or Linux) with:
-  - Python 3 (3.7 or newer).
-  - MAME's `chdman` tool. On Windows it is `chdman.exe` in your MAME
-    folder.
+  - Python 3 (3.7 or newer). Nothing else: the converter reads the CHD
+    files itself, so MAME's `chdman` is not needed.
 
 ## 1. Get the core
 
@@ -142,13 +141,11 @@ one with the `>>>` prompt): that gives `SyntaxError: invalid syntax`.
 3. Type this, with your own paths, and press Enter:
 
 ```
-python tools\gnet\gnet_tester_zips.py --roms "C:\MAME\roms" --out "C:\gnet-zips" --chdman "C:\MAME\chdman.exe"
+python tools\gnet\gnet_tester_zips.py --roms "C:\MAME\roms" --out "C:\gnet-zips"
 ```
 
 - `--roms` is your roms folder from step 2.
 - `--out` is a new folder for the zips. The converter makes it for you.
-- `--chdman` is the full path to `chdman.exe` itself, not the folder it
-  is in.
 - Put quotes around every path. A path with a space in it, such as
   `C:\Users\Your Name\MAME\roms`, does not work without them.
 - If `python` is not found, use `py` instead:
@@ -164,29 +161,23 @@ cd /d "C:\Users\Your Name\Downloads\Arcade-TaitoGNET_MiSTer-main"
 You can also give the full path to the script instead:
 
 ```
-python "C:\Users\Your Name\Downloads\Arcade-TaitoGNET_MiSTer-main\tools\gnet\gnet_tester_zips.py" --roms "C:\MAME\roms" --out "C:\gnet-zips" --chdman "C:\MAME\chdman.exe"
+python "C:\Users\Your Name\Downloads\Arcade-TaitoGNET_MiSTer-main\tools\gnet\gnet_tester_zips.py" --roms "C:\MAME\roms" --out "C:\gnet-zips"
 ```
 
 ### Mac and Linux
 
-1. Install `chdman` if you do not have it:
-   - Mac with Homebrew: `brew install rom-tools`
-   - Debian or Ubuntu: `sudo apt install mame-tools`
-   - Other systems: `chdman` comes with MAME.
-2. Open Terminal and go to the repository folder:
+1. Open Terminal and go to the repository folder:
 
 ```
 cd ~/Downloads/Arcade-TaitoGNET_MiSTer-main
 ```
 
-3. Run the converter, with your own paths:
+2. Run the converter, with your own paths:
 
 ```
 python3 tools/gnet/gnet_tester_zips.py --roms "/path/to/MAME/roms" --out "/path/to/gnet-zips"
 ```
 
-- If `chdman` was installed as above, you do not need `--chdman`.
-  Otherwise add `--chdman "/path/to/chdman"`.
 - Put quotes around paths with spaces. On a Mac you can drag a folder
   from Finder into Terminal to type its path.
 
@@ -266,8 +257,6 @@ The controls and OSD options are in the [README](../README.md#controls).
 | `'python' is not recognized`, or the Microsoft Store opens | Python is not installed, or not on the PATH | Try `py` instead of `python`. Otherwise install Python from python.org with **Add python.exe to PATH** ticked |
 | `can't open file ... gnet_tester_zips.py ... No such file or directory` | Command Prompt or Terminal is not in the repository folder | Go to the folder that holds `README.md` and `tools`, or give the full path to the script |
 | `error: unrecognized arguments` | A path with a space in it has no quotes | Put quotes around every path |
-| `PermissionError` with `Access is denied` or `Permission denied` | `--chdman` points at a folder | Point it at `chdman.exe` itself, for example `"C:\MAME\chdman.exe"` |
-| `error: chdman not found` | `chdman` is not on the PATH | Add `--chdman` with the full path to `chdman` |
 | `error: ...coh3002t.zip not found` | `coh3002t.zip` is not in the `--roms` folder | Put it in that folder, still zipped |
 | `error: ...coh3002t.zip: ... missing or not the MAME 0.288 version` | The BIOS zip is from another MAME version, or was changed | Use an unchanged `coh3002t.zip` from a MAME 0.288 set |
 | `<set>: no CHD found, skipped` for a game you have | The CHD is not where the converter looks | Check the folder and file name in the table in step 2 |
