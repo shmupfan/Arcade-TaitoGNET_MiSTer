@@ -3,16 +3,21 @@
 
   tools/gnet/make_release_mras.py [--rbf TaitoGNET] [--out releases]
 
-The release layout (releases/README.md), one folder per batch:
-  batch 1  releases/                                  played on hardware
-  batch 2  releases/_Taito G-NET batch 2 (boots)/     boots on hardware, expect bugs
-  batch 3  releases/_Taito G-NET batch 3 (new features)/  new core features
-In each batch folder <Game>.mra is the quick start MRA (loads <set>.flash,
-the flash chips as the BIOS leaves them after its first-boot copy) and
-_alternatives/_<game>/<Game> (first boot).mra loads only flash.u30 from
+The release layout (releases/README.md), the MiSTer arcade convention:
+  releases/<Game>.mra
+      the quick start MRA of each game's main set (the MAME parent);
+  releases/_alternatives/_<Game>/<Game> (<version>).mra
+      the quick start MRA of every other set of that game (MAME clones, and
+      the Shikigami no Shiro internal build);
+  releases/_alternatives/_<Game>/<Game> (<version>) (first boot).mra
+      the first boot MRA of every set on a Type 1 or Type 2 card.
+A quick start MRA loads <set>.flash, the flash chips as the BIOS leaves them
+after its first-boot copy. A first boot MRA loads only flash.u30 from
 coh3002t.zip into the flash area (the other chips erased), so the BIOS does
 its first-boot copy of the card into the flash chips (about 2.5 minutes) on
-every start.
+every start. CompactFlash sets have no first boot MRA: on a CompactFlash card
+the BIOS runs its v2 sub-BIOS, which a real board installs into U30 from the
+BIOS EPROM in flash-initialise mode, and the core has no EPROM.
 
 The sets, their titles and card types are the converter's SETS table
 (tools/gnet/gnet_tester_zips.py); the script stops if the two lists differ.
@@ -56,54 +61,64 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gnet_tester_zips import SETS as CONVERTER_SETS  # noqa: E402
 
-BATCH_DIRS = {
-    1: "",
-    2: "_Taito G-NET batch 2 (boots)",
-    3: "_Taito G-NET batch 3 (new features)",
-}
-
-# set: (batch, file name, year, manufacturer, ROT270, init_nozoom, controls, category)
+# set: (file name, year, manufacturer, ROT270, init_nozoom, controls, category)
 # year, manufacturer, rotation, init_nozoom and input port from MAME 0.288
 # taitogn.cpp GAME lines; controls from the input port (taitogn 0,
 # mahjngoh 1, usagi 2, gobyrc 3); category is the game's genre.
 RELEASE = {
-    # batch 1: played on hardware
-    "raycris": (1, "Ray Crisis (V2.03O)", "1998", "Taito", False, False, 0, "Shooter"),
-    "raycrisj": (1, "Ray Crisis (V2.03J)", "1998", "Taito", False, False, 0, "Shooter"),
-    "chaoshea": (1, "Chaos Heat (V2.09O)", "1998", "Taito", False, False, 0, "Third-person shooter"),
-    "psyvaria": (1, "Psyvariar -Medium Unit- (V2.02O)", "2000", "Success", True, False, 0, "Shooter"),
-    "psyvarrv": (1, "Psyvariar -Revision- (V2.04J)", "2000", "Success", True, False, 0, "Shooter"),
-    "xiistag": (1, "XII Stag (V2.01J)", "2002", "Triangle Service", True, False, 0, "Shooter"),
-    "shikigam": (1, "Shikigami no Shiro (V2.03J)", "2001", "Alfa System / Taito", True, False, 0, "Shooter"),
-    "nightrai": (1, "Night Raid (V2.03J)", "2001", "Takumi", False, False, 0, "Shooter"),
-    # batch 2: boots on hardware (psyvarij and shikigama not yet tried)
-    "chaosheaj": (2, "Chaos Heat (V2.08J)", "1998", "Taito", False, False, 0, "Third-person shooter"),
-    "psyvarij": (2, "Psyvariar -Medium Unit- (V2.04J)", "2000", "Success", True, False, 0, "Shooter"),
-    "shikigama": (2, "Shikigami no Shiro - internal build (V1.02J)", "2001", "Alfa System / Taito", True, False, 0,
+    "raycris": ("Ray Crisis (V2.03O)", "1998", "Taito", False, False, 0, "Shooter"),
+    "raycrisj": ("Ray Crisis (V2.03J)", "1998", "Taito", False, False, 0, "Shooter"),
+    "chaoshea": ("Chaos Heat (V2.09O)", "1998", "Taito", False, False, 0, "Third-person shooter"),
+    "chaosheaj": ("Chaos Heat (V2.08J)", "1998", "Taito", False, False, 0, "Third-person shooter"),
+    "psyvaria": ("Psyvariar -Medium Unit- (V2.02O)", "2000", "Success", True, False, 0, "Shooter"),
+    "psyvarij": ("Psyvariar -Medium Unit- (V2.04J)", "2000", "Success", True, False, 0, "Shooter"),
+    "psyvarrv": ("Psyvariar -Revision- (V2.04J)", "2000", "Success", True, False, 0, "Shooter"),
+    "xiistag": ("XII Stag (V2.01J)", "2002", "Triangle Service", True, False, 0, "Shooter"),
+    "shikigam": ("Shikigami no Shiro (V2.03J)", "2001", "Alfa System / Taito", True, False, 0, "Shooter"),
+    "shikigama": ("Shikigami no Shiro - internal build (V1.02J)", "2001", "Alfa System / Taito", True, False, 0,
                   "Shooter"),
-    "flipmaze": (2, "Flip Maze (V2.04J)", "1999", "MOSS / Taito", False, False, 0, "Puzzle"),
-    "kollon": (2, "Kollon (V2.04JA)", "2003", "Taito", False, False, 0, "Puzzle"),
-    "shanghss": (2, "Shanghai Shoryu Sairin (V2.03J)", "2000", "Warashi", False, False, 0, "Puzzle"),
-    "soutenry": (2, "Soutenryu (V2.07J)", "2000", "Warashi", False, False, 0, "Puzzle"),
-    "shangtou": (2, "Shanghai Sangokuhai Tougi (Ver 2.01J)", "2002", "Warashi / Sunsoft / Taito", False, False, 0,
+    "nightrai": ("Night Raid (V2.03J)", "2001", "Takumi", False, False, 0, "Shooter"),
+    "flipmaze": ("Flip Maze (V2.04J)", "1999", "MOSS / Taito", False, False, 0, "Puzzle"),
+    "kollon": ("Kollon (V2.04JA)", "2003", "Taito", False, False, 0, "Puzzle"),
+    "kollonc": ("Kollon (V2.04JC)", "2003", "Taito", False, False, 0, "Puzzle"),
+    "shanghss": ("Shanghai Shoryu Sairin (V2.03J)", "2000", "Warashi", False, False, 0, "Puzzle"),
+    "soutenry": ("Soutenryu (V2.07J)", "2000", "Warashi", False, False, 0, "Puzzle"),
+    "shangtou": ("Shanghai Sangokuhai Tougi (Ver 2.01J)", "2002", "Warashi / Sunsoft / Taito", False, False, 0,
                  "Puzzle"),
-    "otenki": (2, "Otenki Kororin (V2.01J)", "2001", "Takumi", False, False, 0, "Puzzle"),
-    # batch 3: new core features (no Zoom board, Type 2 and CompactFlash cards,
-    # special controls), not yet tried on hardware
-    "otenamih": (3, "Otenami Haiken (V2.04J)", "1999", "Success", False, True, 0, "Minigames"),
-    "zooo": (3, "Zooo (V2.01JA)", "2004", "Success", False, True, 0, "Puzzle"),
-    "sianniv": (3, "Space Invaders Anniversary (V2.02J)", "2003", "Taito", True, True, 0, "Shooter"),
-    "zokuotena": (3, "Zoku Otenamihaiken (V2.03J)", "2001", "Success", False, True, 0, "Minigames"),
-    "zokuoten": (3, "Zoku Otenamihaiken (V2.05J)", "2003", "Success", False, True, 0, "Minigames"),
-    "spuzbobl": (3, "Super Puzzle Bobble (V2.05O)", "1999", "Taito", False, False, 0, "Puzzle"),
-    "spuzboblj": (3, "Super Puzzle Bobble (V2.04J)", "1999", "Taito", False, False, 0, "Puzzle"),
-    "kollonc": (3, "Kollon (V2.04JC)", "2003", "Taito", False, False, 0, "Puzzle"),
-    "otenamhf": (3, "Otenami Haiken Final (V2.07JC)", "2005", "Success / Warashi", False, True, 0, "Minigames"),
-    "gobyrc": (3, "Go By RC (V2.03O)", "1999", "Taito", False, False, 3, "Driving"),
-    "rcdego": (3, "RC De Go (V2.03J)", "1999", "Taito", False, False, 3, "Driving"),
-    "mahjngoh": (3, "Mahjong Oh (V2.06J)", "1999", "Warashi / Mahjong Kobo / Taito", False, False, 1, "Mahjong"),
-    "usagi": (3, "Usagi (V2.02J)", "2001", "Warashi / Mahjong Kobo / Taito", False, False, 2, "Mahjong"),
+    "otenki": ("Otenki Kororin (V2.01J)", "2001", "Takumi", False, False, 0, "Puzzle"),
+    "otenamih": ("Otenami Haiken (V2.04J)", "1999", "Success", False, True, 0, "Minigames"),
+    "otenamhf": ("Otenami Haiken Final (V2.07JC)", "2005", "Success / Warashi", False, True, 0, "Minigames"),
+    "zokuoten": ("Zoku Otenamihaiken (V2.05J)", "2003", "Success", False, True, 0, "Minigames"),
+    "zokuotena": ("Zoku Otenamihaiken (V2.03J)", "2001", "Success", False, True, 0, "Minigames"),
+    "zooo": ("Zooo (V2.01JA)", "2004", "Success", False, True, 0, "Puzzle"),
+    "sianniv": ("Space Invaders Anniversary (V2.02J)", "2003", "Taito", True, True, 0, "Shooter"),
+    "spuzbobl": ("Super Puzzle Bobble (V2.05O)", "1999", "Taito", False, False, 0, "Puzzle"),
+    "spuzboblj": ("Super Puzzle Bobble (V2.04J)", "1999", "Taito", False, False, 0, "Puzzle"),
+    "gobyrc": ("Go By RC (V2.03O)", "1999", "Taito", False, False, 3, "Driving"),
+    "rcdego": ("RC De Go (V2.03J)", "1999", "Taito", False, False, 3, "Driving"),
+    "mahjngoh": ("Mahjong Oh (V2.06J)", "1999", "Warashi / Mahjong Kobo / Taito", False, False, 1, "Mahjong"),
+    "usagi": ("Usagi (V2.02J)", "2001", "Warashi / Mahjong Kobo / Taito", False, False, 2, "Mahjong"),
 }
+
+# Sets that are not their game's main MRA, and the main set they go under.
+# Every MAME clone (the converter's parent column) is here; MAME lists the
+# Shikigami no Shiro internal build as a separate game, but it is the same game.
+ALT_OF = {
+    "raycrisj": "raycris",
+    "chaosheaj": "chaoshea",
+    "psyvarij": "psyvaria",
+    "shikigama": "shikigam",
+    "kollonc": "kollon",
+    "spuzboblj": "spuzbobl",
+    "zokuotena": "zokuoten",
+    "rcdego": "gobyrc",
+}
+
+
+def game_of(s):
+    """the game's name (folder name in _alternatives): the main set's title without the version"""
+    return RELEASE[ALT_OF.get(s, s)][0].split(" (")[0]
+
 
 # per controls value: players, joystick, button names (J1 bits 4-11)
 CONTROLS = {
@@ -170,7 +185,7 @@ def title_of(s):
 
 
 def config_byte(s):
-    _, _, _, _, vert, nozoom, ctl, _ = RELEASE[s]
+    _, _, _, vert, nozoom, ctl, _ = RELEASE[s]
     return int(vert) | (int(nozoom) << 1) | (ctl << 2)
 
 
@@ -184,14 +199,19 @@ def main():
         sys.exit(f"error: release sets and converter SETS differ: only here {sorted(set(RELEASE) - set(CONVERTER_SETS))}, "
                  f"only in the converter {sorted(set(CONVERTER_SETS) - set(RELEASE))}")
     for s in CONVERTER_SETS:
-        batch, fname, year, mfr, vert, nozoom, ctl, cat = RELEASE[s]
+        parent = CONVERTER_SETS[s][4]
+        if parent and ALT_OF.get(s) != parent:
+            sys.exit(f"error: {s} is a MAME clone of {parent}; ALT_OF must place it under {parent}")
+    n = 0
+    for s in CONVERTER_SETS:
+        fname, year, mfr, vert, nozoom, ctl, cat = RELEASE[s]
         players, joy, buttons = CONTROLS[ctl]
-        base = os.path.join(a.out, BATCH_DIRS[batch])
+        alt = os.path.join(a.out, "_alternatives", "_" + game_of(s))
         # CompactFlash cards need the v2 sub-BIOS in U30, which the BIOS installs from
         # its EPROM in flash-initialise mode; the core has no EPROM, so only quick start
         boots = (("warm", ""),) if CONVERTER_SETS[s][3] == 3 else (("warm", ""), ("cold", " (first boot)"))
         for boot, suffix in boots:
-            d = base if boot == "warm" else os.path.join(base, "_alternatives", "_" + fname.split(" (")[0])
+            d = a.out if boot == "warm" and s not in ALT_OF else alt
             os.makedirs(d, exist_ok=True)
             p = os.path.join(d, fname + suffix + ".mra")
             flash = (FLASH_WARM if boot == "warm" else FLASH_COLD).format(set=s)
@@ -200,7 +220,8 @@ def main():
                                         cat=cat, players=players, joy=joy, buttons=buttons, flash=flash,
                                         rot="vertical (ccw)" if vert else "horizontal", cfg=config_byte(s)))
             print("wrote", os.path.relpath(p, a.out))
-
+            n += 1
+    print(n, "MRAs")
 
 if __name__ == "__main__":
     main()

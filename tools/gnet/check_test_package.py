@@ -3,8 +3,9 @@
 
   tools/gnet/check_test_package.py [<package dir>]   (default gnet_games/test_z1)
 
-The package holds _Arcade/*.mra, _Arcade/cores/<rbf>_<date>.rbf and
-games/mame/*.zip, laid out as on the SD card. For every MRA it checks:
+The package holds _Arcade/*.mra, _Arcade/_alternatives/_<Game>/*.mra,
+_Arcade/cores/<rbf>_<date>.rbf and games/mame/*.zip, laid out as on the SD
+card. For every MRA it checks:
   - the file parses as XML and has setname, rbf and at least one rom;
   - a core <rbf>_*.rbf is in _Arcade/cores;
   - every named part exists in its zip, with the CRC when the MRA gives one;
@@ -31,7 +32,8 @@ def main():
     zdir = os.path.join(pkg, "games", "mame")
     cores = [os.path.basename(p) for p in glob.glob(os.path.join(pkg, "_Arcade", "cores", "*.rbf"))]
     zips, used, errors = {}, set(), 0
-    mras = sorted(glob.glob(os.path.join(pkg, "_Arcade", "*.mra")))
+    mras = sorted(glob.glob(os.path.join(pkg, "_Arcade", "*.mra"))
+                  + glob.glob(os.path.join(pkg, "_Arcade", "_alternatives", "_*", "*.mra")))
     for mra in mras:
         name, errs = os.path.basename(mra), []
         try:
