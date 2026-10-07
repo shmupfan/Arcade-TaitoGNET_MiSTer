@@ -166,7 +166,8 @@ python "C:\Users\Your Name\Downloads\Arcade-TaitoGNET_MiSTer-main\tools\gnet\gne
 
 ### Mac and Linux
 
-1. Open Terminal and go to the repository folder:
+1. Open Terminal and go to the repository folder. On a Mac without
+   Python 3, the first `python3` command offers to install it.
 
 ```
 cd ~/Downloads/Arcade-TaitoGNET_MiSTer-main
@@ -181,13 +182,8 @@ python3 tools/gnet/gnet_tester_zips.py --roms "/path/to/MAME/roms" --out "/path/
 - Put quotes around paths with spaces. On a Mac you can drag a folder
   from Finder into Terminal to type its path.
 
-### Options
-
-You do not need these for a normal install.
-
-- `--sets raycris shikigam` converts only the sets you list.
-- `--no-quick` leaves the `.flash` file out of the zips. Do not use it:
-  the main MRAs need that file.
+To convert only some games, add `--sets` and the set names, for example
+`--sets raycris shikigam`.
 
 ### What it prints when it works
 
@@ -267,10 +263,9 @@ The controls and OSD options are in the [README](../README.md#controls).
 
 | What you see | Cause | Fix |
 |---|---|---|
-| MiSTer says a file such as `raycris.meta` cannot be found | The zip was made by hand, or renamed, or the game files were put inside `coh3002t.zip` | Delete it. Make the zip with the converter (step 3). Put back an unchanged `coh3002t.zip` |
-| MiSTer says `<set>.flash` cannot be found | The zip was made with `--no-quick` | Convert that set again without `--no-quick` |
-| MiSTer says `gnet_<set>.zip` cannot be found | There is no zip for the set this MRA loads (often an alternative version) | Convert that set, or load the MRA of a set you have |
-| Black screen, no TAITO G-NET logo | `coh3002t.zip` is missing from `games/mame` | Copy it there, still zipped |
+| The game does not load and MiSTer reports a missing file such as `raycris.meta` | The zip was made by hand, or renamed, or the game files were put inside `coh3002t.zip` | Delete it. Make the zip with the converter (step 3). Put back an unchanged `coh3002t.zip` |
+| MiSTer reports a missing `gnet_<set>.zip` | There is no zip for the set this MRA loads (often an alternative version) | Convert that set, or load the MRA of a set you have |
+| Nothing starts, no TAITO G-NET logo | `coh3002t.zip` is missing from `games/mame` | Copy it there, still zipped |
 | SYSTEM ERROR after the TAITO G-NET logo | The game zip is wrong: made by hand, made from the wrong CHD, or made with an older version of the converter. Older versions fail on the Type 2 and CompactFlash sets, such as Super Puzzle Bobble | Download the repository again and convert again with the current script (step 3). Check the converter printed no warnings |
 | Go By RC or RC De Go stops on a CALIBRATION screen | Normal on a first boot | Leave the stick centred and press Start |
 | A "Loading now." screen for about 2.5 minutes | You loaded a first boot MRA | Normal. Wait, or load the main MRA instead |
