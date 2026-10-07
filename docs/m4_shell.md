@@ -253,7 +253,7 @@ volume about 40, keyboard and pause about 40, rotate180 now live in the
 video out, which GNET_LEAN had fixed to 0); the shell on hardware; the
 keeper's hand-over seen on a CRT, a DV1 DAC and the HDMI scaler.
 
-## 7. Open, for Lee
+## 7. Open questions
 
 1. Fit GNET_Z1SHELL (`tools/pc_build.sh z1shell`).
 2. 216p crop for the horizontal games (section 5): off by choice.
@@ -263,7 +263,7 @@ keeper's hand-over seen on a CRT, a DV1 DAC and the HDMI scaler.
    EEPROM NVRAM save (section 9), button names where documented (section
    9), README (section 10). Still open: audio level matching after the
    Zoom mix; button names for Ray Crisis, both Psyvariar sets and
-   Shikigami (game manuals, board_evidence.md D3 on gnet-games); high
+   Shikigami (game manuals, docs/board_evidence.md D3); high
    score saving beyond the EEPROM (hiscore.dat); card write saving (R25).
 5. arcade_video adds the framework's scandoubler and HQ2x (LINE_LENGTH
    644, 24-bit): expect some hundreds of ALMs and a few M10K in the fit.
@@ -334,8 +334,8 @@ refused while busy is not in the copy), word 1023 FFFFh, and the write
 toggle has toggled once.
 
 Button names (shell-test MRAs in gnet_games/test_z1, gitignored): MAME
-gives none and the game manuals are open (board_evidence.md D3 on
-gnet-games). Named where a source exists: XII Stag button 1 "Shot" (its
+gives none and the game manuals are open (docs/board_evidence.md
+D3). Named where a source exists: XII Stag button 1 "Shot" (its
 how-to screen, gnet_games_test_matrix.md); Night Raid "Shoot, Wave, Bomb"
 (arcade-history, secondary). The other four keep Button 1 to 3.
 
