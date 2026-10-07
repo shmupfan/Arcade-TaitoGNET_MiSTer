@@ -11,7 +11,7 @@ as it is laid out here:
 | `releases/` | 1: played on hardware | `/media/fat/_Arcade/` |
 | `releases/_alternatives/_<Game>/` | 1: first-boot MRAs | `/media/fat/_Arcade/_alternatives/_<Game>/` |
 | `releases/_Taito G-NET batch 2 (boots)/` | 2: boots on hardware, expect bugs | `/media/fat/_Arcade/_Taito G-NET batch 2 (boots)/` |
-| `releases/_Taito G-NET batch 3 (untested)/` | 3: new core features, untested on hardware, expect bugs | `/media/fat/_Arcade/_Taito G-NET batch 3 (untested)/` |
+| `releases/_Taito G-NET batch 3 (new features)/` | 3: new core features, untested on hardware, expect bugs | `/media/fat/_Arcade/_Taito G-NET batch 3 (new features)/` |
 
 Each batch folder holds one quick start MRA per set, and its first-boot
 MRAs in `_alternatives/_<Game>/` inside that folder.
@@ -82,14 +82,19 @@ mahjong panel only, 3 RC wheel and trigger).
 psyvarij and shikigama are in batch 2 because they are versions of batch
 1 games on the same card type, but I have not run them on hardware yet.
 
-### Batch 3: `releases/_Taito G-NET batch 3 (untested)/`
+### Batch 3: `releases/_Taito G-NET batch 3 (new features)/`
 
 These use the core features added for this release: the no Zoom board
 setting, Type 2 and CompactFlash cards, and the mahjong and RC controls.
 On 2026-10-07 I boot-tested each set on my MiSTer with this release's RBF
-(quick start MRAs, about 80 seconds each, not played). Both CompactFlash
-sets stop at SYSTEM ERROR on hardware although they boot in full-system
-simulation; I am investigating.
+(quick start MRAs, about 80 seconds each, not played). The two
+CompactFlash sets have a quick start MRA only: on a CompactFlash card the
+BIOS runs its v2 sub-BIOS, which a real board installs into U30 from the
+BIOS EPROM in flash-initialise mode, and the core has no EPROM. The
+converter writes the v2 sub-BIOS into the quick start flash from the
+`f35-01_m27c800.bin` in your `coh3002t.zip`, byte-equal to MAME 0.288's
+flash after its copy. Zips made with an older converter stop at SYSTEM
+ERROR on these two sets; convert them again.
 
 | Game | Set | Zip | Card | Config | Status | New feature |
 |---|---|---|---|---|---|---|
@@ -100,8 +105,8 @@ simulation; I am investigating.
 | Zoku Otenamihaiken (V2.05J 2003/05/12) | zokuoten | `gnet_zokuoten.zip` | Type 2 | 02 | untested (V2.05J card not available) | Type 2 card, no Zoom board |
 | Super Puzzle Bobble (V2.05O 1999/2/24) | spuzbobl | `gnet_spuzbobl.zip` | Type 2 | 00 | boots (attract) | Type 2 card |
 | Super Puzzle Bobble (V2.04J 1999/2/17) | spuzboblj | `gnet_spuzboblj.zip` | Type 2 | 00 | boots (attract) | Type 2 card |
-| Kollon (V2.04JC 2003/11/01) | kollonc | `gnet_kollonc.zip` | CompactFlash | 00 | fails: SYSTEM ERROR | CompactFlash card |
-| Otenami Haiken Final (V2.07JC 2005/04/20) | otenamhf | `gnet_otenamhf.zip` | CompactFlash | 02 | fails: SYSTEM ERROR | CompactFlash card, no Zoom board |
+| Kollon (V2.04JC 2003/11/01) | kollonc | `gnet_kollonc.zip` | CompactFlash | 00 | boots (title), quick start only | CompactFlash card |
+| Otenami Haiken Final (V2.07JC 2005/04/20) | otenamhf | `gnet_otenamhf.zip` | CompactFlash | 02 | boots (title, attract), quick start only | CompactFlash card, no Zoom board |
 | Go By RC (V2.03O 1999/05/25) | gobyrc | `gnet_gobyrc.zip` | Type 2 | 0C | boots (calibration screen) | Type 2 card, RC wheel and trigger |
 | RC De Go (V2.03J 1999/05/22) | rcdego | `gnet_rcdego.zip` | Type 1 | 0C | boots (calibration screen) | RC wheel and trigger |
 | Mahjong Oh (V2.06J 1999/11/23) | mahjngoh | `gnet_mahjngoh.zip` | Type 1 | 04 | boots (attract) | mahjong panel and P1 stick |

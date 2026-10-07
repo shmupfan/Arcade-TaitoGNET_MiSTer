@@ -6,7 +6,7 @@
 The release layout (releases/README.md), one folder per batch:
   batch 1  releases/                                  played on hardware
   batch 2  releases/_Taito G-NET batch 2 (boots)/     boots on hardware, expect bugs
-  batch 3  releases/_Taito G-NET batch 3 (untested)/  new core features, untested
+  batch 3  releases/_Taito G-NET batch 3 (new features)/  new core features
 In each batch folder <Game>.mra is the quick start MRA (loads <set>.flash,
 the flash chips as the BIOS leaves them after its first-boot copy) and
 _alternatives/_<game>/<Game> (first boot).mra loads only flash.u30 from
@@ -59,7 +59,7 @@ from gnet_tester_zips import SETS as CONVERTER_SETS  # noqa: E402
 BATCH_DIRS = {
     1: "",
     2: "_Taito G-NET batch 2 (boots)",
-    3: "_Taito G-NET batch 3 (untested)",
+    3: "_Taito G-NET batch 3 (new features)",
 }
 
 # set: (batch, file name, year, manufacturer, ROT270, init_nozoom, controls, category)
@@ -187,7 +187,10 @@ def main():
         batch, fname, year, mfr, vert, nozoom, ctl, cat = RELEASE[s]
         players, joy, buttons = CONTROLS[ctl]
         base = os.path.join(a.out, BATCH_DIRS[batch])
-        for boot, suffix in (("warm", ""), ("cold", " (first boot)")):
+        # CompactFlash cards need the v2 sub-BIOS in U30, which the BIOS installs from
+        # its EPROM in flash-initialise mode; the core has no EPROM, so only quick start
+        boots = (("warm", ""),) if CONVERTER_SETS[s][3] == 3 else (("warm", ""), ("cold", " (first boot)"))
+        for boot, suffix in boots:
             d = base if boot == "warm" else os.path.join(base, "_alternatives", "_" + fname.split(" (")[0])
             os.makedirs(d, exist_ok=True)
             p = os.path.join(d, fname + suffix + ".mra")

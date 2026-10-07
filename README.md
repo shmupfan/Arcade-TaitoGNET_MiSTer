@@ -44,7 +44,7 @@ type, game configuration byte, zip name and test status, is in
 |---|---|---|---|
 | 1 | `releases/` | Ray Crisis (V2.03O and V2.03J), Chaos Heat (V2.09O), Psyvariar -Medium Unit- (V2.02O), Psyvariar -Revision-, XII Stag, Shikigami no Shiro, Night Raid | Tested: played on my MiSTer, except Ray Crisis (V2.03O) and XII Stag, which boot but I have not played yet |
 | 2 | `releases/_Taito G-NET batch 2 (boots)/` | Chaos Heat (V2.08J), Psyvariar -Medium Unit- (V2.04J), Shikigami no Shiro internal build, Flip Maze, Kollon (Type 1 card), Shanghai Shoryu Sairin, Soutenryu, Shanghai Sangokuhai Tougi, Otenki Kororin | Boot to their title or attract screen on my MiSTer; Psyvariar (V2.04J) and the Shikigami internal build not yet tried. Expect bugs |
-| 3 | `releases/_Taito G-NET batch 3 (untested)/` | Otenami Haiken, Zoku Otenamihaiken (both versions), Zooo, Space Invaders Anniversary, Otenami Haiken Final, Super Puzzle Bobble (both versions), Kollon (CompactFlash), Go By RC, RC De Go, Mahjong Oh, Usagi | New core features (no Zoom board, Type 2 and CompactFlash cards, mahjong and RC controls), not yet run on hardware. Expect bugs |
+| 3 | `releases/_Taito G-NET batch 3 (new features)/` | Otenami Haiken, Zoku Otenamihaiken (both versions), Zooo, Space Invaders Anniversary, Otenami Haiken Final, Super Puzzle Bobble (both versions), Kollon (CompactFlash), Go By RC, RC De Go, Mahjong Oh, Usagi | New core features (no Zoom board, Type 2 and CompactFlash cards, mahjong and RC controls). Each set booted on my MiSTer with this RBF on 2026-10-07 except Zoku Otenamihaiken (V2.05J), whose card I do not have; not played yet. Expect bugs |
 
 All of them use the `coh3002t` BIOS and the FC PCB. Not supported:
 Mawasunda, which runs on the ZN-1 G-NET board (`coh1002t`), and the 2011
@@ -208,6 +208,11 @@ OSD opens after the game has written to it.
 
 ## Known issues
 
+- **480i games on a CRT.** Flip Maze, Kollon and Otenami Haiken Final draw
+  480-line interlaced screens (512 or 640 by 480). On a 15 kHz CRT the
+  picture does not look right yet (fine detail shimmers), and the
+  Deinterlacing option is not offered in that mode. The 240-line games
+  are not affected. I am looking into it.
 - **Loading is slower than on the board.** The CPU spends about 9.6 of its
   cycles on each main RAM load where the real chip needs about 7, so
   CPU-bound work runs slow: Ray Crisis's "Prepares the start." bar takes
