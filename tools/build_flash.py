@@ -171,7 +171,8 @@ def build(card_path, zip_path):
     fv[0x50000:0x50000 + len(header)] = header
     fv[0x50000 + len(header):0x50000 + len(header) + 5] = b'\xff\xff\x00\x00\x00'
     tim = bytearray(fs.read('SYSTEM.TIM'))
-    tim[13], tim[14], tim[57] = 0x03, 0xfe, 0x03   # VRAM position set by the BIOS
+    tim[12:16] = b'\x00\x03\xfe\x00'                # VRAM position fields the BIOS writes
+    tim[56:60] = b'\x00\x03\x00\x00'                # (whole fields: otenamih and zooo differ otherwise)
     tim += bytes(-len(tim) % 0x100)                 # zero pad to a 256-byte page
     fv[0x54000:0x54000 + len(tim)] = tim
     game_padded = game + bytes(-len(game) % 0x10000)  # zero pad to the 64 KB erase block
