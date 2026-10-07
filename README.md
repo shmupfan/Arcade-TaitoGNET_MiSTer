@@ -361,4 +361,4 @@ keep their own licences and headers.
 - XelaNotPu's ZN-1 and ZN-2 cores informed my feasibility study and the
   area budget (measured fits); no code was taken from them.
 
-Development used Anthropic's Claude as a coding tool.
+Development used [Claude Code](https://claude.com/claude-code), Anthropic's AI coding tool.
