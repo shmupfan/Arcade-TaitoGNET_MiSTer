@@ -174,7 +174,7 @@ def make(chdman, roms, out, s, quick):
             z.write(img, s + ".img")
             z.writestr(s + ".meta", bytes(meta))
             if quick:
-                imgs, _ = build_flash.build(img, os.path.join(roms, "coh3002t.zip"))
+                imgs, _ = build_flash.build(img, os.path.join(roms, "coh3002t.zip"), cf=ctype == 3)
                 area = bytearray(b"\xff" * 0xA00000)
                 for name, off, size in (("firm", 0x000000, 0x200000), ("zoomprog", 0x200000, 0x80000),
                                         ("wave0", 0x400000, 0x200000), ("wave1", 0x600000, 0x200000),

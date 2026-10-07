@@ -12,11 +12,18 @@ What the BIOS does on first boot, as reconstructed from MAME 0.288 NVRAM
   - firm (U30) = flash.u30 from coh3002t.zip (sub-BIOS), byte-swapped, with
                  an install header at 0x50000, SYSTEM.TIM at 0x54000 (VRAM
                  position patched) and the gameprog file at 0x60000.
+  - CompactFlash cards (kollonc, otenamhf; --cf, or cf=True): the BIOS also
+    installs its v2 sub-BIOS in U30 0x00000-0x4FFFF, taken from the main BIOS
+    ROM f35-01_m27c800.bin: 0x2C000-0x2EFFF at 0x00000 and 0x30000-0x5FFFF at
+    0x10000, zeros elsewhere in that range (the header 0x00-0x43 is the same
+    as flash.u30's); install header bytes 1Fh-20h are 01 00, not FF FF.
+    Byte-equal to MAME 0.288 post-copy NVRAM for both sets. Without it the
+    stock sub-BIOS stops a CF game with SYSTEM ERROR on hardware.
 "Byte-swapped" means each 16-bit word is stored with its bytes exchanged
 relative to the file, which is how MAME's 16-bit flash NVRAM files hold
 them.
 
-  tools/build_flash.py <card.img> <coh3002t.zip> <outdir> [--check <nvramdir>]
+  tools/build_flash.py <card.img> <coh3002t.zip> <outdir> [--cf] [--check <nvramdir>]
 """
 import os
 import struct
@@ -140,7 +147,7 @@ def parse_inf(text):
     return inf
 
 
-def build(card_path, zip_path):
+def build(card_path, zip_path, cf=False):
     fs = Fat16(open(card_path, 'rb').read())
     inf = parse_inf(fs.read('SYSTEM.INF').decode('latin-1'))
     out = {}
@@ -177,14 +184,22 @@ def build(card_path, zip_path):
     fv[0x54000:0x54000 + len(tim)] = tim
     game_padded = game + bytes(-len(game) % 0x10000)  # zero pad to the 64 KB erase block
     fv[0x60000:0x60000 + len(game_padded)] = game_padded
+    if cf:
+        bios = zipfile.ZipFile(zip_path).read('f35-01_m27c800.bin')
+        fv[0x00000:0x50000] = bytes(0x50000)
+        fv[0x00000:0x03000] = bios[0x2c000:0x2f000]
+        fv[0x10000:0x40000] = bios[0x30000:0x60000]
+        fv[0x50000 + len(header):0x50000 + len(header) + 2] = b'\x01\x00'
     out['firm'] = swap16(bytes(fv))
     return out, inf
 
 
 def main():
     card, zp, outdir = sys.argv[1:4]
-    check = sys.argv[5] if len(sys.argv) > 5 and sys.argv[4] == '--check' else None
-    imgs, inf = build(card, zp)
+    rest = sys.argv[4:]
+    cf = '--cf' in rest
+    check = rest[rest.index('--check') + 1] if '--check' in rest else None
+    imgs, inf = build(card, zp, cf)
     os.makedirs(outdir, exist_ok=True)
     bad = 0
     for name, data in imgs.items():
