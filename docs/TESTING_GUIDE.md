@@ -6,8 +6,8 @@ my own MiSTer, and some timings are known to differ from the real board.
 Your reports decide what I fix next.
 
 Setup (the RBF, the MRAs and making the game zips from your own MAME
-files) is in the [README](../README.md#installation). Please don't share
-the game zips: they are made from your own files.
+files) is in the [install guide](INSTALL.md). Please don't share the game
+zips: they are made from your own files.
 
 ## What helps most
 
@@ -120,6 +120,8 @@ Screens that mean something went wrong (please photograph them):
 - **"CanNotFindProgramRom / ERROR B930"**: the core could not read the
   sub-BIOS flash.
 - **"SYSTEM ERROR"** after the logo: the BIOS found no usable card.
+  Check the setup first: a zip made by hand or by an older converter
+  gives this error ([install guide](INSTALL.md#if-something-goes-wrong)).
 - **The logo coming back** every few seconds: a reset loop. Turn on the
   Debug overlay and photograph the box.
 - A loading bar that stops moving for more than 30 s (main MRA) or

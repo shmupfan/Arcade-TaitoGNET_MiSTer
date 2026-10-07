@@ -20,6 +20,9 @@ release's RBF or test builds just before it. Some timings differ from the real b
 (see Known issues). I am publishing it to get test reports, especially
 from people who own a G-NET board.
 
+**To install, follow [docs/INSTALL.md](docs/INSTALL.md).** Each game needs
+a zip made with the converter: a zip made by hand does not work.
+
 ## Games
 
 Played: played on my MiSTer. Boots: reached its title, attract or
@@ -62,7 +65,7 @@ calibration screen on my MiSTer, not played. MRA: **main** is
 The main MRA of each game is MAME's parent set. Vertical games rotate for
 HDMI in the OSD. "No Zoom board" sets do not use the Taito Zoom sound
 board (MAME `init_nozoom`); their sound comes from the PlayStation SPU. The
-CompactFlash sets have no first boot MRA (see Installation). Zip names,
+CompactFlash sets have no first boot MRA ([docs/INSTALL.md](docs/INSTALL.md#5-play)). Zip names,
 card types and the game configuration byte of each set are in
 [releases/README.md](releases/README.md).
 
@@ -76,51 +79,10 @@ card types and the game configuration byte of each set are in
 
 ## Installation
 
-You need your own MAME 0.288 files. No BIOS, card, flash or game data is
-included in this repository.
-
-1. Copy `releases/Arcade-TaitoGNET_20261007.rbf` to
-   `/media/fat/_Arcade/cores/`.
-2. Copy the `.mra` files and the `_alternatives` folder from `releases/`
-   to `/media/fat/_Arcade/`, keeping the folder layout.
-3. Copy your `coh3002t.zip` (the G-NET BIOS set, MAME 0.288) to
-   `/media/fat/games/mame/`.
-4. Convert the game cards. MiSTer cannot read MAME's hard-disk CHD files,
-   so each card is converted once on a computer, with Python 3 and MAME's
-   `chdman`:
-
-   ```
-   python3 tools/gnet/gnet_tester_zips.py --roms <your MAME roms folder> --out <a new folder>
-   ```
-
-   The roms folder holds `coh3002t.zip` and each game's CHD in its MAME
-   folder, for example `shikigam/shikigam.chd`. On Windows use `python`
-   instead of `python3`. If `chdman` is not on your PATH, add
-   `--chdman <path to chdman.exe>`. The tool checks that `coh3002t.zip`
-   is the MAME 0.288 version and warns if a CHD does not match. It writes
-   one `gnet_<set>.zip` per game: card image, card data and the flash
-   chips as the BIOS leaves them after its first-boot copy. These zips are
-   made from your own files: keep them to yourself.
-5. Copy every `gnet_<set>.zip` to `/media/fat/games/mame/`.
-
-Zips made with an earlier version of the converter can fail on the Type 2
-and CompactFlash sets. Convert those sets again.
-
-### Which MRA to load
-
-- **`<Game>.mra`** (quick start) loads the flash chips as the BIOS leaves
-  them after its first-boot copy. The game starts in a few seconds. Use
-  this one.
-- **`_alternatives/_<Game>/<Game> (<version>).mra`** is the quick start
-  for another version of the game.
-- **`_alternatives/_<Game>/<Game> (<version>) (first boot).mra`** starts
-  like a real board after a card swap: the BIOS copies the card into the
-  flash chips (about 2.5 minutes), then the game starts. The flash is not
-  kept between loads, so the copy runs every time. Do not reset or power
-  off during it. The CompactFlash sets have no first boot MRA: on a
-  CompactFlash card the BIOS runs its v2 sub-BIOS, which a real board
-  installs from the BIOS EPROM, and the core has no EPROM. The converter
-  writes the v2 sub-BIOS into their quick start flash instead.
+Follow the step by step guide: **[docs/INSTALL.md](docs/INSTALL.md)**. Update All
+(shmupfan database) or a copy of `releases/` installs the core and MRAs. You add
+your MAME 0.288 `coh3002t.zip` and a `gnet_<set>.zip` per game, made with the
+converter from your CHDs, in `/media/fat/games/mame/`. No game data is included.
 
 ## Controls
 
