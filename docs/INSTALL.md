@@ -45,71 +45,62 @@ From the [releases](../releases/) folder of this repository:
 
 ## 2. Lay out your MAME files
 
-The converter reads your files the way MAME keeps them: one roms folder
-that holds `coh3002t.zip` and one folder per game, named after the MAME
-set. The CHD file goes inside that folder.
+Put `coh3002t.zip` and the game CHDs in one folder. The CHDs can sit
+directly in it or in subfolders, as MAME keeps them. The converter
+matches each CHD to its game by its SHA1 (a fingerprint of the file), so
+folder and file names do not matter.
 
 ```
 roms/
   coh3002t.zip            <- the BIOS set, still zipped
   raycris/
     raycris.chd
-  shikigam/
-    shikigam.chd
-  chaoshea/
-    chaosheat.chd         <- the CHD name is not always the set name
-  spuzboblj/
-    spuzbobj.chd
+  chaosheat.chd           <- a CHD outside a folder is found too
 ```
 
 Points to check:
 
-- The folder name is the set name (`raycris`), not the game title
-  (`Ray Crisis`).
 - Leave `coh3002t.zip` zipped. Do not add files to it.
-- If your CHDs are in a different folder from your zips, put a copy of
-  `coh3002t.zip` in the folder that holds the CHD folders, and use that
-  folder.
+- Use the MAME 0.288 CHDs listed below. A CHD from another version is
+  used only if it is in its MAME folder under its MAME name (for example
+  `chaoshea/chaosheat.chd`), and the converter warns about it.
 - You do not need every game. The converter skips the ones it does not
   find.
 
-Four CHDs have a name that differs from their set: `chaosheat.chd`,
-`chaosheatj.chd`, `spuzbobj.chd` and `shanghaito.chd` (shown in bold
-below). A clone's CHD can also sit in its parent's folder, as in a
-merged MAME set. The converter looks in both places.
+The games and their MAME CHD file names:
 
-| Game | Version | Set | CHD file | Or (clone in parent folder) |
-|---|---|---|---|---|
-| Chaos Heat | V2.09O | chaoshea | `chaoshea/`**`chaosheat.chd`** | |
-| Chaos Heat | V2.08J | chaosheaj | `chaosheaj/`**`chaosheatj.chd`** | `chaoshea/chaosheatj.chd` |
-| Flip Maze | V2.04J | flipmaze | `flipmaze/flipmaze.chd` | |
-| Go By RC | V2.03O | gobyrc | `gobyrc/gobyrc.chd` | |
-| Kollon | V2.04JA | kollon | `kollon/kollon.chd` | |
-| Kollon | V2.04JC | kollonc | `kollonc/kollonc.chd` | `kollon/kollonc.chd` |
-| Mahjong Oh | V2.06J | mahjngoh | `mahjngoh/mahjngoh.chd` | |
-| Night Raid | V2.03J | nightrai | `nightrai/nightrai.chd` | |
-| Otenami Haiken | V2.04J | otenamih | `otenamih/otenamih.chd` | |
-| Otenami Haiken Final | V2.07JC | otenamhf | `otenamhf/otenamhf.chd` | |
-| Otenki Kororin | V2.01J | otenki | `otenki/otenki.chd` | |
-| Psyvariar -Medium Unit- | V2.02O | psyvaria | `psyvaria/psyvaria.chd` | |
-| Psyvariar -Medium Unit- | V2.04J | psyvarij | `psyvarij/psyvarij.chd` | `psyvaria/psyvarij.chd` |
-| Psyvariar -Revision- | V2.04J | psyvarrv | `psyvarrv/psyvarrv.chd` | |
-| RC De Go | V2.03J | rcdego | `rcdego/rcdego.chd` | `gobyrc/rcdego.chd` |
-| Ray Crisis | V2.03O | raycris | `raycris/raycris.chd` | |
-| Ray Crisis | V2.03J | raycrisj | `raycrisj/raycrisj.chd` | `raycris/raycrisj.chd` |
-| Shanghai Sangokuhai Tougi | Ver 2.01J | shangtou | `shangtou/`**`shanghaito.chd`** | |
-| Shanghai Shoryu Sairin | V2.03J | shanghss | `shanghss/shanghss.chd` | |
-| Shikigami no Shiro | V2.03J | shikigam | `shikigam/shikigam.chd` | |
-| Shikigami no Shiro | V1.02J internal build | shikigama | `shikigama/shikigama.chd` | |
-| Soutenryu | V2.07J | soutenry | `soutenry/soutenry.chd` | |
-| Space Invaders Anniversary | V2.02J | sianniv | `sianniv/sianniv.chd` | |
-| Super Puzzle Bobble | V2.05O | spuzbobl | `spuzbobl/spuzbobl.chd` | |
-| Super Puzzle Bobble | V2.04J | spuzboblj | `spuzboblj/`**`spuzbobj.chd`** | `spuzbobl/spuzbobj.chd` |
-| Usagi | V2.02J | usagi | `usagi/usagi.chd` | |
-| XII Stag | V2.01J | xiistag | `xiistag/xiistag.chd` | |
-| Zoku Otenamihaiken | V2.05J | zokuoten | `zokuoten/zokuoten.chd` | |
-| Zoku Otenamihaiken | V2.03J | zokuotena | `zokuotena/zokuotena.chd` | `zokuoten/zokuotena.chd` |
-| Zooo | V2.01JA | zooo | `zooo/zooo.chd` | |
+| Game | Version | Set | CHD file |
+|---|---|---|---|
+| Chaos Heat | V2.09O | chaoshea | `chaosheat.chd` |
+| Chaos Heat | V2.08J | chaosheaj | `chaosheatj.chd` |
+| Flip Maze | V2.04J | flipmaze | `flipmaze.chd` |
+| Go By RC | V2.03O | gobyrc | `gobyrc.chd` |
+| Kollon | V2.04JA | kollon | `kollon.chd` |
+| Kollon | V2.04JC | kollonc | `kollonc.chd` |
+| Mahjong Oh | V2.06J | mahjngoh | `mahjngoh.chd` |
+| Night Raid | V2.03J | nightrai | `nightrai.chd` |
+| Otenami Haiken | V2.04J | otenamih | `otenamih.chd` |
+| Otenami Haiken Final | V2.07JC | otenamhf | `otenamhf.chd` |
+| Otenki Kororin | V2.01J | otenki | `otenki.chd` |
+| Psyvariar -Medium Unit- | V2.02O | psyvaria | `psyvaria.chd` |
+| Psyvariar -Medium Unit- | V2.04J | psyvarij | `psyvarij.chd` |
+| Psyvariar -Revision- | V2.04J | psyvarrv | `psyvarrv.chd` |
+| RC De Go | V2.03J | rcdego | `rcdego.chd` |
+| Ray Crisis | V2.03O | raycris | `raycris.chd` |
+| Ray Crisis | V2.03J | raycrisj | `raycrisj.chd` |
+| Shanghai Sangokuhai Tougi | Ver 2.01J | shangtou | `shanghaito.chd` |
+| Shanghai Shoryu Sairin | V2.03J | shanghss | `shanghss.chd` |
+| Shikigami no Shiro | V2.03J | shikigam | `shikigam.chd` |
+| Shikigami no Shiro | V1.02J internal build | shikigama | `shikigama.chd` |
+| Soutenryu | V2.07J | soutenry | `soutenry.chd` |
+| Space Invaders Anniversary | V2.02J | sianniv | `sianniv.chd` |
+| Super Puzzle Bobble | V2.05O | spuzbobl | `spuzbobl.chd` |
+| Super Puzzle Bobble | V2.04J | spuzboblj | `spuzbobj.chd` |
+| Usagi | V2.02J | usagi | `usagi.chd` |
+| XII Stag | V2.01J | xiistag | `xiistag.chd` |
+| Zoku Otenamihaiken | V2.05J | zokuoten | `zokuoten.chd` |
+| Zoku Otenamihaiken | V2.03J | zokuotena | `zokuotena.chd` |
+| Zooo | V2.01JA | zooo | `zooo.chd` |
 
 ## 3. Convert the game cards
 
@@ -255,9 +246,9 @@ The controls and OSD options are in the [README](../README.md#controls).
 | `error: unrecognized arguments` | A path with a space in it has no quotes | Put quotes around every path |
 | `error: ...coh3002t.zip not found` | `coh3002t.zip` is not in the `--roms` folder | Put it in that folder, still zipped |
 | `error: ...coh3002t.zip: ... missing or not the MAME 0.288 version` | The BIOS zip is from another MAME version, or was changed | Use an unchanged `coh3002t.zip` from a MAME 0.288 set |
-| `<set>: no CHD found, skipped` for a game you have | The CHD is not where the converter looks | Check the folder and file name in the table in step 2 |
+| `<set>: no CHD found, skipped` for a game you have | No CHD in the `--roms` folder is the MAME 0.288 file for that game | Check the CHD is inside the `--roms` folder and is the version in the table in step 2 |
 | `warning, CHD SHA1 ... is not MAME 0.288's ...; continuing` | The CHD is not the one MAME 0.288 uses: another dump, a set from another MAME version, or a damaged file | The zip is still written, but the game may not start. Use the CHD from a MAME 0.288 set |
-| `warning, this CHD is MAME 0.288's <other set> ..., not <set>` | The CHD in this folder belongs to another set | Move it to the right folder (step 2) |
+| `<set>: warning, ... has SHA1 ..., not MAME 0.288's ...` | The CHD in the game's MAME folder is another version | The zip is still written. If the game does not start, use the MAME 0.288 CHD |
 
 ### On the MiSTer
 

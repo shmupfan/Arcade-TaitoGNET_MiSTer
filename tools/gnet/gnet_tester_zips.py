@@ -9,12 +9,11 @@ to have it read the CHDs instead (the output is the same).
   python3 gnet_tester_zips.py --roms <your MAME roms folder> --out <output folder>
           [--sets raycris shikigam ...] [--chdman <path to chdman>] [--no-quick]
 
-The roms folder must hold the MAME 0.288 sets as MAME uses them:
+The roms folder must hold the MAME 0.288 files:
   coh3002t.zip                (the G-NET BIOS set)
-  <set>/<chd>.chd             (the game's card image, e.g. shikigam/shikigam.chd;
-                               some CHDs are named differently from their set,
-                               e.g. chaoshea/chaosheat.chd, and a clone's CHD may
-                               be in its parent's folder)
+  the games' CHD files        (anywhere in the folder or its subfolders; each
+                               CHD is matched to its game by its SHA1, so
+                               folder and file names do not matter)
 
 Every MAME 0.288 G-NET set on a Taito card is known: Taito Type 1 and Type 2
 PC cards and the Taito CompactFlash card (MAME taitopccard1, taitopccard2,
@@ -164,32 +163,53 @@ class PyCard:
             fail(f"{self.path}: {e}")
 
 
-def find_chd(roms, s):
+def header_sha1(path):
+    """the SHA1 in a CHD v5 header (MAME 0.288 CHDs are v5), or None"""
+    try:
+        with open(path, "rb") as f:
+            h = f.read(124)
+    except OSError:
+        return None
+    if len(h) < 124 or h[:8] != b"MComprHD" or int.from_bytes(h[12:16], "big") != 5:
+        return None
+    return h[84:104].hex()
+
+
+def index_chds(roms):
+    """SHA1 -> path for every .chd under the roms folder, so folder and file names do not matter"""
+    found = {}
+    for d, _, files in os.walk(roms):
+        for n in sorted(files):
+            if n.lower().endswith(".chd"):
+                p = os.path.join(d, n)
+                found.setdefault(header_sha1(p), p)
+    found.pop(None, None)
+    return found
+
+
+def find_chd(roms, chds, s):
     title, name, sha1, ctype, parent = SETS[s]
-    for d in (s, parent):
+    if sha1 in chds:
+        return chds[sha1]
+    known = {v[2] for v in SETS.values()}
+    for d in (s, parent):             # MAME's place for it, with a CHD of another version
         if d:
             p = os.path.join(roms, d, name + ".chd")
-            if os.path.exists(p):
+            if os.path.exists(p) and header_sha1(p) not in known:
                 return p
     return None
 
 
-def make(chdman, roms, out, s, quick):
+def make(chdman, roms, chds, out, s, quick):
     title, _, sha1, ctype, _ = SETS[s]
-    chd_path = find_chd(roms, s)
+    chd_path = find_chd(roms, chds, s)
     if not chd_path:
         print(f"  {s}: no CHD found, skipped")
         return False
     card = ChdmanCard(chdman, chd_path) if chdman else PyCard(chd_path)
     got, card_bytes = card.sha1, card.logical_bytes
     if got != sha1:
-        other = [k for k, v in SETS.items() if v[2] == got]
-        if other:
-            ctype = SETS[other[0]][3]
-            print(f"  {s}: warning, this CHD is MAME 0.288's {other[0]} (SHA1 {got}), not {s}; "
-                  f"using its card type ({CARD_TYPE_NAME[ctype]})")
-        else:
-            print(f"  {s}: warning, CHD SHA1 {got} is not MAME 0.288's {sha1}; continuing")
+        print(f"  {s}: warning, {chd_path} has SHA1 {got}, not MAME 0.288's {sha1}; continuing")
     if not card_bytes or card_bytes > CARD_MAX or card_bytes % 512:
         fail(f"{s}: card size {card_bytes} bytes is not a whole number of sectors up to {CARD_MAX}")
     with tempfile.TemporaryDirectory() as t:
@@ -250,7 +270,8 @@ def main():
             fail(f"unknown set {s}; known: {', '.join(SETS)}")
     check_bios(os.path.join(a.roms, "coh3002t.zip"))
     print("coh3002t.zip OK")
-    made = sum(make(chdman, a.roms, a.out, s, not a.no_quick) for s in a.sets)
+    chds = index_chds(a.roms)
+    made = sum(make(chdman, a.roms, chds, a.out, s, not a.no_quick) for s in a.sets)
     print(f"{made} game zip(s) written to {a.out}")
     print("Copy them and coh3002t.zip to /media/fat/games/mame/ on the MiSTer SD card.")
 
