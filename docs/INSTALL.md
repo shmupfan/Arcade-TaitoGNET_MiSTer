@@ -6,7 +6,8 @@ skipping step 3 or doing it by hand.
 
 No BIOS, card or game data comes with the core. You make the game files
 yourself, from your own MAME files, with a converter that runs on your
-computer: a web page you open in your browser, or a Python script.
+computer: a web page at <https://gnet-converter.pages.dev>, or a Python
+script.
 
 ## What you need
 
@@ -110,14 +111,11 @@ same files.
 
 ### In your browser
 
-1. Open [tools/gnet_converter.html](../tools/gnet_converter.html) on
-   GitHub and click **Download raw file** (the download icon above the
-   file).
-2. Open the downloaded file in Chrome, Firefox or Safari. It runs on your
-   computer: nothing is uploaded.
-3. Choose `coh3002t.zip`, then your CHD files or the folder that holds
+1. Open <https://gnet-converter.pages.dev> in Chrome, Firefox or Safari.
+   The conversion runs on your computer: your files are not uploaded.
+2. Choose `coh3002t.zip`, then your CHD files or the folder that holds
    them.
-4. Click **Convert** and keep the tab in view. Save each zip, or use
+3. Click **Convert** and keep the tab in view. Save each zip, or use
    **Download all as one zip** and unzip it.
 
 Then go to step 4.

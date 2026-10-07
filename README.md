@@ -81,8 +81,9 @@ card types and the game configuration byte of each set are in
 
 Follow the step by step guide: **[docs/INSTALL.md](docs/INSTALL.md)**. Update All
 (shmupfan database) or a copy of `releases/` installs the core and MRAs. You add
-your MAME 0.288 `coh3002t.zip` and a `gnet_<set>.zip` per game, made with the
-converter from your CHDs, in `/media/fat/games/mame/`. No game data is included.
+your MAME 0.288 `coh3002t.zip` and a `gnet_<set>.zip` per game, made from your
+CHDs with the converter at **<https://gnet-converter.pages.dev>** (it runs in your
+browser and uploads nothing), in `/media/fat/games/mame/`. No game data is included.
 
 ## Controls
 
