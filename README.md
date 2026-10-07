@@ -188,6 +188,14 @@ NVRAM when the OSD opens after the game has written to it.
   the EEPROM save across a power cycle; rotation and Flip Screen on every
   display.
 
+## Roadmap
+
+- **Load MAME CHDs directly.** A pull request to
+  [Main_MiSTer](https://github.com/MiSTer-devel/Main_MiSTer) so an MRA can
+  load a game's CHD as it is, with no conversion step. Until then, CHDs
+  need the one-off conversion in [Installation](#installation).
+- Fixes for the [open issues](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues).
+
 ## Accuracy
 
 [docs/ACCURACY.md](docs/ACCURACY.md) has the evidence for each subsystem
