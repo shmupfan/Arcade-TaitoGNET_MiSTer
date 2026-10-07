@@ -84,25 +84,28 @@ psyvarij and shikigama are in batch 2 because they are versions of batch
 
 ### Batch 3: `releases/_Taito G-NET batch 3 (untested)/`
 
-These use core features no hardware test has covered yet: the no Zoom
-board setting, Type 2 and CompactFlash cards, and the mahjong and RC
-controls.
+These use the core features added for this release: the no Zoom board
+setting, Type 2 and CompactFlash cards, and the mahjong and RC controls.
+On 2026-10-07 I boot-tested each set on my MiSTer with this release's RBF
+(quick start MRAs, about 80 seconds each, not played). Both CompactFlash
+sets stop at SYSTEM ERROR on hardware although they boot in full-system
+simulation; I am investigating.
 
 | Game | Set | Zip | Card | Config | Status | New feature |
 |---|---|---|---|---|---|---|
-| Otenami Haiken (V2.04J 1999/02/01) | otenamih | `gnet_otenamih.zip` | Type 1 | 02 | untested | no Zoom board |
-| Zooo (V2.01JA 2004/04/13) | zooo | `gnet_zooo.zip` | Type 1 | 02 | untested | no Zoom board |
-| Space Invaders Anniversary (V2.02J 2003/09/12) | sianniv | `gnet_sianniv.zip` | Type 1 | 03 | untested | no Zoom board |
-| Zoku Otenamihaiken (V2.03J 2001/02/16) | zokuotena | `gnet_zokuotena.zip` | Type 1 | 02 | untested | no Zoom board |
-| Zoku Otenamihaiken (V2.05J 2003/05/12) | zokuoten | `gnet_zokuoten.zip` | Type 2 | 02 | untested | Type 2 card, no Zoom board |
-| Super Puzzle Bobble (V2.05O 1999/2/24) | spuzbobl | `gnet_spuzbobl.zip` | Type 2 | 00 | untested | Type 2 card |
-| Super Puzzle Bobble (V2.04J 1999/2/17) | spuzboblj | `gnet_spuzboblj.zip` | Type 2 | 00 | untested | Type 2 card |
-| Kollon (V2.04JC 2003/11/01) | kollonc | `gnet_kollonc.zip` | CompactFlash | 00 | untested | CompactFlash card |
-| Otenami Haiken Final (V2.07JC 2005/04/20) | otenamhf | `gnet_otenamhf.zip` | CompactFlash | 02 | untested | CompactFlash card, no Zoom board |
-| Go By RC (V2.03O 1999/05/25) | gobyrc | `gnet_gobyrc.zip` | Type 2 | 0C | untested | Type 2 card, RC wheel and trigger |
-| RC De Go (V2.03J 1999/05/22) | rcdego | `gnet_rcdego.zip` | Type 1 | 0C | untested | RC wheel and trigger |
-| Mahjong Oh (V2.06J 1999/11/23) | mahjngoh | `gnet_mahjngoh.zip` | Type 1 | 04 | untested | mahjong panel and P1 stick |
-| Usagi (V2.02J 2001/10/02) | usagi | `gnet_usagi.zip` | Type 2 | 08 | untested | Type 2 card, mahjong panel |
+| Otenami Haiken (V2.04J 1999/02/01) | otenamih | `gnet_otenamih.zip` | Type 1 | 02 | boots (title, attract) | no Zoom board |
+| Zooo (V2.01JA 2004/04/13) | zooo | `gnet_zooo.zip` | Type 1 | 02 | boots (title, attract) | no Zoom board |
+| Space Invaders Anniversary (V2.02J 2003/09/12) | sianniv | `gnet_sianniv.zip` | Type 1 | 03 | boots (attract) | no Zoom board |
+| Zoku Otenamihaiken (V2.03J 2001/02/16) | zokuotena | `gnet_zokuotena.zip` | Type 1 | 02 | boots (title, attract) | no Zoom board |
+| Zoku Otenamihaiken (V2.05J 2003/05/12) | zokuoten | `gnet_zokuoten.zip` | Type 2 | 02 | untested (V2.05J card not available) | Type 2 card, no Zoom board |
+| Super Puzzle Bobble (V2.05O 1999/2/24) | spuzbobl | `gnet_spuzbobl.zip` | Type 2 | 00 | boots (attract) | Type 2 card |
+| Super Puzzle Bobble (V2.04J 1999/2/17) | spuzboblj | `gnet_spuzboblj.zip` | Type 2 | 00 | boots (attract) | Type 2 card |
+| Kollon (V2.04JC 2003/11/01) | kollonc | `gnet_kollonc.zip` | CompactFlash | 00 | fails: SYSTEM ERROR | CompactFlash card |
+| Otenami Haiken Final (V2.07JC 2005/04/20) | otenamhf | `gnet_otenamhf.zip` | CompactFlash | 02 | fails: SYSTEM ERROR | CompactFlash card, no Zoom board |
+| Go By RC (V2.03O 1999/05/25) | gobyrc | `gnet_gobyrc.zip` | Type 2 | 0C | boots (calibration screen) | Type 2 card, RC wheel and trigger |
+| RC De Go (V2.03J 1999/05/22) | rcdego | `gnet_rcdego.zip` | Type 1 | 0C | boots (calibration screen) | RC wheel and trigger |
+| Mahjong Oh (V2.06J 1999/11/23) | mahjngoh | `gnet_mahjngoh.zip` | Type 1 | 04 | boots (attract) | mahjong panel and P1 stick |
+| Usagi (V2.02J 2001/10/02) | usagi | `gnet_usagi.zip` | Type 2 | 08 | boots (attract) | Type 2 card, mahjong panel |
 
 Not included: Mawasunda (it runs on the ZN-1 G-NET board, `coh1002t`) and
 the 2011 conversions (G-Darius, Ray Storm, Aero Fighters Special, Brave
