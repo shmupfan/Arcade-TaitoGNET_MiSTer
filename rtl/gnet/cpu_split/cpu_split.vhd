@@ -22,8 +22,9 @@
 --              clk1x / clk2x / clk3x
 -- Not crossed here: quasi-static configuration from PSX.sv (false paths in
 -- the revision SDC) and everything that only exists with HAS_CD, HAS_PADS,
--- HAS_CHEATS, HAS_MDEC or HAS_SAVESTATES = 1 (psx_top rejects those with
--- CPU_CLK_SPLIT = 1).
+-- HAS_CHEATS or HAS_SAVESTATES = 1 (psx_top rejects those with
+-- CPU_CLK_SPLIT = 1). The MDEC (HAS_MDEC = 1) runs in the CPU group and
+-- needs no crossing.
 
 library ieee;
 use ieee.std_logic_1164.all;

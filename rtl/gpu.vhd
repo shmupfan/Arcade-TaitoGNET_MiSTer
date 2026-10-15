@@ -9,7 +9,24 @@ use work.pGPU.all;
 entity gpu is
    generic
    (
-      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      VRAM_Y_BITS          : integer := 9;  -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      RECT_FLIP            : integer := 0;  -- 1 = textured rectangle X/Y flip, E1 bits 12/13 (gpu_rect.vhd); 0 = upstream PS1
+      -- G-NET (docs/gpu_read_infl.md): 1 = upstream, one VRAM transaction at a
+      -- time. 2 or more: pixel writes waiting in the output FIFO go to VRAM
+      -- while a single-burst read waits for its data (the read was accepted
+      -- first and the port answers in order, so it returns the same data as
+      -- with 1)
+      GPU_READ_INFL        : integer := 1;
+      -- G-NET: texture cache fill per miss, 1 (upstream) or 4 qwords
+      -- (gpu_pixelpipeline TEX_FETCH_QW)
+      TEX_FETCH_QW         : integer := 1;
+      -- G-NET: with TEX_FETCH_QW = 4, 2 or 4 = also the next 1 or 3 texture
+      -- rows' groups (gpu_pixelpipeline TEX_FETCH_ROWS); those reads go out
+      -- while the first is in flight when GPU_READ_INFL >= TEX_FETCH_ROWS
+      TEX_FETCH_ROWS       : integer := 1;
+      -- G-NET: clk2x cycles added to each texture cache fill
+      -- (gpu_pixelpipeline TEX_MISS_DELAY), 0 = upstream
+      TEX_MISS_DELAY       : integer := 0
    );
    port 
    (
@@ -402,6 +419,12 @@ architecture arch of gpu is
    signal fifoOut_NearFull          : std_logic;
    signal fifoOut_Dout              : std_logic_vector(F_SRC downto 0);
    signal fifoOut_Rd                : std_logic;
+   signal postWrite              : std_logic;
+   signal pipeline_reqVRAMRows   : unsigned(1 downto 0);
+   signal read2pend              : std_logic := '0';   -- further texture row reads still to issue
+   signal read2left              : unsigned(1 downto 0) := "00";
+   signal read2Y                 : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
+   signal read2X                 : unsigned(7 downto 0) := (others => '0');
    signal fifoOut_Empty             : std_logic;
    signal fifoOut_idle              : std_logic;
    
@@ -1239,7 +1262,7 @@ begin
    );
    
    igpu_rect : entity work.gpu_rect
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP)
    port map
    (
       clk2x                => clk2x,  
@@ -1248,6 +1271,9 @@ begin
       reset                => softreset or SS_reset,     
       
       REPRODUCIBLEGPUTIMING=> REPRODUCIBLEGPUTIMING,
+      
+      flipX                => drawMode(12),
+      flipY                => drawMode(13),
       
       error                => errorRECT,
       
@@ -1401,7 +1427,8 @@ begin
    pipeline_textPalY    <= rect_textPalY   or poly_textPalY  ;
    
    igpu_pixelpipeline : entity work.gpu_pixelpipeline
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS, TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS,
+                 TEX_MISS_DELAY => TEX_MISS_DELAY)
    port map
    (
       clk2x                => clk2x,     
@@ -1444,6 +1471,7 @@ begin
       pipeline_vAcc        => pipeline_vAcc,      
       
       requestVRAMEnable    => pipeline_reqVRAMEnable,
+      requestVRAMRows      => pipeline_reqVRAMRows,
       requestVRAMXPos      => pipeline_reqVRAMXPos,  
       requestVRAMYPos      => pipeline_reqVRAMYPos,  
       requestVRAMSize      => pipeline_reqVRAMSize,  
@@ -1614,7 +1642,14 @@ begin
       end if;
    end process;
    
-   fifoOut_Rd <= '1' when (ce = '1' and vramState = IDLE and (vram_WE = '0' or vram_BUSY = '0') and fifoOut_Empty = '0' and reqVRAMEnable = '0' and vram_pause = '0') else '0';
+   -- GPU_READ_INFL > 1: a pixel write may leave the FIFO while a read waits
+   -- for its data (READVRAM, its command already accepted, one burst only)
+   postWrite <= '1' when (GPU_READ_INFL > 1 and ce = '1' and vramState = READVRAM and vram_RD = '0' and
+                          (vram_WE = '0' or vram_BUSY = '0') and fifoOut_Empty = '0' and vram_pause = '0' and
+                          render24 = '0' and interlaced480pHack = '0' and reqVRAMtwice = '0' and
+                          reqVRAMnext = 0 and reqVRAMwrap = 0 and read2pend = '0') else '0';
+
+   fifoOut_Rd <= '1' when (ce = '1' and vramState = IDLE and (vram_WE = '0' or vram_BUSY = '0') and fifoOut_Empty = '0' and reqVRAMEnable = '0' and vram_pause = '0') or postWrite = '1' else '0';
    
    fifoOut_idle <= '1' when (fifoOut_Empty = '1' and fifoOut_Wr = '0' and fifoOut_Wr_1 = '0' and pixel64filled = '0') else '0';
    
@@ -1716,6 +1751,18 @@ begin
                            reqVRAMremain2 <= reqVRAMSizeRounded(9 downto 2) - 1;
                            reqVRAMnext    <= (others => '0');
                         end if;
+                        -- G-NET 2-row texture fill: the next row's group is
+                        -- read right behind this one; the beats of both are
+                        -- counted as one request
+                        read2pend <= '0';
+                        if (GPU_READ_INFL >= TEX_FETCH_ROWS and TEX_FETCH_ROWS > 1 and pipeline_reqVRAMEnable = '1' and pipeline_reqVRAMRows /= "00") then
+                           read2pend     <= '1';
+                           read2left     <= pipeline_reqVRAMRows;
+                           read2Y        <= reqVRAMYPos + 1;
+                           read2X        <= reqVRAMXPos(9 downto 2);
+                           -- beats of all rows: 4 per row
+                           reqVRAMremain <= resize((resize(pipeline_reqVRAMRows, 4) + 1) & "00", 8) - 1;
+                        end if;
                         reqVRAMwrap <= (others => '0');
                         if (vram2vram_reqVRAMEnable = '1' or vram2cpu_reqVRAMEnable = '1') then
                            if (reqVRAMXPos + reqVRAMSizeRounded > 1024) then
@@ -1767,6 +1814,21 @@ begin
                   end if;
                   
                when READVRAM =>
+                  if (read2pend = '1' and vram_RD = '0' and (vram_WE = '0' or vram_BUSY = '0')) then
+                     vram_RD   <= '1';
+                     vram_ADDR <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & std_logic_vector(read2Y) & std_logic_vector(read2X) & "000";
+                     read2Y    <= read2Y + 1;
+                     read2left <= read2left - 1;
+                     if (read2left = 1) then read2pend <= '0'; end if;
+                  end if;
+                  if (postWrite = '1') then
+                     vram_WE         <= '1';
+                     vram_ADDR       <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & fifoOut_Dout(F_ADDR_HI downto 64) & "000";
+                     vram_BE         <= fifoOut_Dout(F_BE_LO + 3) & fifoOut_Dout(F_BE_LO + 3) & fifoOut_Dout(F_BE_LO + 2) & fifoOut_Dout(F_BE_LO + 2) & fifoOut_Dout(F_BE_LO + 1) & fifoOut_Dout(F_BE_LO + 1) & fifoOut_Dout(F_BE_LO) & fifoOut_Dout(F_BE_LO);
+                     vram_DIN        <= fifoOut_Dout(63 downto 0);
+                     vram_BURSTCNT   <= x"01";
+                     frameVramType   <= fifoOut_Dout(F_SRC);
+                  end if;
                   if (vram_DOUT_READY = '1') then
                      reqVRAMaddr <= reqVRAMaddr + 1;
                      if (reqVRAMremain > 0) then

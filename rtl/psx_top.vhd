@@ -18,14 +18,20 @@ entity psx_top is
       HAS_CHEATS            : integer := 1;
       HAS_MDEC              : integer := 1;
       VRAM_Y_BITS           : integer := 9;   -- 9 = PS1 1 MB VRAM, 10 = ZN-2 2 MB (gpu.vhd)
+      RECT_FLIP             : integer := 0;   -- 1 = textured rectangle X/Y flip, E1 bits 12/13 (ZN-2 CXD8654Q, gpu_rect.vhd); 0 = upstream
       GTE_NARROW_MUL        : integer := 0;   -- 1, 2 = 18x18 GTE multipliers plus shifts (gte_mac123.vhd); 3 = GTE at 100 MHz (gte.vhd)
+      -- GPU VRAM read latency options (gpu.vhd, docs/gpu_read_infl.md), 1 = upstream
+      GPU_READ_INFL         : integer := 1;
+      TEX_FETCH_QW          : integer := 1;
+      TEX_FETCH_ROWS        : integer := 1;
+      TEX_MISS_DELAY        : integer := 0;   -- clk2x cycles added to each texture cache fill, 0 = upstream
       CLK_FAST_RATIO        : integer := 3;   -- clk3x edges per clk1x cycle: 3 = upstream, 2 = CPU domain at 2:1 (clk3xIndex, sdram.sv)
       -- R1 (docs/r1_cpu_domain_design.md): 0 = upstream clocking, every block on
       -- clk1x/clk2x/clk3x. 1 = CPU group (cpu, gte, memorymux, memctrl, dma,
       -- irq, timer, sio, exp2) on clk_cpu/clk_cpu2x/clk_cpu3x, crossings to the
       -- GPU, SPU and reset sequencer in rtl/gnet/cpu_split (needs the G-NET
-      -- trims HAS_CD, HAS_PADS, HAS_SAVESTATES, HAS_CHEATS, HAS_MDEC = 0 and
-      -- CLK_FAST_RATIO = 2)
+      -- trims HAS_CD, HAS_PADS, HAS_SAVESTATES, HAS_CHEATS = 0 and
+      -- CLK_FAST_RATIO = 2; HAS_MDEC may be 1, the MDEC is in the CPU group)
       CPU_CLK_SPLIT         : integer := 0;
       -- G-NET: 1 = ZN-2 board and G-NET FC PCB (rtl/gnet/zn2_board.vhd) on
       -- the expansion bus and SIO0, card image client on DDR3; needs
@@ -40,7 +46,14 @@ entity psx_top is
       -- and CPU_CLK_SPLIT = 1. docs/zoom_board_design.md 14
       ZOOM_BOARD            : integer := 0;
       ZOOM_INFL             : integer := 4;   -- ZSG-2 wave reads outstanding: 4, or 8 behind the DDR3 arbiter
-      ZN2_READ_OVERLAP      : integer := 0    -- memorymux: 1 = a ZN-2 read step's request overlaps its read delay (docs/r1_cpu_domain_design.md)
+      ZN2_READ_OVERLAP      : integer := 0;   -- memorymux: 1 = a ZN-2 read step's request overlaps its read delay (docs/r1_cpu_domain_design.md)
+      -- R1 main RAM load timing, CLK_FAST_RATIO = 2 only (docs/r1_cpu_domain_design.md,
+      -- "Main RAM load timing at 2:1"). RAM_READ_NOWAIT 1: memorymux skips
+      -- WAITFORRAMREAD for main RAM data reads, and the CPU's back-to-back
+      -- compensation cycle is skipped for RAM-RAM pairs (cpu B2B_RAM_COMP 0).
+      -- RAM_LOAD_WINDOW: memorymux's back-to-back read window (7 = upstream).
+      RAM_READ_NOWAIT       : integer := 0;
+      RAM_LOAD_WINDOW       : integer := 7
    );
    port 
    (
@@ -1745,7 +1758,8 @@ begin
    cdslowEna <= cdSlow and cdslowOn;
 
    igpu : entity work.gpu
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP, GPU_READ_INFL => GPU_READ_INFL,
+                TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS, TEX_MISS_DELAY => TEX_MISS_DELAY)
    port map
    (
       clk1x                => clk1x,
@@ -1884,14 +1898,20 @@ begin
       SS_Idle              => SS_Idle_gpu_p
    );
    
+   -- MDEC in the CPU group (clk_cpu, clk_cpu2x, as the GTE): its only
+   -- partners are memorymux (bus_mdec_*) and the DMA (channels 0 and 1), both
+   -- on clk_cpu, so CPU_CLK_SPLIT = 1 needs no crossing. With
+   -- CPU_CLK_SPLIT = 0 these are the upstream clk1x, clk2x and clk2xIndex.
+   -- sianniv plays MDEC stills and movies (libpress) from the coin onwards
+   -- (issue #1).
    gmdec : if HAS_MDEC = 1 generate
    begin
    imdec : entity work.mdec
    port map
    (
-      clk1x                => clk1x,     
-      clk2x                => clk2x,    
-      clk2xIndex           => clk2xIndex,
+      clk1x                => clk_cpu,     
+      clk2x                => clk_cpu2x,    
+      clk2xIndex           => clk2xIndex_c,
       ce                   => ce,        
       reset                => reset_intern,     
       
@@ -2018,11 +2038,19 @@ begin
       bus_dataRead         => bus_exp2_dataRead
    );
 
+   -- R1 main RAM load timing options are calibrated for 2:1 only
+   assert RAM_READ_NOWAIT = 0 or (RAM_READ_NOWAIT = 1 and CLK_FAST_RATIO = 2)
+      report "psx_top: RAM_READ_NOWAIT must be 0, or 1 with CLK_FAST_RATIO = 2" severity failure;
+   assert RAM_LOAD_WINDOW = 7 or (RAM_LOAD_WINDOW >= 1 and RAM_LOAD_WINDOW <= 15 and CLK_FAST_RATIO = 2)
+      report "psx_top: RAM_LOAD_WINDOW must be 7, or 1 to 15 with CLK_FAST_RATIO = 2" severity failure;
+
    imemorymux : entity work.memorymux
    generic map
    (
       ZN2_MAP              => ZN2_BOARD,
-      ZN2_READ_OVERLAP     => ZN2_READ_OVERLAP
+      ZN2_READ_OVERLAP     => ZN2_READ_OVERLAP,
+      RAM_READ_NOWAIT      => RAM_READ_NOWAIT,
+      RAM_LOAD_WINDOW      => RAM_LOAD_WINDOW
    )
    port map
    (
@@ -2187,6 +2215,10 @@ begin
    );
    
    icpu : entity work.cpu
+   generic map
+   (
+      B2B_RAM_COMP      => 1 - RAM_READ_NOWAIT
+   )
    port map
    (
       clk1x             => clk_cpu,
@@ -2748,8 +2780,8 @@ begin
       end component;
       signal c_SS_wren     : std_logic_vector(16 downto 0);
    begin
-      assert HAS_CD = 0 and HAS_PADS = 0 and HAS_SAVESTATES = 0 and HAS_CHEATS = 0 and HAS_MDEC = 0
-         report "psx_top: CPU_CLK_SPLIT = 1 needs HAS_CD, HAS_PADS, HAS_SAVESTATES, HAS_CHEATS and HAS_MDEC = 0" severity failure;
+      assert HAS_CD = 0 and HAS_PADS = 0 and HAS_SAVESTATES = 0 and HAS_CHEATS = 0
+         report "psx_top: CPU_CLK_SPLIT = 1 needs HAS_CD, HAS_PADS, HAS_SAVESTATES and HAS_CHEATS = 0" severity failure;
       assert CLK_FAST_RATIO = 2
          report "psx_top: CPU_CLK_SPLIT = 1 needs CLK_FAST_RATIO = 2 (SDRAM at 2x the CPU clock)" severity failure;
 

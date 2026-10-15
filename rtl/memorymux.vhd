@@ -17,7 +17,18 @@ entity memorymux is
       -- read step waits its programmed read delay and then issues its zn
       -- request (today). 1 = the step issues its zn request when the read
       -- delay starts and ends at the later of the delay's end and zn_ack.
-      ZN2_READ_OVERLAP     : integer := 0
+      ZN2_READ_OVERLAP     : integer := 0;
+      -- R1 main RAM load timing at CLK_FAST_RATIO = 2 (docs/r1_cpu_domain_design.md,
+      -- "Main RAM load timing at 2:1"; psx_top allows both only at 2:1).
+      -- RAM_READ_NOWAIT: 0 = upstream: a main RAM data read outside the
+      -- back-to-back window waits one cycle in WAITFORRAMREAD. 1 = every main
+      -- RAM data read takes the window's bypass branch (no WAITFORRAMREAD).
+      -- Instruction fetches are unchanged.
+      RAM_READ_NOWAIT      : integer := 0;
+      -- RAM_LOAD_WINDOW: start value of ram_load_last, the back-to-back read
+      -- window in CPU cycles from a main RAM data read's request. 7 = upstream
+      -- (sized for the 3:1 read length).
+      RAM_LOAD_WINDOW      : integer := 7
    );
    port
    (
@@ -241,7 +252,7 @@ architecture arch of memorymux is
    signal bios_page_open         : std_logic;
    signal ram_page_open          : std_logic;
    signal ram_page_addr          : unsigned(10 downto 0);
-   signal ram_load_last          : integer range 0 to 7 := 0;
+   signal ram_load_last          : integer range 0 to RAM_LOAD_WINDOW := 0;
    
    signal waitcnt                : integer range 0 to 127;
          
@@ -665,8 +676,8 @@ begin
                            ram_Adr         <= "00" & std_logic_vector(mem_addressData(22 downto 2)) & "00";
                            ram_rotate_bits <= std_logic_vector(mem_addressData(1 downto 0));
                            if (mem_rnw = '1') then
-                              ram_load_last <= 7;
-                              if (TURBO = '1' or ram_load_last > 0) then
+                              ram_load_last <= RAM_LOAD_WINDOW;
+                              if (TURBO = '1' or ram_load_last > 0 or RAM_READ_NOWAIT /= 0) then
                                  state   <= IDLE;
                                  ram_ena <= '1';
                                  readram <= '1';

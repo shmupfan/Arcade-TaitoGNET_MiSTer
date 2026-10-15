@@ -1893,9 +1893,14 @@ Findings:
    main RAM load as 7 CPU cycles (plus occasional refresh stalls), scratchpad
    1, on-die I/O 5, BIOS ROM 27 to 33. PSX_MiSTer at 33.87 MHz matches the 7
    (7.6 above). For the ZN-2 the question is whether the CXD8661R's DRAM
-   interface keeps that count in its own cycles at 50 MHz. The board's RAM
-   is LC321664AM-80, fast page mode, 80 ns (docs/board_evidence.md P4), which
-   allows a 7-cycle (140 ns) random read at 50 MHz. The PCB's bar time
+   interface keeps that count in its own cycles at 50 MHz. The board's main
+   RAM is 2 x KM416V1204BT-L5, 1M x 16 EDO, 50 ns (MAME 0.288 taitogn.cpp
+   L57 and L77, docs/hardware_inventory.md). Corrected 2026-10-14: this
+   paragraph first named the LC321664AM-80, which is the Zoom board's DSP
+   delay RAM. Samsung's full timing table was not found; an equivalent 50 ns
+   EDO part (ISSI IS41LV16100C-50) gives tRAC 50 ns and tRC 85 ns, so a
+   7-cycle (140 ns) random read at 50 MHz is well within the RAM; even 5
+   cycles would be. The PCB's bar time
    points the same way: holding this window's mix fixed and solving for the
    load cost that turns 16.9 s into the PCB's 14.69 s gives about 7.7
    cycles per load, close to 7 plus refresh. So the core probably spends
@@ -1976,8 +1981,11 @@ sdram.sv, so this change cannot affect them; I did not rerun them.
 
 Bar estimate from the 6.0 s window mix (174,468 RAM loads in 2,500,000
 cycles, my estimate): with 1 cycle saved per RAM load the window takes
-2,326,000 cycles, so the bar would take about 15.7 s (from 16.9); with the
-back-to-back case (2 cycles) dominating it would be about 15.0 s. The PCB's
+2,326,000 cycles, so the bar would take about 15.7 s (from 16.9). An
+earlier figure of about 15.0 s for the back-to-back case does not hold: the
+mem_lat bench's back-to-back rows request one cycle after done, the CPU two,
+and by then the ram_load_last window has expired at 2:1 (code read,
+2026-10-14). The PCB's
 14.69 s is still lower: option B alone does not reach it.
 
 ### Option A on paper: SDRAM at 150 MHz (3:1 to the 50 MHz CPU)

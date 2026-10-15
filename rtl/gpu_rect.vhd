@@ -7,7 +7,12 @@ library mem;
 entity gpu_rect is
    generic
    (
-      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      VRAM_Y_BITS          : integer := 9;  -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      -- 1 = textured rectangle X/Y flip from E1 bits 12/13 (flipX/flipY):
+      -- U steps -1 per pixel, V -1 per line, left/top clipping moves U/V the
+      -- other way (MAME 0.288 psxgpu.cpp type 2 SPRITESETUP; psx-spx v2 GPUs).
+      -- 0 = upstream PS1 behaviour (flip bits ignored).
+      RECT_FLIP            : integer := 0
    );
    port 
    (
@@ -17,6 +22,9 @@ entity gpu_rect is
       reset                : in  std_logic;
       
       REPRODUCIBLEGPUTIMING: in  std_logic;
+      
+      flipX                : in  std_logic := '0';   -- E1 bit 12, used when RECT_FLIP = 1
+      flipY                : in  std_logic := '0';   -- E1 bit 13, used when RECT_FLIP = 1
       
       error                : out std_logic;
       
@@ -100,6 +108,8 @@ architecture arch of gpu_rect is
    signal rec_sizey           : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');  
    
    signal rec_u               : unsigned(7 downto 0) := (others => '0');     
+   signal rec_flipX           : std_logic := '0';
+   signal rec_flipY           : std_logic := '0';
 
    signal xPos                : signed(11 downto 0) := (others => '0'); 
    signal yPos                : signed(11 downto 0) := (others => '0');    
@@ -195,6 +205,12 @@ begin
                      rec_transparency  <= fifo_data(25);
                      rec_rawTexture    <= fifo_data(24);
                      rec_color         <= fifo_data(23 downto 0);
+                     rec_flipX         <= '0';
+                     rec_flipY         <= '0';
+                     if (RECT_FLIP = 1) then
+                        rec_flipX      <= flipX;
+                        rec_flipY      <= flipY;
+                     end if;
                   end if;
                   
                when REQUESTPOS =>
@@ -271,8 +287,13 @@ begin
                   end if;
                   rec_posx  <= rec_posx + xdiff;
                   xPos      <= rec_posx + xdiff;
-                  uWork     <= uWork + unsigned(xdiff(7 downto 0));
-                  rec_u     <= rec_u + unsigned(xdiff(7 downto 0));
+                  if (rec_flipX = '1') then
+                     uWork  <= uWork - unsigned(xdiff(7 downto 0));
+                     rec_u  <= rec_u - unsigned(xdiff(7 downto 0));
+                  else
+                     uWork  <= uWork + unsigned(xdiff(7 downto 0));
+                     rec_u  <= rec_u + unsigned(xdiff(7 downto 0));
+                  end if;
                   rec_sizex <= unsigned(xsize(9 downto 0)); 
                
                   ysize := to_signed(to_integer(rec_sizey), 12);
@@ -287,7 +308,11 @@ begin
                      ysize := ysize - 1;
                   end if;
                   yPos      <= yPos + ydiff;
-                  vWork     <= vWork + unsigned(ydiff(7 downto 0));
+                  if (rec_flipY = '1') then
+                     vWork  <= vWork - unsigned(ydiff(7 downto 0));
+                  else
+                     vWork  <= vWork + unsigned(ydiff(7 downto 0));
+                  end if;
                   rec_sizey <= unsigned(ysize(VRAM_Y_BITS - 1 downto 0)); 
                   
                   if (xsize < 1 or ysize < 1 or rec_posx > to_integer(drawingAreaRight) or yPos > to_integer(drawingAreaBottom)) then
@@ -321,7 +346,11 @@ begin
                   
                      xCnt  <= xCnt + 1;
                      xPos  <= xPos + 1;
-                     uWork <= uWork + 1;
+                     if (rec_flipX = '1') then
+                        uWork <= uWork - 1;
+                     else
+                        uWork <= uWork + 1;
+                     end if;
                      
                      if (xCnt + 1 >= rec_sizex or xPos + 1 > to_integer(drawingAreaRight)) then
                         yAdd := 1;
@@ -330,7 +359,11 @@ begin
                         end if;
                         yCnt  <= yCnt + yAdd;
                         ypos  <= yPos + yAdd;
-                        vWork <= vWork + yAdd;
+                        if (rec_flipY = '1') then
+                           vWork <= vWork - yAdd;
+                        else
+                           vWork <= vWork + yAdd;
+                        end if;
                         if (yCnt + yAdd >= rec_sizey or ypos + yAdd > to_integer(drawingAreaBottom)) then
                            if (REPRODUCIBLEGPUTIMING = '1') then
                               state <= WAITIMING;

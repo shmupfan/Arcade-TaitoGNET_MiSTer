@@ -1,0 +1,193 @@
+# G-NET Z1 FULLR: GNET_Z1FULLO plus the R1 main RAM load timing at 2:1 (issue #5; docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1"): GNET_EARLY_READY (sdram.sv EARLY_READY) and GNET_RAM_READ_NOWAIT (memorymux RAM_READ_NOWAIT, cpu B2B_RAM_COMP 0), a main RAM data load 5 CPU cycles from request to done as in the 3:1 core, for timing Ray Crisis's loading bar against the PCB's 14.69 s.
+# --------------------------------------------------------------------------
+#
+# MiSTer project
+#
+# WARNING WARNING WARNING:
+# Do not add files to project in Quartus IDE! It will mess this file!
+# Add the files manually to files.qip file.
+#
+# --------------------------------------------------------------------------
+
+set_global_assignment -name TOP_LEVEL_ENTITY sys_top
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
+
+set_global_assignment -name GENERATE_RBF_FILE ON
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
+set_global_assignment -name SAVE_DISK_SPACE OFF
+set_global_assignment -name SMART_RECOMPILE ON
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP "-40"
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
+set_global_assignment -name POWER_PRESET_COOLING_SOLUTION "23 MM HEAT SINK WITH 200 LFPM AIRFLOW"
+set_global_assignment -name POWER_BOARD_THERMAL_MODEL "NONE (CONSERVATIVE)"
+set_global_assignment -name TIMEQUEST_MULTICORNER_ANALYSIS OFF
+set_global_assignment -name OPTIMIZE_POWER_DURING_FITTING OFF
+set_global_assignment -name FINAL_PLACEMENT_OPTIMIZATION ALWAYS
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+set_global_assignment -name OPTIMIZATION_MODE "AGGRESSIVE PERFORMANCE"
+set_global_assignment -name ALLOW_POWER_UP_DONT_CARE ON
+set_global_assignment -name QII_AUTO_PACKED_REGISTERS "SPARSE AUTO"
+set_global_assignment -name ROUTER_LCELL_INSERTION_AND_LOGIC_DUPLICATION ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
+set_global_assignment -name OPTIMIZATION_TECHNIQUE SPEED
+set_global_assignment -name MUX_RESTRUCTURE ON
+set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
+set_global_assignment -name AUTO_DELAY_CHAINS_FOR_HIGH_FANOUT_INPUT_PINS ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC_FOR_AREA ON
+set_global_assignment -name ADV_NETLIST_OPT_SYNTH_WYSIWYG_REMAP ON
+set_global_assignment -name SYNTH_GATED_CLOCK_CONVERSION ON
+set_global_assignment -name PRE_MAPPING_RESYNTHESIS ON
+set_global_assignment -name ROUTER_CLOCKING_TOPOLOGY_ANALYSIS ON
+set_global_assignment -name ECO_OPTIMIZE_TIMING ON
+set_global_assignment -name PERIPHERY_TO_CORE_PLACEMENT_AND_ROUTING_OPTIMIZATION ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
+set_global_assignment -name ALM_REGISTER_PACKING_EFFORT LOW
+set_global_assignment -name PLACEMENT_EFFORT_MULTIPLIER 1.0
+
+set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
+
+# disable bilinear filtering when downscaling
+set_global_assignment -name VERILOG_MACRO "MISTER_DOWNSCALE_NN=1"
+
+# disable adaptive scanline filtering
+#set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ADAPTIVE=1"
+
+# Disable YC / Composite output to save some resources
+#set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
+
+# Disable ALSA audio output to save some resources
+set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
+
+source sys/sys.tcl
+source sys/sys_analog.tcl
+source files.qip
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
+set_global_assignment -name VHDL_SHOW_LMF_MAPPING_MESSAGES OFF
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+# G-NET trims
+set_global_assignment -name VERILOG_MACRO "GNET_NO_CD=1"
+set_global_assignment -name VERILOG_MACRO "GNET_NO_PADS=1"
+set_global_assignment -name VERILOG_MACRO "GNET_NO_SAVESTATES=1"
+set_global_assignment -name VERILOG_MACRO "GNET_NO_CHEATS=1"
+set_global_assignment -name VERILOG_MACRO "GNET_LEAN=1"
+set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
+set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ADAPTIVE=1"
+# MDEC kept (no GNET_NO_MDEC): sianniv decodes MDEC stills and movies from the
+# coin onwards; without it the game spins at 0x80013300 and the watchdog resets
+# it (issue #1; tools/mame/sianniv_mdec_probe.lua)
+set_global_assignment -name VERILOG_FILE rtl/gnet/pll_vid_fixed.v
+set_global_assignment -name SDC_FILE GNET_LEAN.sdc
+set_global_assignment -name VERILOG_MACRO "GNET_VRAM_2MB=1"
+set_global_assignment -name VERILOG_MACRO "GNET_GTE_NARROW_MUL=3"
+# G-NET ZN-2 board and FC PCB glue, silent (docs/zn2_layer_design.md 13 and 15)
+set_global_assignment -name VERILOG_MACRO "GNET_ZN2=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ctrl.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_flash.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_rf5c296.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ata.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_fc.sv
+set_global_assignment -name VHDL_FILE rtl/gnet/zn_cat702.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/znmcu.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/zn_sio0.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/zn2_io.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/zn2_cardmem.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/zn2_board.vhd
+# R1 CPU group at 50.000 / 100.000 MHz with the ZN-2 layer in it (as GNET_CPU50_B1, plus rtl/gnet/zn2_cdc.vhd and zn2_ch3_arb.vhd)
+set_global_assignment -name VERILOG_MACRO "GNET_CLK_RATIO2=1"
+set_global_assignment -name VERILOG_MACRO "GNET_CPU50=1"
+set_global_assignment -name VERILOG_FILE rtl/gnet/pll_cpu.v
+set_global_assignment -name QIP_FILE rtl/gnet/cdc/cdc.qip
+set_global_assignment -name QIP_FILE rtl/gnet/cpu_split/cpu_split.qip
+set_global_assignment -name VHDL_FILE rtl/gnet/zn2_cdc.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/zn2_ch3_arb.vhd
+set_global_assignment -name SDC_FILE GNET_CPU50_B1.sdc
+# release shell (docs/m4_shell.md)
+set_global_assignment -name VERILOG_MACRO "GNET_SHELL=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_sync_keeper.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_volume.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_coin_pulse.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_pause_dim.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_dash.sv
+set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_regs.vhd
+set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_overlay.vhd
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crt_pos.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_arcade_video.sv
+# G-NET DDR3 arbiter (docs/ddr3_arbiter.md): rotation, Zoom port, flash mirror, core through rtl/gnet/gnet_ddr3_arb.sv
+set_global_assignment -name VERILOG_MACRO "GNET_DDR3_ARB=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_arb.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_zport.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_mirror.sv
+# screen_rotate is connected: show the shell's Orientation and Rotate Direction items
+set_global_assignment -name VERILOG_MACRO "GNET_ROT_DDR=1"
+# Taito Zoom sound board (docs/zoom_board_design.md 14): flash area reads through the DDR3 arbiter's
+# Zoom port from the channel 3 mirror at DDR3 0x31000000 (GNET_ZOOM_SDRAM off), ZSG-2 INFL 8; mixed with
+# the SPU (0.3 / 1.0, MAME taitogn.cpp) ahead of the OSD volume; held while the core is paused
+set_global_assignment -name VERILOG_MACRO "GNET_ZOOM=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/mn10200_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/mn10200_rf.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/mn10200_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/mn10200_periph.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/mn10200.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zsg2_ram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zsg2_fetch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zsg2.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/tms57002.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_tbase.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_tmsfeed.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_pcache.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_wram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_mbox.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_host.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_bus.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_memarb.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_out.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_mix.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/zoom/zoom_board.sv
+set_global_assignment -name VHDL_FILE rtl/gnet/zoom_cdc.vhd
+
+# ZN-2 read overlap (memorymux ZN2_READ_OVERLAP)
+set_global_assignment -name VERILOG_MACRO "GNET_READ_OVERLAP=1"
+
+# Fitter seed (2026-10-07: seed 1 left spu RamVoice_addrA -> VOICEREGS MLAB hold at -0.060 ns)
+# seed 3 (2026-10-15): seed 2 with the MDEC left memorymux ram_rnw -> SDRAM_A[7]
+# (clk_cpu -> clk_cpu2x) at -0.028 ns setup; seed 3 met every clock
+# seed 5 (2026-10-15): seed 3 with TEX_MISS_DELAY failed to route (congestion
+# from hold-time routing in X45_Y11..X55_Y22)
+# seed 6: seed 5 routed but missed hold on savestates SPURAM_dataRead1x -> 2x
+# (clk_1x -> clk_2x) by up to 0.420 ns
+# seed 7: seed 6 met hold everywhere but missed HDMI setup by 0.054 ns
+# (TNS -0.502); a3r and a3p met the same clock by +0.34 and +0.21
+# seed 8: seed 7 missed clk_cpu setup by 0.260 ns (TNS -7.264)
+set_global_assignment -name SEED 8
+
+# HDMI PLL output on physical counter C0 (issue #8). Main_MiSTer reprograms
+# only C0; seed 2 alone placed outclk_0 on X0_Y7_N1, so the HDMI divider
+# stayed at 3 (79.8 Hz at 1440x1080). Same pin as MiSTer-devel/Arcade-Cave.
+set_location_assignment PLLOUTPUTCOUNTER_X0_Y5_N1 -to "pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter"
+
+# R1 main RAM load timing at 2:1 (issue #5, docs/r1_cpu_domain_design.md)
+set_global_assignment -name VERILOG_MACRO "GNET_EARLY_READY=1"
+set_global_assignment -name VERILOG_MACRO "GNET_RAM_READ_NOWAIT=1"
+# Alternative (isolated 6, back-to-back 5): GNET_RAM_B2B_WINDOW=1 in place of
+# GNET_RAM_READ_NOWAIT; with GNET_RAM_READ_NOWAIT on it has no effect.
+# The fitter seed is kept at Z1FULLO's 2; the logic differs, so a timing
+# miss on this revision is a seed question first (tools/sta/cpu2x_worst.tcl).
+
+# GPU texture prefetch test (branch a3-prefetch, docs/gpu_read_infl.md 4):
+# 4-qword cache fill per miss, the next texture row's group as well, two
+# VRAM reads in flight. Hides most of the DDR3 read latency (about 12
+# clk_2x per read, ddr3_latency_probe.md 6). Test core only.
+set_global_assignment -name VERILOG_MACRO "GNET_TEX_FETCH_QW=4"
+set_global_assignment -name VERILOG_MACRO "GNET_TEX_FETCH_ROWS=2"
+set_global_assignment -name VERILOG_MACRO "GNET_GPU_READ_INFL=2"
+# Calibration (branch a3-calib, docs/gpu_read_infl.md 10): 8 clk_2x added to
+# each texture cache fill so the slowdown matches the board (Ray Crisis demo
+# 1: board 1.078, prefetch alone 1.045). Bracket if the build misses: 5 / 10.
+set_global_assignment -name VERILOG_MACRO "GNET_TEX_MISS_DELAY=13"

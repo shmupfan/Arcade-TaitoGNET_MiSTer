@@ -172,6 +172,19 @@ architecture arch of mdec is
    signal idct_calc0_mul12    : signed(15 downto 0);
    signal idct_calc0_mul21    : signed(29 downto 0);
    signal idct_calc0_mul22    : signed(15 downto 0);
+   -- G-NET: register stage between the IDCT/scale table reads and the
+   -- multiply (MDEC on clk_cpu2x, 100 MHz)
+   signal idct_calcR_ena      : std_logic := '0';
+   signal idct_calcR_stage    : std_logic := '0';
+   signal idct_calcR_target1  : integer range 0 to 63;
+   signal idct_calcR_target2  : integer range 0 to 511;
+   signal idct_calcR_first    : std_logic := '0';
+   signal idct_calcR_last     : std_logic := '0';
+   signal idct_calcR_swap     : std_logic := '0';
+   signal idct_calcR_mul11    : signed(29 downto 0);
+   signal idct_calcR_mul12    : signed(15 downto 0);
+   signal idct_calcR_mul21    : signed(29 downto 0);
+   signal idct_calcR_mul22    : signed(15 downto 0);
    signal idct_calc1_ena      : std_logic := '0';
    signal idct_calc1_stage    : std_logic := '0';
    signal idct_calc1_target1  : integer range 0 to 63;
@@ -905,16 +918,33 @@ begin
             end case;
             
             -- calculation pipeline -> pipeline delay can be ignored as following stages don't read last written value early
+            -- G-NET stage R: register the table reads (M10K output and the
+            -- stage mux) so the 30x16 multiply starts from flip-flops. One
+            -- clock more latency, same products in the same order; the
+            -- stage 1 temp-table write nearest to its stage 2 read still
+            -- lands 28 clocks before that read.
+            idct_calcR_ena     <= idct_calc0_ena;
+            idct_calcR_stage   <= idct_calc0_stage;
+            idct_calcR_target1 <= idct_calc0_target1;
+            idct_calcR_target2 <= idct_calc0_target2;
+            idct_calcR_first   <= idct_calc0_first;
+            idct_calcR_last    <= idct_calc0_last;
+            idct_calcR_mul11   <= idct_calc0_mul11;
+            idct_calcR_mul12   <= idct_calc0_mul12;
+            idct_calcR_mul21   <= idct_calc0_mul21;
+            idct_calcR_mul22   <= idct_calc0_mul22;
+            idct_calcR_swap    <= idct_done;
+
             -- stage 0 multiply
-            idct_calc1_ena     <= idct_calc0_ena;
-            idct_calc1_stage   <= idct_calc0_stage;
-            idct_calc1_target1 <= idct_calc0_target1;
-            idct_calc1_target2 <= idct_calc0_target2;
-            idct_calc1_first   <= idct_calc0_first;
-            idct_calc1_last    <= idct_calc0_last;
-            idct_calc1_mul1    <= idct_calc0_mul11 * idct_calc0_mul12;
-            idct_calc1_mul2    <= idct_calc0_mul21 * idct_calc0_mul22;
-            idct_calc1_swap    <= idct_done;
+            idct_calc1_ena     <= idct_calcR_ena;
+            idct_calc1_stage   <= idct_calcR_stage;
+            idct_calc1_target1 <= idct_calcR_target1;
+            idct_calc1_target2 <= idct_calcR_target2;
+            idct_calc1_first   <= idct_calcR_first;
+            idct_calc1_last    <= idct_calcR_last;
+            idct_calc1_mul1    <= idct_calcR_mul11 * idct_calcR_mul12;
+            idct_calc1_mul2    <= idct_calcR_mul21 * idct_calcR_mul22;
+            idct_calc1_swap    <= idct_calcR_swap;
             
             -- stage 1 add sum
             idct_calc2_ena     <= idct_calc1_ena;

@@ -13,7 +13,12 @@ entity psx_mister is
       HAS_CHEATS            : integer := 1;
       HAS_MDEC              : integer := 1;
       VRAM_Y_BITS           : integer := 9;
+      RECT_FLIP             : integer := 0;    -- psx_top RECT_FLIP: textured rectangle X/Y flip (E1 bits 12/13)
       GTE_NARROW_MUL        : integer := 0;
+      GPU_READ_INFL         : integer := 1;    -- psx_top / gpu.vhd (docs/gpu_read_infl.md)
+      TEX_FETCH_QW          : integer := 1;
+      TEX_FETCH_ROWS        : integer := 1;
+      TEX_MISS_DELAY        : integer := 0;
       CLK_FAST_RATIO        : integer := 3;
       CPU_CLK_SPLIT         : integer := 0;    -- psx_top: 1 = CPU group on clk_cpu/clk_cpu2x/clk_cpu3x
       -- G-NET ZN-2 board (psx_top ZN2_BOARD), 0 = upstream
@@ -24,7 +29,9 @@ entity psx_mister is
       ZN2_WD_TIMEOUT_S      : integer := 8;    -- MB3773 watchdog period in seconds (gnet_ctrl.sv)
       ZOOM_BOARD            : integer := 0;    -- psx_top ZOOM_BOARD: Taito Zoom sound board
       ZOOM_INFL             : integer := 4;
-      ZN2_READ_OVERLAP      : integer := 0     -- psx_top: 1 = ZN-2 read request overlaps the read delay
+      ZN2_READ_OVERLAP      : integer := 0;    -- psx_top: 1 = ZN-2 read request overlaps the read delay
+      RAM_READ_NOWAIT       : integer := 0;    -- psx_top: 1 = main RAM data reads skip WAITFORRAMREAD (2:1 only)
+      RAM_LOAD_WINDOW       : integer := 7     -- psx_top: memorymux back-to-back read window (7 = upstream)
    );
    port 
    (
@@ -378,6 +385,11 @@ begin
       HAS_CHEATS            => HAS_CHEATS,
       HAS_MDEC              => HAS_MDEC,
       VRAM_Y_BITS           => VRAM_Y_BITS,
+      RECT_FLIP             => RECT_FLIP,
+      GPU_READ_INFL         => GPU_READ_INFL,
+      TEX_FETCH_QW          => TEX_FETCH_QW,
+      TEX_FETCH_ROWS        => TEX_FETCH_ROWS,
+      TEX_MISS_DELAY        => TEX_MISS_DELAY,
       GTE_NARROW_MUL        => GTE_NARROW_MUL,
       CLK_FAST_RATIO        => CLK_FAST_RATIO,
       CPU_CLK_SPLIT         => CPU_CLK_SPLIT,
@@ -388,7 +400,9 @@ begin
       ZN2_WD_TIMEOUT_S      => ZN2_WD_TIMEOUT_S,
       ZOOM_BOARD            => ZOOM_BOARD,
       ZOOM_INFL             => ZOOM_INFL,
-      ZN2_READ_OVERLAP      => ZN2_READ_OVERLAP
+      ZN2_READ_OVERLAP      => ZN2_READ_OVERLAP,
+      RAM_READ_NOWAIT       => RAM_READ_NOWAIT,
+      RAM_LOAD_WINDOW       => RAM_LOAD_WINDOW
    )
    port map
    (

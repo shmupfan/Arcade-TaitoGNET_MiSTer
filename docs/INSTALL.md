@@ -39,7 +39,7 @@ add `coh3002t.zip` and the converted game zips (steps 2 to 4).
 
 From the [releases](../releases/) folder of this repository:
 
-1. Copy `Arcade-TaitoGNET_20261007.rbf` to `/media/fat/_Arcade/cores/`.
+1. Copy `Arcade-TaitoGNET_20261015.rbf` to `/media/fat/_Arcade/cores/`.
 2. Copy every `.mra` file to `/media/fat/_Arcade/`.
 3. Copy the `_alternatives` folder to `/media/fat/_Arcade/`, keeping the
    folders inside it as they are.
@@ -244,8 +244,17 @@ Open the Arcade menu on the MiSTer.
   or power off during the copy. Kollon (V2.04JC) and Otenami Haiken Final
   have no first boot MRA. You do not need these MRAs to play.
 
-Go By RC and RC De Go stop on a CALIBRATION screen the first time. Leave
-the stick centred and press Start. The game saves the calibration.
+Go By RC and RC De Go stop on a CALIBRATION screen the first time. It
+takes three presses of Start:
+
+1. Let go of the stick and press Start.
+2. Push the stick (or the D-pad) fully up, down, left and right,
+   holding each for about a second, then press Start.
+3. Press Start again.
+
+If a STEERING WHEEL/TRIGGER problem message appears, press Start and
+repeat. The game saves the calibration; open the OSD once afterwards so
+it is written to the SD card.
 
 The controls and OSD options are in the [README](../README.md#controls).
 
@@ -273,7 +282,7 @@ The controls and OSD options are in the [README](../README.md#controls).
 | MiSTer reports a missing `gnet_<set>.zip` | There is no zip for the set this MRA loads (often an alternative version) | Convert that set, or load the MRA of a set you have |
 | Nothing starts, no TAITO G-NET logo | `coh3002t.zip` is missing from `games/mame` | Copy it there, still zipped |
 | SYSTEM ERROR after the TAITO G-NET logo | The game zip is wrong: made by hand, made from the wrong CHD, or made with an older version of the converter. Older versions fail on the Type 2 and CompactFlash sets, such as Super Puzzle Bobble | Convert again with the current converter (step 3). Check the converter printed no warnings |
-| Go By RC or RC De Go stops on a CALIBRATION screen | Normal on a first boot | Leave the stick centred and press Start |
+| Go By RC or RC De Go stops on a CALIBRATION screen | Normal on a first boot | Let go of the stick and press Start; push the stick fully up, down, left and right, holding each for a second, and press Start; press Start again ([details](#5-play)) |
 | A "Loading now." screen for about 2.5 minutes | You loaded a first boot MRA | Normal. Wait, or load the main MRA instead |
 
 If none of these fits, the [testing guide](TESTING_GUIDE.md) explains

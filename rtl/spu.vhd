@@ -103,6 +103,28 @@ architecture arch of spu is
    -- voiceregs
    signal RamVoice_addrA      : unsigned(7 downto 0) := (others => '0');
    signal RamVoice_dataA      : std_logic_vector(15 downto 0) := (others => '0');
+   -- G-NET: the voice register MLABs' write port runs on the falling edge
+   -- from a copy of the write signals taken at the rising edge, so the
+   -- MLAB's write-address register gets half a clk1x period of hold margin
+   -- (RamVoice_addrA straight into it missed clk_1x hold by up to 0.060 ns
+   -- in the 2026-10-07 GNET_Z1FULLO fit). The word is written half a clock
+   -- later than the rising-edge write it replaces and is first sampled at
+   -- the same rising edge, so the SPU sees the same contents every clock.
+   signal clk1x_n             : std_logic;
+   signal RamVoice_write_d    : std_logic := '0';
+   signal RamVoice_dataA_d    : std_logic_vector(15 downto 0) := (others => '0');
+   signal RamVoice_addrA_d    : unsigned(7 downto 0) := (others => '0');
+   -- the same for the other register MLABs (VOICEVOLUMES came within 0.064
+   -- ns of clk_1x hold in the seed-2 fit)
+   signal RamVoiceVolumes_write_d : std_logic := '0';
+   signal RamVoiceVolumes_dataA_d : std_logic_vector(15 downto 0) := (others => '0');
+   signal RamVoiceVolumes_addrA_d : unsigned(5 downto 0) := (others => '0');
+   signal RamVoiceRecord_write_d  : std_logic := '0';
+   signal RamVoiceRecord_dataA_d  : std_logic_vector(102 downto 0) := (others => '0');
+   signal RamVoiceRecord_addrA_d  : unsigned(4 downto 0) := (others => '0');
+   signal EnvCounterRam_write_d   : std_logic := '0';
+   signal EnvCounterRam_dataA_d   : std_logic_vector(24 downto 0) := (others => '0');
+   signal EnvCounterRam_addrA_d   : unsigned(5 downto 0) := (others => '0');
    signal RamVoice_write      : std_logic := '0';     
    
    type tvoiceregs_addrB is array(0 to 1) of unsigned(7 downto 0);
@@ -603,14 +625,33 @@ begin
          width_byteena => 1
       )
       PORT MAP (
-         inclock    => clk1x,
-         wren       => RamVoice_write,
-         data       => RamVoice_dataA,
-         wraddress  => std_logic_vector(RamVoice_addrA),
+         inclock    => clk1x_n,
+         wren       => RamVoice_write_d,
+         data       => RamVoice_dataA_d,
+         wraddress  => std_logic_vector(RamVoice_addrA_d),
          rdaddress  => std_logic_vector(RamVoice_addrB(i)),
          q          => RamVoice_dataB(i)
       );
    end generate;
+   
+   clk1x_n <= not clk1x;
+   process (clk1x)
+   begin
+      if rising_edge(clk1x) then
+         RamVoice_write_d <= RamVoice_write;
+         RamVoice_dataA_d <= RamVoice_dataA;
+         RamVoice_addrA_d <= RamVoice_addrA;
+         RamVoiceVolumes_write_d <= RamVoiceVolumes_write;
+         RamVoiceVolumes_dataA_d <= RamVoiceVolumes_dataA;
+         RamVoiceVolumes_addrA_d <= RamVoiceVolumes_addrA;
+         RamVoiceRecord_write_d  <= RamVoiceRecord_write;
+         RamVoiceRecord_dataA_d  <= RamVoiceRecord_dataA;
+         RamVoiceRecord_addrA_d  <= RamVoiceRecord_addrA;
+         EnvCounterRam_write_d   <= EnvCounterRam_write;
+         EnvCounterRam_dataA_d   <= EnvCounterRam_dataA;
+         EnvCounterRam_addrA_d   <= EnvCounterRam_addrA;
+      end if;
+   end process;
    
    RamVoice_addrB(0) <= bus_addr(8 downto 1);
    
@@ -637,10 +678,10 @@ begin
          width_byteena => 1
       )
       PORT MAP (
-         inclock    => clk1x,
-         wren       => RamVoiceVolumes_write,
-         data       => RamVoiceVolumes_dataA,
-         wraddress  => std_logic_vector(RamVoiceVolumes_addrA),
+         inclock    => clk1x_n,
+         wren       => RamVoiceVolumes_write_d,
+         data       => RamVoiceVolumes_dataA_d,
+         wraddress  => std_logic_vector(RamVoiceVolumes_addrA_d),
          rdaddress  => std_logic_vector(RamVoiceVolumes_addrB(i)),
          q          => RamVoiceVolumes_dataB(i)
       );
@@ -664,10 +705,10 @@ begin
          width_byteena => 1
       )
       PORT MAP (
-         inclock    => clk1x,
-         wren       => RamVoiceRecord_write,
-         data       => RamVoiceRecord_dataA,
-         wraddress  => std_logic_vector(RamVoiceRecord_addrA),
+         inclock    => clk1x_n,
+         wren       => RamVoiceRecord_write_d,
+         data       => RamVoiceRecord_dataA_d,
+         wraddress  => std_logic_vector(RamVoiceRecord_addrA_d),
          rdaddress  => std_logic_vector(RamVoiceRecord_addrB(i)),
          q          => RamVoiceRecord_dataB(i)
       );
@@ -707,10 +748,10 @@ begin
       width_byteena => 1
    )
    PORT MAP (
-      inclock    => clk1x,
-      wren       => EnvCounterRam_write,
-      data       => EnvCounterRam_dataA,
-      wraddress  => std_logic_vector(EnvCounterRam_addrA),
+      inclock    => clk1x_n,
+      wren       => EnvCounterRam_write_d,
+      data       => EnvCounterRam_dataA_d,
+      wraddress  => std_logic_vector(EnvCounterRam_addrA_d),
       rdaddress  => std_logic_vector(EnvCounterRam_addrB),
       q          => EnvCounterRam_dataB
    );

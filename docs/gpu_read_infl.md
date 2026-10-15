@@ -1,10 +1,5 @@
 # GPU VRAM read latency on DDR3: where it costs and what hides it
 
-This study's GPU changes and its testbench (`sim/gpuinfl/`) are on a
-development branch and are not in this repository or in the release RBF,
-which uses the upstream GPU read path. The document is kept as the record
-of the measurements cited in docs/ACCURACY.md.
-
 docs/ddr3_bandwidth.md (branch ddr3-bandwidth, 4.3) showed the PSX_MiSTer
 GPU is bound by DDR3 read latency: it keeps one VRAM read in flight
 (rtl/gpu.vhd READVRAM waits for the last beat) and its drawing waits for
@@ -67,9 +62,9 @@ keeps up at L = 24.
 |---|---|---|---|
 | upstream | 95.9% | 73.7% | 60.4% |
 | GPU_READ_INFL = 2 (posted writes only) | | 73.8% | |
-| TEX_FETCH_QW = 4 | 100.1% | 84.0% | 70.6% |
+| TEX_FETCH_QW = 4 | 100.1% | 84.0% | T4_36 |
 | + TEX_FETCH_ROWS = 2, GPU_READ_INFL = 2 | 100.1% | 89.9% | 76.4% |
-| + TEX_FETCH_ROWS = 4, GPU_READ_INFL = 4 | 100.1% | 90.1% | 78.8% |
+| + TEX_FETCH_ROWS = 4, GPU_READ_INFL = 4 | R4_12 | 90.1% | 78.8% |
 
 Texture read commands at L = 24: 861,254 (upstream), 635,715 (4 qwords),
 493,408 (2 rows), 397,993 (4 rows).
@@ -125,10 +120,7 @@ ddr3-latency-probe):
   be a texture prefetcher that looks ahead along the span and keeps
   several independent misses in flight (a queue between rasterizer and
   pipeline, a few hundred to about 1,500 ALMs), plus overlapping the next
-  line's destination read. docs/gpu_tex_prefetch.md: design study (ideal
-  bound 100% at L = 36 and 48) and the RTL prototype TEX_PREFETCH (default
-  off; 100% at L = 24 and 36, 99.1% at L = 48; VRAM identical to upstream
-  at L = 0 on Ray Crisis, Psyvariar and Shikigami).
+  line's destination read.
 
 ## 8. Reproduce
 
@@ -154,3 +146,55 @@ TEX_FETCH_ROWS needs TEX_FETCH_QW = 4 and GPU_READ_INFL >= TEX_FETCH_ROWS
 (otherwise the extra rows are not read). Unset macros keep upstream.
 `tools/lint_psx.py <revision> +define+GNET_...` is clean with and without
 them; psx_top and psx_mister analyse in NVC (sim/zn2/system/build.sh).
+
+## 10. Calibration to the board (TEX_MISS_DELAY)
+
+Hardware, Ray Crisis attract demo 1, core time over MAME time: board 1.078,
+core upstream 1.126, core with the prefetch (QW 4, ROWS 2, INFL 2) 1.045.
+The prefetch makes the GPU wait less than the CXD8654Q, so
+gpu_pixelpipeline gets TEX_MISS_DELAY (default 0): every texture cache fill
+waits that many clk2x cycles after its last beat before the pixel goes on.
+During the wait the fill is complete and data beats of other reads (video)
+do not write the cache. 0 elaborates to the previous logic (the new branches
+are under `if TEX_MISS_DELAY ...` on the constant). Macro
+`GNET_TEX_MISS_DELAY` through PSX.sv, psx_mister, psx_top, gpu.
+
+Checks (demo chunk 5700, prefetch on):
+- D = 0 against the unmodified RTL at L = 12: ddr3_frames.txt,
+  frames_time.txt and vblank_busy.txt identical in all 59 frames.
+- VRAM after frame 30 at L = 0: D = 8 and D = 24 identical to the
+  unmodified RTL (0 of 1,048,576 pixels); so are the unmodified RTL at
+  L = 4 and 12 and upstream at L = 0.
+
+Sweep, 57 frames (work done as in 4; busy = GPU non-idle clk2x per
+destination read, a time per unit of drawing):
+
+| Run | L = 12 work | L = 12 busy | L = 24 work | L = 24 busy |
+|---|---|---|---|---|
+| upstream | 95.5% | 277.5 | 73.3% | 361.6 |
+| prefetch, D = 0 | 100.0% | 249.8 | 89.2% | 297.0 |
+| D = 4 | 100.0% | 258.5 | | |
+| D = 6 | 99.9% | 263.1 | | |
+| D = 8 | 98.1% | 270.3 | 83.0% | 319.3 |
+| D = 10 | 96.3% | 275.4 | | |
+| D = 12 | 94.9% | 279.4 | 80.5% | 329.4 |
+| D = 16 | 91.4% | 290.1 | | |
+| D = 24 | 85.1% | 311.4 | 73.4% | 361.4 |
+
+Target: (1.078 - 1.045) / (1.126 - 1.045) = 0.407 of the way from
+prefetch D = 0 to upstream, assuming the hardware slowdown scales linearly
+with the bench's GPU time (needs-review: the CPU and the rest of the core
+are not in the bench). With time = 1 / work: D = 7.95 at L = 12, 9.6 at
+L = 24; with the busy metric: 5.1 at L = 12, 9.6 at L = 24. GNET_Z1FULLR
+uses 8 (L = 12 is the measured idle DDR3 latency); if the build misses,
+10 when it is still faster than the board, 5 when slower.
+
+Hardware result (2026-10-15, same demo_drift method): D = 9 gave 1.061, so
+the bench underestimates the effect; linear between D = 0 (1.045) and
+D = 9 puts the board at D = 13. D = 13 gave 1.0762 (seed 6) and 1.0748
+(seed 8, the alpha 3 release build), against the board's 1.078; demo 1
+about 51.4 s against 51.5 s. Shikigami no Shiro attract demo A stays at
+1.011 at D = 0, 9 and 13. Fits with the delay closed timing on 1 of 5
+seeds (3 did not route, 5 missed hold, 6 missed HDMI setup by 0.054 ns,
+7 missed clk_cpu setup by 0.260 ns, 8 met all clocks).
+

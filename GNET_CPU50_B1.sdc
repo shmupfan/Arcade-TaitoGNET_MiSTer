@@ -73,6 +73,15 @@ if {[get_collection_size $static_src] > 0} {
   set_false_path -from $static_src -to [get_clocks [list $cpu $cpu2x]]
 }
 
+# 3b. EARLY_READY ch1_dout32 (rtl/sdram.sv): a clk_cpu2x register loaded only
+#     on clk_cpu2x edges that coincide with a clk_cpu edge (!clk3xIndex), so
+#     it holds two clk_cpu2x periods before clk_cpu samples it.
+set ch1w [get_registers -nowarn {emu:emu|sdram:sdram|ch1_dout32_f*}]
+if {[get_collection_size $ch1w] > 0} {
+  set_multicycle_path -setup -start 2 -from $ch1w -to [get_clocks $cpu]
+  set_multicycle_path -hold  -start 1 -from $ch1w -to [get_clocks $cpu]
+}
+
 # 4. Not constrained here (needs-review on the first fit, with
 #    tools/sta/xclk_query.tcl extended to the CPU clocks): any other path
 #    between {clk_cpu, clk_cpu2x} and {clk_1x, clk_2x, clk_3x} is a design

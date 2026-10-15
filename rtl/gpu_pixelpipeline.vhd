@@ -7,7 +7,22 @@ library mem;
 entity gpu_pixelpipeline is
    generic
    (
-      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      VRAM_Y_BITS          : integer := 9;  -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      -- G-NET (docs/gpu_read_infl.md): texture cache fill per miss. 1 =
+      -- upstream, one qword. 4 = the aligned group of four qwords holding the
+      -- missed one (one 4-beat burst; the four cache entries of one index
+      -- row, same tag), for unfiltered texturing; filtered pixels keep one
+      -- qword, a group fill could evict a texel of the same pixel
+      TEX_FETCH_QW         : integer := 1;
+      -- with TEX_FETCH_QW = 4: 2 or 4 = also the same group of the next 1 or
+      -- 3 texture rows (one 4-beat burst each, issued while the first is in
+      -- flight when the GPU has GPU_READ_INFL >= TEX_FETCH_ROWS), unless those
+      -- rows carry into the next cache block (different tag): then one row
+      TEX_FETCH_ROWS       : integer := 1;
+      -- G-NET (docs/gpu_read_infl.md 10): clk2x cycles every texture cache
+      -- fill waits after its last beat before the pipeline goes on (models the
+      -- real GPU's VRAM cost per miss); 0 = upstream timing
+      TEX_MISS_DELAY       : integer := 0
    );
    port 
    (
@@ -51,6 +66,7 @@ entity gpu_pixelpipeline is
       pipeline_vAcc        : in  unsigned(7 downto 0);
       
       requestVRAMEnable    : out std_logic;
+      requestVRAMRows      : out unsigned(1 downto 0) := "00";   -- extra texture rows (0 to 3)
       requestVRAMXPos      : out unsigned(9 downto 0);
       requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
@@ -111,6 +127,26 @@ architecture arch of gpu_pixelpipeline is
    signal tag_q_b             : t_filterarray_b10;
       
    signal tagValid            : std_logic_vector(0 to 255) := (others => '0');
+   -- a texture (not palette) VRAM request is open; for simulation monitors
+   signal texReqActive        : std_logic;
+   signal reqRows             : unsigned(1 downto 0) := "00";
+   signal fillBase            : unsigned(7 downto 0) := (others => '0');
+   signal fillBeat            : unsigned(3 downto 0) := (others => '0');
+   signal tagBeat             : unsigned(3 downto 0) := (others => '0');
+   signal texMissWait         : integer range 0 to TEX_MISS_DELAY := 0;
+
+   -- cache entry of fill beat k: row k / 4 of the fill, entry k mod 4 of the
+   -- group; one cache row is 4 entries (4 and 8 bit layout) or 8 (15 bit)
+   function fillAddr(base : unsigned(7 downto 0); k : unsigned(3 downto 0); mode15 : std_logic) return unsigned is
+      variable r : unsigned(7 downto 0);
+   begin
+      if (mode15 = '1') then
+         r := base + (resize(k(3 downto 2), 8) sll 3) + resize(k(1 downto 0), 8);
+      else
+         r := base + (resize(k(3 downto 2), 8) sll 2) + resize(k(1 downto 0), 8);
+      end if;
+      return r;
+   end function;
       
    signal cache_address_a     : unsigned(7 downto 0) := (others => '0');
    signal cache_wren_a        : std_logic := '0';
@@ -323,6 +359,7 @@ begin
    pipeline_stall <= '1' when (pixelStall = '1' or state /= IDLE or slowdown = '1') else '0';
 
    requestVRAMEnable <= '1'         when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else '0';
+   requestVRAMRows   <= reqRows     when (requestVRAMIdle = '1' and state = REQUESTTEXTURE) else "00";
    requestVRAMXPos   <= reqVRAMXPos when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else (others => '0');
    requestVRAMYPos   <= reqVRAMYPos when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else (others => '0');
    requestVRAMSize   <= reqVRAMSize when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else (others => '0');
@@ -447,7 +484,8 @@ begin
           
    end generate;
    
-   cache_wren_a      <= '1' when (vram_DOUT_READY = '1' and state = WAITTEXTURE) else '0';
+   cache_wren_a      <= '1' when (vram_DOUT_READY = '1' and state = WAITTEXTURE and texMissWait = 0) else '0';
+   texReqActive      <= '1' when (state = REQUESTTEXTURE or state = WAITTEXTURE or state = REQUESTMORETEXTURE) else '0';
                      
    CLUTwrenA         <= '1' when (vram_DOUT_READY = '1' and state = WAITPALETTE) else '0';
 
@@ -490,16 +528,40 @@ begin
          
          -- must be done here, so it also is effected when ce is off = paused
          if (state = WAITTEXTURE) then
-            if (requestVRAMDone = '1') then 
+            if ((TEX_MISS_DELAY = 0 and requestVRAMDone = '1') or (TEX_MISS_DELAY > 0 and texMissWait = 1)) then 
                if (cacherequest = "0000") then
                   state <= IDLE;
                else
                   state <= REQUESTMORETEXTURE;
                end if;
             end if;
-            if (vram_DOUT_READY = '1') then
+            if (TEX_MISS_DELAY > 0) then
+               if (requestVRAMDone = '1') then
+                  texMissWait <= TEX_MISS_DELAY;
+               elsif (texMissWait > 0) then
+                  texMissWait <= texMissWait - 1;
+               end if;
+            end if;
+            -- during the TEX_MISS_DELAY wait the fill is complete: beats of
+            -- other reads (video) must not reach the cache
+            if (vram_DOUT_READY = '1' and texMissWait = 0) then
                tag_wren_a    <= '1';
-               tagValid(to_integer(tag_address_a)) <= '1';
+               if (TEX_FETCH_QW = 4) then
+                  -- one entry per beat: the cache word is written in this
+                  -- cycle at cache_address_a, the tag one cycle later
+                  -- (tag_wren_a registered) at tag_address_a, which follows.
+                  -- Beats 4 to 7 (second row) go one cache row further: 4
+                  -- entries (4 and 8 bit layout) or 8 (15 bit layout).
+                  tagValid(to_integer(cache_address_a)) <= '1';
+                  fillBeat <= fillBeat + 1;
+                  cache_address_a <= fillAddr(fillBase, fillBeat + 1, drawMode(8));
+               else
+                  tagValid(to_integer(tag_address_a)) <= '1';
+               end if;
+            end if;
+            if (TEX_FETCH_QW = 4 and tag_wren_a = '1') then
+               tagBeat       <= tagBeat + 1;
+               tag_address_a <= fillAddr(fillBase, tagBeat + 1, drawMode(8));
             end if;
          end if;
                
@@ -527,6 +589,7 @@ begin
          if (reset = '1') then
          
             state          <= IDLE;
+            texMissWait    <= 0;
             stage0_valid   <= '0';
             stage1_valid   <= '0';
             stage3_valid   <= '0';
@@ -586,6 +649,26 @@ begin
                      reqVRAMXPos <= stage0_textaddr(0)(10 downto 1);
                      reqVRAMYPos <= stage0_textaddr(0)(VRAM_Y_BITS + 10 downto 11);
                      reqVRAMSize <= to_unsigned(1, 11);
+                     reqRows         <= "00";
+                     if (TEX_FETCH_QW = 4) then
+                        -- the aligned group of four qwords (16 halfwords):
+                        -- cache index low bits = texture address bits 4:3
+                        tag_address_a   <= tag_addr(0)(7 downto 2) & "00";
+                        cache_address_a <= tag_addr(0)(7 downto 2) & "00";
+                        fillBase        <= tag_addr(0)(7 downto 2) & "00";
+                        fillBeat        <= (others => '0');
+                        tagBeat         <= (others => '0');
+                        reqVRAMXPos     <= stage0_textaddr(0)(10 downto 5) & "0000";
+                        reqVRAMSize     <= to_unsigned(16, 11);
+                        -- further rows only inside the same cache block (no carry
+                        -- out of the row bits of the index)
+                        if (TEX_FETCH_ROWS > 1) then
+                           if (drawMode(8) = '0' and stage0_textaddr(0)(16 downto 11) <= 64 - TEX_FETCH_ROWS) or
+                              (drawMode(8) = '1' and stage0_textaddr(0)(15 downto 11) <= 32 - TEX_FETCH_ROWS) then
+                              reqRows <= to_unsigned(TEX_FETCH_ROWS - 1, 2);
+                           end if;
+                        end if;
+                     end if;
                   end if;
                
                when REQUESTMORETEXTURE =>

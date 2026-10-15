@@ -47,8 +47,10 @@ module zoom_mix #(
         logic signed [39:0] t;
         t = s * k + z * K_ZOOM;
         t = t >>> 16;
-        if (t > 40'sd32767) mix = 16'sd32767;
-        else if (t < -40'sd32768) mix = -16'sd32768;
+        // limits as bit patterns: -16'sd32768 negates 32768, which does not fit
+        // a signed 16-bit literal (Quartus 10259 constant value overflow)
+        if (t > 40'sd32767) mix = 16'sh7FFF;
+        else if (t < -40'sd32768) mix = 16'sh8000;
         else mix = t[15:0];
     endfunction
 

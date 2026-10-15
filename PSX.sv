@@ -329,35 +329,46 @@ wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | 
 // S551 and JP1 come from the MRA (ioctl index 254). Video option bits keep
 // their PSX numbers.
 `ifdef GNET_SHELL
-// Release shell (docs/m4_shell.md, minimum standard). New bits: 102
+// Release shell (docs/m4_shell.md, minimum standard). 41 Deinterlacing keeps
+// its PSX meaning (HDMI scaler, 480i games; hidden on direct video). New bits: 102
 // Orientation, 103 Rotate direction, 104 Flip, 106:105 Volume, 110:107 CRT H
 // position, 113:111 CRT V position, 116:114 Scandoubler Fx, 119:117 SFX
-// level (GNET_ZOOM: SPU gain in zoom_mix); 64 keeps its
-// PSX meaning (Pause when OSD open). Also: 100 Watchdog, 101 debug overlay
+// level (GNET_ZOOM: SPU gain in zoom_mix), 120 Dim video after 10s (0 =
+// On), 121 Service Menu (holds S551:4 Test Mode on); 64 keeps its PSX
+// meaning (Pause when OSD open). Also: 100 Watchdog, 101 debug overlay
 // (docs/hw_debug_overlay.md). Menu mask: H0 direct_video, H1
 // horizontal set, H2 no rotation available, H3 H2 or Orientation Horizontal.
+// Layout: rotation items at the top, then pages P1 Video Settings, P2 Audio
+// Settings, P3 Pause Options, DIP and Service Menu, P4 Advanced (mask
+// letters go before the page prefix, as upstream's "DEP1O[62]").
 parameter CONF_STR = {
 	"GNET;;",
 	"-;",
-	"H0O[33:32],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
-	"H0O[35:34],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"H2O[102],Orientation,Vertical,Horizontal;",
 	"H3O[103],Rotate Direction,CCW,CW;",
 	"H1O[104],Flip Screen,Off,On;",
-	"O[116:114],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
-	"O[110:107],CRT H Position,0,+2,+4,+6,+8,+10,+12,+14,-16,-14,-12,-10,-8,-6,-4,-2;",
-	"O[113:111],CRT V Position,0,+1,+2,+3,-4,-3,-2,-1;",
-	"-;",
-	"O[64],Pause when OSD is open,On,Off;",
-	"O[106:105],Volume,Normal,+6 dB,-6 dB,-12 dB;",
+	"P1,Video Settings;",
+	"H0P1O[33:32],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"H0P1O[35:34],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"P1O[116:114],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"H0P1O[41],Deinterlacing,Weave,Bob;",
+	"P1O[110:107],CRT H Position,0,+2,+4,+6,+8,+10,+12,+14,-16,-14,-12,-10,-8,-6,-4,-2;",
+	"P1O[113:111],CRT V Position,0,+1,+2,+3,-4,-3,-2,-1;",
+	"P2,Audio Settings;",
+	"P2O[106:105],Volume,Normal,+6 dB,-6 dB,-12 dB;",
 `ifdef GNET_ZOOM
-	"O[119:117],SFX Level,0.3 (MAME),0.45,0.6,0.9,1.2,1.5;",
+	"P2O[119:117],SFX Level,0.3 (MAME),0.45,0.6,0.9,1.2,1.5;",
 `endif
+	"P3,Pause Options;",
+	"P3O[64],Pause when OSD is open,On,Off;",
+	"P3O[120],Dim video after 10s,On,Off;",
 	"-;",
 	"DIP;",
+	"O[121],Service Menu,Off,On;",
 	"-;",
-	"O[100],Watchdog,On,Off;",
-	"O[101],Debug overlay,Off,On;",
+	"P4,Advanced;",
+	"P4O[100],Watchdog,On,Off;",
+	"P4O[101],Debug overlay,Off,On;",
 	"R0,Reset;",
 	"J1,Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause;",
 	"jn,A,B,X,Start,Select,L,R;",
@@ -527,9 +538,12 @@ wire [127:0] status;
 // Bits 3:2 = the controls (gnet_inmode, see the keyboard block below):
 // 0 joysticks, 1 mahjong panel and P1 joystick (Mahjong Oh), 2 mahjong panel
 // only (Usagi), 3 RC wheel and trigger (Go By RC, RC De Go).
+// Bit 4 = the Dash button (Chaos Heat, issue #7, rtl/gnet/gnet_dash.sv): the
+// MRA lists Dash after Button 3 and the core does the double tap.
 reg  gnet_vertical = 1'b0;
 reg  gnet_nozoom   = 1'b0;
 reg  [1:0] gnet_inmode = 2'd0;
+reg  gnet_dash     = 1'b0;
 wire DIRECT_VIDEO;
 // EEPROM NVRAM save (MRA <nvram index="6" size="2048"/>), see the loader
 wire        ioctl_upload;
@@ -834,6 +848,7 @@ always @(posedge clk_1x)
 		gnet_vertical <= ioctl_dout[0];
 		gnet_nozoom   <= ioctl_dout[1];
 		gnet_inmode   <= ioctl_dout[3:2];
+		gnet_dash     <= ioctl_dout[4];
 	end
 
 // Keyboard, MAME default keys (ps2_key: [10] toggles per event, [9] pressed,
@@ -841,10 +856,12 @@ always @(posedge clk_1x)
 //   P1: arrows, LCtrl = B1, LAlt = B2, Space = B3, 1 = Start, 5 = Coin
 //   P2: R/F/D/G, A = B1, S = B2, Q = B3, 2 = Start, 6 = Coin
 //   9 = Service, F2 = Test, P = Pause
+//   Dash (configuration bit 4 only): LShift (P1), W (P2), MAME's button 4
 reg k_up = 0, k_dn = 0, k_lt = 0, k_rt = 0, k_b1 = 0, k_b2 = 0, k_b3 = 0;
 reg k_st1 = 0, k_co1 = 0, k_svc = 0, k_test = 0, k_p = 0;
 reg k2_up = 0, k2_dn = 0, k2_lt = 0, k2_rt = 0, k2_b1 = 0, k2_b2 = 0, k2_b3 = 0;
 reg k_st2 = 0, k_co2 = 0;
+reg k_b4 = 0, k2_b4 = 0;
 reg ps2_last = 1'b0;
 always @(posedge clk_1x) begin
 	ps2_last <= ps2_key[10];
@@ -871,14 +888,85 @@ always @(posedge clk_1x) begin
 			9'h01C: k2_b1  <= ps2_key[9];   // A
 			9'h01B: k2_b2  <= ps2_key[9];   // S
 			9'h015: k2_b3  <= ps2_key[9];   // Q
+			9'h012: k_b4   <= ps2_key[9];   // left shift (Dash)
+			9'h01D: k2_b4  <= ps2_key[9];   // W (Dash)
 			default: ;
 		endcase
 	end
 end
+// Mahjong panel on pad 1 (issue #2, docs/m4_shell.md 3), for the mahjong
+// sets only (gnet_inmode 1 and 2). Eight pad inputs, numbered clockwise
+// from the left on the D-pad, then on the face buttons (MiSTer's default
+// names Y, X, A, B): s1 Left, s2 Up, s3 Right, s4 Down, s5 J1 bit 12 (Y),
+// s6 bit 6 (X), s7 bit 4 (A), s8 bit 5 (B). Two shift buttons, J1 bits 13
+// (L) and 14 (R), pick the layer:
+//   no shift   tiles A-H on s1-s8 (Usagi; Mahjong Oh keeps its P1 stick
+//              and buttons 1-3 here)
+//   L and R    tiles A-H on s1-s8 (both sets)
+//   R          tiles I-N on s1-s6
+//   L          Kan, Pon, Chi, Reach, Ron on s1-s5
+// Start is the pad's Start, as before. Each input keeps the layer it was
+// pressed in until it is released, so letting go of a shift first never
+// turns a held key into another key (the game would take it as a new
+// press). An input pressed with a shift held is kept off Mahjong Oh's P1
+// stick and buttons. Bits 16 and 17 stay free (PSX base savestate and
+// fast forward). The keyboard keys below are unchanged.
+// Service and Test on the pad (mahjong sets only, where L and R are the
+// shifts): while Select (J1 Coin, bit 8) is held, L is Service and R is
+// Test and neither acts as a shift. Select inserts a coin when released
+// with no L or R pressed during the hold (mp_coin, one clock into
+// coin1_pulse, so still one 100 ms coin); Select with L or R never coins.
+// Dash in the MRA button list (gnet_dash): the pad's bits back to the J1
+// list below, Dash taken out (rtl/gnet/gnet_dash.sv gnet_dash_remap)
+wire [19:0] joy_g, joy2_g;
+wire        jd1, jd2;
+gnet_dash_remap dash_map1 (.en(gnet_dash), .in(joy),  .out(joy_g),  .dash(jd1));
+gnet_dash_remap dash_map2 (.en(gnet_dash), .in(joy2), .out(joy2_g), .dash(jd2));
+wire        dash1 = jd1 | (gnet_dash & k_b4);
+wire        dash2 = jd2 | (gnet_dash & k2_b4);
+wire [7:0]  mp_in  = {joy_g[5], joy_g[4], joy_g[6], joy_g[12], joy_g[2], joy_g[0], joy_g[3], joy_g[1]};   // s8 down to s1
+wire        mp_en  = (gnet_inmode == 2'd1) | (gnet_inmode == 2'd2);
+wire        mp_cs  = mp_en & joy_g[8];                                                      // Select held (mahjong sets)
+wire [1:0]  mp_sh  = mp_cs ? 2'b00 : {joy_g[14], joy_g[13]};                                   // {R, L}
+wire        mp_svc  = mp_cs & joy_g[13];                                                    // Select + L
+wire        mp_test = mp_cs & joy_g[14];                                                    // Select + R
+reg         mp_cs_q = 1'b0, mp_cs_used = 1'b0;
+always @(posedge clk_1x) begin
+	mp_cs_q <= mp_cs;
+	if (mp_svc | mp_test) mp_cs_used <= 1'b1;
+	else if (~mp_cs) mp_cs_used <= 1'b0;
+end
+wire        mp_coin = mp_cs_q & ~mp_cs & ~mp_cs_used;                                       // Select released alone
+wire        mp_m2  = (gnet_inmode == 2'd2);                                                 // Usagi
+reg  [7:0]  mp_q   = 8'd0;
+reg  [15:0] mp_lay = 16'd0;    // per input, 2 bits: {R, L} held when it was pressed
+integer     mp_i;
+always @(posedge clk_1x) begin
+	mp_q <= mp_in;
+	for (mp_i = 0; mp_i < 8; mp_i = mp_i + 1)
+		if (mp_in[mp_i] & ~mp_q[mp_i]) mp_lay[2*mp_i +: 2] <= mp_sh;
+end
+wire [7:0] mp_pl, mp_r, mp_l, mp_sel;   // layer outputs (pressed = 1), inputs taken by a shift layer
+genvar mp_g;
+generate for (mp_g = 0; mp_g < 8; mp_g = mp_g + 1) begin : mp_dec
+	wire [1:0] lay = mp_lay[2*mp_g +: 2];
+	assign mp_pl[mp_g]  = mp_en & mp_q[mp_g] & ((lay == 2'b11) | ((lay == 2'b00) & mp_m2));
+	assign mp_r[mp_g]   = mp_en & mp_q[mp_g] & (lay == 2'b10);
+	assign mp_l[mp_g]   = mp_en & mp_q[mp_g] & (lay == 2'b01);
+	assign mp_sel[mp_g] = mp_en & mp_in[mp_g] & ((mp_q[mp_g] ? lay : mp_sh) != 2'b00);
+end endgenerate
+wire [13:0] mp_mj = {mp_r[5:0], mp_pl};                                            // N down to A
+wire        mp_kan = mp_l[0], mp_pon = mp_l[1], mp_chi = mp_l[2], mp_reach = mp_l[3], mp_ron = mp_l[4];
+// P1 bits 6:0 (B3 B2 B1 U D L R) of the inputs a shift layer took
+wire [6:0]  mp_p1m = {mp_sel[5], mp_sel[7], mp_sel[6], mp_sel[1], mp_sel[3], mp_sel[0], mp_sel[2]};
+
 // joystick bits: 0 R, 1 L, 2 D, 3 U, then the J1 list: 4 B1, 5 B2, 6 B3,
-// 7 Start, 8 Coin, 9 Service, 10 Test, 11 Pause
-wire [19:0] zj1 = joy  | {9'd0, k_test, k_svc, k_co1, k_st1, k_b3,  k_b2,  k_b1,  k_up,  k_dn,  k_lt,  k_rt};
-wire [19:0] zj2 = joy2 | {9'd0, 1'b0,   1'b0,  k_co2, k_st2, k2_b3, k2_b2, k2_b1, k2_up, k2_dn, k2_lt, k2_rt};
+// 7 Start, 8 Coin, 9 Service, 10 Test, 11 Pause (mahjong sets: 12 Y, 13 L
+// shift, 14 R shift, see above)
+wire [19:0] zj1 = (joy_g & ~{11'd0, mp_en, 1'b0, mp_p1m}) | {9'd0, k_test | mp_test, k_svc | mp_svc, k_co1 | mp_coin, k_st1, k_b3,  k_b2,  k_b1,  k_up,  k_dn,  k_lt,  k_rt};
+wire [19:0] zj2 = joy2_g | {9'd0, 1'b0,   1'b0,  k_co2, k_st2, k2_b3, k2_b2, k2_b1, k2_up, k2_dn, k2_lt, k2_rt};
+// The Pause button (pad and keyboard P) always toggles the pause, as the
+// official MiSTer arcade cores.
 wire        pause_btn = zj1[11] | zj2[11] | k_p;
 
 // Special controls (gnet_inmode, MAME 0.288 taitogn.cpp INPUT_PORTS
@@ -925,30 +1013,50 @@ always @(posedge clk_1x) begin
 		endcase
 	end
 end
-// rows 3 downto 0, 6 bits each, pressed = 1 (zn2_io A10100, active low)
-wire [5:0] mj_r0 = {zj1[7], k_kan,   k_mj[12], k_mj[8],  k_mj[4], k_mj[0]};   // Start1 Kan M I E A
-wire [5:0] mj_r1 = {1'b0,   k_reach, k_mj[13], k_mj[9],  k_mj[5], k_mj[1]};   // -      Reach N J F B
-wire [5:0] mj_r2 = {1'b0,   k_ron,   k_chi,    k_mj[10], k_mj[6], k_mj[2]};   // -      Ron Chi K G C
-wire [5:0] mj_r3 = {2'b00,           k_pon,    k_mj[11], k_mj[7], k_mj[3]};   // -  -   Pon L H D
+// rows 3 downto 0, 6 bits each, pressed = 1 (zn2_io A10100, active low);
+// keyboard or pad (mp_*, the pad layers above)
+wire [13:0] mj_t = k_mj | mp_mj;                  // A to N
+wire mj_kan = k_kan | mp_kan, mj_pon = k_pon | mp_pon, mj_chi = k_chi | mp_chi;
+wire mj_reach = k_reach | mp_reach, mj_ron = k_ron | mp_ron;
+wire [5:0] mj_r0 = {zj1[7], mj_kan,   mj_t[12], mj_t[8],  mj_t[4], mj_t[0]};   // Start1 Kan M I E A
+wire [5:0] mj_r1 = {1'b0,   mj_reach, mj_t[13], mj_t[9],  mj_t[5], mj_t[1]};   // -      Reach N J F B
+wire [5:0] mj_r2 = {1'b0,   mj_ron,   mj_chi,   mj_t[10], mj_t[6], mj_t[2]};   // -      Ron Chi K G C
+wire [5:0] mj_r3 = {2'b00,            mj_pon,   mj_t[11], mj_t[7], mj_t[3]};   // -  -   Pon L H D
 wire [23:0] zn_mj = ~{mj_r3, mj_r2, mj_r1, mj_r0};
 
 // RC wheel and trigger (gobyrc ANALOG1 IPT_PADDLE, ANALOG2 IPT_PADDLE_V
 // PORT_REVERSE, 00h-FFh, centre 80h; znmcu analog channels 0 and 1).
 // Wheel: the analog stick's X, or the paddle once it moves (the source
-// that moved last is used); trigger: the stick's Y reversed as MAME's
-// PORT_REVERSE (stick up = FFh). The D-pad or keyboard arrows give full
-// deflection.
+// that moved last is used), 80h + X; trigger: the stick's Y reversed as
+// MAME's PORT_REVERSE, 80h - Y: rest 80h as MAME (issue #4: ~(Y ^ 80h)
+// gave 7Fh), stick up (Y = -127) FFh, down (Y = +127) 01h, Y = -128
+// clamped to FFh. hps_io gives X and Y signed, -127 to +127, up negative.
+// The D-pad or keyboard arrows give full deflection only while that stick
+// axis is at rest (|axis| <= 16): a deflected stick can also set the D-pad
+// bits (MiSTer's stick to D-pad), and they must not replace the analog
+// value.
+wire [7:0] rc_x    = joystick_analog_l0[7:0];
+wire [7:0] rc_y    = joystick_analog_l0[15:8];
+wire       rc_x_on = (rc_x > 8'd16) & (rc_x < 8'd240);   // |X| > 16
+wire       rc_y_on = (rc_y > 8'd16) & (rc_y < 8'd240);   // |Y| > 16
 reg       rc_paddle = 1'b0;
 reg [7:0] paddle_q  = 8'd0;
 always @(posedge clk_1x) begin
 	paddle_q <= paddle_0;
-	if ((paddle_0 > paddle_q + 8'd2) | (paddle_q > paddle_0 + 8'd2)) rc_paddle <= 1'b1;
-	else if ((joystick_analog_l0[7:0] > 8'd16) & (joystick_analog_l0[7:0] < 8'd240)) rc_paddle <= 1'b0;
+	// 9-bit sums: a paddle resting at FEh or FFh must not count as moving
+	if (({1'b0, paddle_0} > {1'b0, paddle_q} + 9'd2) | ({1'b0, paddle_q} > {1'b0, paddle_0} + 9'd2)) rc_paddle <= 1'b1;
+	else if (rc_x_on) rc_paddle <= 1'b0;
 end
-wire [7:0] rc_wheel_a = rc_paddle ? paddle_0 : (joystick_analog_l0[7:0] ^ 8'h80);
-wire [7:0] rc_trig_a  = ~(joystick_analog_l0[15:8] ^ 8'h80);
-wire [7:0] zn_an0 = ~gnet_rc ? 8'hFF : zj1[1] ? 8'h00 : zj1[0] ? 8'hFF : rc_wheel_a;   // left, right
-wire [7:0] zn_an1 = ~gnet_rc ? 8'hFF : zj1[3] ? 8'hFF : zj1[2] ? 8'h00 : rc_trig_a;    // up, down
+wire [7:0] rc_wheel_a = rc_paddle ? paddle_0 : (rc_x ^ 8'h80);
+wire [8:0] rc_trig_d  = 9'h080 - {rc_y[7], rc_y};
+wire [7:0] rc_trig_a  = rc_trig_d[8] ? 8'hFF : rc_trig_d[7:0];
+wire [7:0] zn_an0 = ~gnet_rc ? 8'hFF : (rc_paddle | rc_x_on) ? rc_wheel_a :
+                    zj1[1] ? 8'h00 : zj1[0] ? 8'hFF : rc_wheel_a;                 // left, right
+// Buttons 1 and 2 (P1 bits MAME marks unused for gobyrc, zm_p1 above, so the
+// game never sees them) give full accelerate and full brake, over the stick:
+// FFh accelerates, 00h brakes (MAME 0.288, the HUD meter after calibration).
+wire [7:0] zn_an1 = ~gnet_rc ? 8'hFF : zj1[4] ? 8'hFF : zj1[5] ? 8'h00 : rc_y_on ? rc_trig_a :
+                    zj1[3] ? 8'hFF : zj1[2] ? 8'h00 : rc_trig_a;                  // up, down
 
 // EEPROM NVRAM save (docs/m4_shell.md 4). Main_MiSTer loads the MRA's
 // <nvram index="6" size="2048"/> file on index 6 (the loader above) and
@@ -1366,6 +1474,9 @@ always @(posedge clk_1x) begin
    if (pause_btn & ~buttonpause_1) begin
       button_paused <= ~button_paused;
    end
+`ifdef GNET_SHELL
+   if (reset_or) button_paused <= 0;   // a reset cancels the button pause, as the arcade cores
+`endif
    if (button_paused) begin
       paused <= 1;
    end
@@ -1421,6 +1532,18 @@ always @(posedge clk_1x) begin
       zn_wd_grace <= zn_wd_grace - 1'd1;
 end
 assign zn_wd_mask = paused | (zn_wd_grace != 0);
+
+// Coin 1 and Coin 2 (J1 Coin and the 5 and 6 keys): one 100 ms pulse per
+// press, timer stopped while paused (rtl/gnet/gnet_coin_pulse.sv; a coin
+// held 0.5 s is a jammed mech to Space Invaders Anniversary). An
+// input-handling choice, not board behaviour. The lockouts are zn2_io's
+// (A00300 read).
+wire zc1, zc2;
+gnet_coin_pulse #(.PULSE(3386880)) coin1_pulse (.clk(clk_1x), .hold(paused), .in(zj1[8]), .out(zc1));
+gnet_coin_pulse #(.PULSE(3386880)) coin2_pulse (.clk(clk_1x), .hold(paused), .in(zj2[8]), .out(zc2));
+`elsif GNET_ZN2
+wire zc1 = zj1[8];
+wire zc2 = zj2[8];
 `endif
 
 ////////////////////////////  SYSTEM  ///////////////////////////////////
@@ -1480,10 +1603,33 @@ localparam GNET_ZOOM_INFL = 8;   // ZSG-2 reads outstanding behind the DDR3 arbi
 `else
 localparam GNET_ZOOM_INFL = 4;
 `endif
+// GPU VRAM read latency options (docs/gpu_read_infl.md); unset = upstream (1)
+`ifdef GNET_GPU_READ_INFL
+localparam GNET_GPU_READ_INFL = `GNET_GPU_READ_INFL;     // reads in flight / posted writes: 1, 2 or 4
+`else
+localparam GNET_GPU_READ_INFL = 1;
+`endif
+`ifdef GNET_TEX_FETCH_QW
+localparam GNET_TEX_FETCH_QW = `GNET_TEX_FETCH_QW;       // texture cache fill per miss: 1 or 4 qwords
+`else
+localparam GNET_TEX_FETCH_QW = 1;
+`endif
+`ifdef GNET_TEX_FETCH_ROWS
+localparam GNET_TEX_FETCH_ROWS = `GNET_TEX_FETCH_ROWS;   // texture rows per fill: 1, 2 or 4 (needs QW 4)
+`else
+localparam GNET_TEX_FETCH_ROWS = 1;
+`endif
+`ifdef GNET_TEX_MISS_DELAY
+localparam GNET_TEX_MISS_DELAY = `GNET_TEX_MISS_DELAY;   // clk_2x cycles added to each texture cache fill (real GPU VRAM cost)
+`else
+localparam GNET_TEX_MISS_DELAY = 0;
+`endif
 `ifdef GNET_ZN2
 localparam GNET_ZN2_BOARD = 1;   // ZN-2 board and G-NET FC PCB (rtl/gnet/zn2_board.vhd)
+localparam GNET_RECT_FLIP = 1;   // CXD8654Q textured rectangle X/Y flip, E1 bits 12/13 (issue #6, gpu_rect.vhd)
 `else
 localparam GNET_ZN2_BOARD = 0;
+localparam GNET_RECT_FLIP = 0;
 `endif
 // Fast clock (clk_3x) edges per CPU clock cycle for the request strobes in
 // sdram.sv and psx_top.vhd (docs/r1_cpu_domain_design.md). Selects logic
@@ -1508,6 +1654,23 @@ localparam GNET_READ_OVERLAP_P = 1;
 `else
 localparam GNET_READ_OVERLAP_P = 0;
 `endif
+// R1 main RAM load timing at 2:1 (docs/r1_cpu_domain_design.md, "Main RAM
+// load timing at 2:1"), both off at 3:1. GNET_RAM_READ_NOWAIT: memorymux
+// skips WAITFORRAMREAD for main RAM data reads (psx_top RAM_READ_NOWAIT; the
+// CPU's back-to-back compensation is then skipped for RAM-RAM pairs).
+// GNET_RAM_B2B_WINDOW: memorymux's back-to-back read window rescaled so it
+// covers a load issued 2 cycles after the previous one's done (8 with
+// GNET_EARLY_READY, 9 without; upstream 7). No effect with GNET_RAM_READ_NOWAIT.
+`ifdef GNET_RAM_READ_NOWAIT
+localparam GNET_RAM_READ_NOWAIT_P = (GNET_CLK_FAST_RATIO == 2) ? 1 : 0;
+`else
+localparam GNET_RAM_READ_NOWAIT_P = 0;
+`endif
+`ifdef GNET_RAM_B2B_WINDOW
+localparam GNET_RAM_LOAD_WINDOW_P = (GNET_CLK_FAST_RATIO != 2) ? 7 : (GNET_EARLY_READY_P != 0) ? 8 : 9;
+`else
+localparam GNET_RAM_LOAD_WINDOW_P = 7;
+`endif
 // R1: CPU group on clk_cpu/clk_cpu2x (needs GNET_CLK_RATIO2 and the LEAN trims)
 `ifdef GNET_CPU50
 localparam GNET_CPU_CLK_SPLIT = 1;
@@ -1524,6 +1687,23 @@ wire [15:0] snd_l, snd_r;
 wire        hs_k, vs_k;   // gnet_sync_keeper to gnet_crt_pos
 `endif
 
+// Dash (issue #7, configuration bit 4, rtl/gnet/gnet_dash.sv): Dash pressed
+// while a direction is held releases it 4 frames, taps it 4 frames,
+// releases it 4 frames and presses it 4 frames (Chaos Heat's double tap),
+// frames counted on the core's VBLANK and stopped while paused.
+`ifdef GNET_ZN2
+`ifdef GNET_SHELL
+wire [3:0] zd1, zd2;
+gnet_dash #(.GAP(4), .TAP(4)) dash_p1 (.clk(clk_1x), .en(gnet_dash), .hold(paused), .vbl(vbl_c),
+	.btn(dash1), .dir_in(zj1[3:0]), .dir_out(zd1), .busy());
+gnet_dash #(.GAP(4), .TAP(4)) dash_p2 (.clk(clk_1x), .en(gnet_dash), .hold(paused), .vbl(vbl_c),
+	.btn(dash2), .dir_in(zj2[3:0]), .dir_out(zd2), .busy());
+`else
+wire [3:0] zd1 = zj1[3:0];
+wire [3:0] zd2 = zj2[3:0];
+`endif
+`endif
+
 psx_mister
 #(
    .HAS_CD(GNET_HAS_CD),
@@ -1532,14 +1712,21 @@ psx_mister
    .HAS_CHEATS(GNET_HAS_CHEATS),
    .HAS_MDEC(GNET_HAS_MDEC),
    .VRAM_Y_BITS(GNET_VRAM_Y_BITS),
+   .RECT_FLIP(GNET_RECT_FLIP),
    .GTE_NARROW_MUL(GNET_GTE_NARROW_MUL),
+   .GPU_READ_INFL(GNET_GPU_READ_INFL),
+   .TEX_FETCH_QW(GNET_TEX_FETCH_QW),
+   .TEX_FETCH_ROWS(GNET_TEX_FETCH_ROWS),
+   .TEX_MISS_DELAY(GNET_TEX_MISS_DELAY),
    .CLK_FAST_RATIO(GNET_CLK_FAST_RATIO),
    .CPU_CLK_SPLIT(GNET_CPU_CLK_SPLIT),
    .ZN2_BOARD(GNET_ZN2_BOARD),
    .ZN2_WD_TIMEOUT_S(GNET_WD_TIMEOUT_S),
    .ZOOM_BOARD(GNET_ZOOM_BOARD),
    .ZOOM_INFL(GNET_ZOOM_INFL),
-   .ZN2_READ_OVERLAP(GNET_READ_OVERLAP_P)
+   .ZN2_READ_OVERLAP(GNET_READ_OVERLAP_P),
+   .RAM_READ_NOWAIT(GNET_RAM_READ_NOWAIT_P),
+   .RAM_LOAD_WINDOW(GNET_RAM_LOAD_WINDOW_P)
 )
 psx
 (
@@ -1882,15 +2069,16 @@ psx
    ,
    // G-NET: inputs active low (MAME zn/taitogn input ports, docs/zn2_layer_design.md 7.1)
    // zj1/zj2: joysticks, with the MAME keyboard keys in GNET_SHELL builds
-   .zn_in_p1       (~{1'b0, zj1[6], zj1[5], zj1[4], zj1[0], zj1[1], zj1[2], zj1[3]} | zm_p1),
-   .zn_in_p2       (~{1'b0, zj2[6], zj2[5], zj2[4], zj2[0], zj2[1], zj2[2], zj2[3]} | zm_p2),
+   // zd1/zd2: the directions after the Dash sequence (gnet_dash)
+   .zn_in_p1       (~{1'b0, zj1[6], zj1[5], zj1[4], zd1[0], zd1[1], zd1[2], zd1[3]} | zm_p1),
+   .zn_in_p2       (~{1'b0, zj2[6], zj2[5], zj2[4], zd2[0], zd2[1], zd2[2], zd2[3]} | zm_p2),
    .zn_in_service  (~{6'b000000, zj1[9], zj1[10]}),
-   .zn_in_system   (~{2'b00, zj2[8], zj1[8], 2'b00, zj2[7], zj1[7]} | zm_sys),
+   .zn_in_system   (~{2'b00, zc2, zc1, 2'b00, zj2[7], zj1[7]} | zm_sys),   // zc1/zc2: coin pulses, after the pause logic
    .zn_in_mj       (zn_mj),
    .zn_in_mj_en    (gnet_mj),
    .zn_in_an0      (zn_an0),
    .zn_in_an1      (zn_an1),
-   .zn_dsw         (zn_sw0[3:0]),
+   .zn_dsw         ({zn_sw0[3] & ~status[121], zn_sw0[2:0]}),   // OSD Service Menu holds S551:4 Test Mode on (0)
    .zn_jp1         (zn_sw0[4]),
 `ifdef GNET_SHELL
    .zn_nozoom      (gnet_nozoom),
@@ -2776,15 +2964,34 @@ zn_dbg_overlay #(.DR_ROW(GNET_DBG_DR_ROW)) dbg_ovl
 `endif
 
 `ifdef GNET_SHELL
+// OSD "Dim video after 10s" (status[120], 0 = On): RGB halved after 10 s
+// of any pause, restored when the pause ends (rtl/gnet/gnet_pause_dim.sv).
+// Applied to the core RGB ahead of arcade_video and the rotation feed, so
+// HDMI, direct video and analog all dim; the syncs do not pass through it.
+wire [23:0] rgb_shell;
+gnet_pause_dim pause_dim
+(
+	.clk    (clk_1x),
+	.paused (paused),
+	.dim_en (~status[120]),
+	.dim    (),
+	.clk_vid(CLK_VIDEO),
+	.rgb_in (rgb_dbg),
+	.rgb_out(rgb_shell)
+);
+
 // Scandoubler Fx and gamma through the framework's arcade_video (as my
 // other cores): HQ2x or CRT scanlines when Fx is set or the scandoubler is
 // forced (31 kHz VGA). With Fx None and no forced scandoubler CE_PIXEL is the
 // core's dot enable, one dot every 10/8/5/4 clocks (DV1, docs/m4_shell.md 2).
-arcade_video #(.WIDTH(640), .DW(24)) arcade_video
+// rtl/gnet/gnet_arcade_video.sv is the framework's arcade_video with VSync
+// passed on every dot when not scandoubling, so the 480i half-line field
+// offset reaches direct video and 15 kHz analog (issue #3).
+gnet_arcade_video #(.WIDTH(640), .DW(24)) arcade_video
 (
 	.clk_video(CLK_VIDEO),
 	.ce_pix   (ce_pix),
-	.RGB_in   (rgb_dbg),
+	.RGB_in   (rgb_shell),
 	.HBlank   (video_aspect.hb),
 	.VBlank   (video_aspect.vb),
 	.HSync    (video_aspect.hs),
@@ -2819,7 +3026,7 @@ gamma_corr rot_gamma
 	.VSync(video_aspect.vs),
 	.HBlank(video_aspect.hb),
 	.VBlank(video_aspect.vb),
-	.RGB_in(rgb_dbg),
+	.RGB_in(rgb_shell),
 	.HSync_out(rotv_hs),
 	.VSync_out(rotv_vs),
 	.HBlank_out(rotv_hb),

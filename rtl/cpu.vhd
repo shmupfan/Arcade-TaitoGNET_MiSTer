@@ -7,7 +7,17 @@ library mem;
 use work.pexport.all;
 
 entity cpu is
-   port 
+   generic
+   (
+      -- G-NET R1 (docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1"):
+      -- 1 = upstream: a load issued right after another load's writeback gets
+      -- the back-to-back compensation cycle (lateReadStall) in its special
+      -- cases. 0 = not when both loads are main RAM data loads, the pair for
+      -- which memorymux gives no back-to-back discount with RAM_READ_NOWAIT = 1
+      -- (psx_top ties this to 1 - RAM_READ_NOWAIT); other pairs as upstream.
+      B2B_RAM_COMP          : integer := 1
+   );
+   port
    (
       clk1x                 : in  std_logic;
       clk2x                 : in  std_logic;
@@ -2320,7 +2330,8 @@ begin
 
                -- need to compensate for timing in original design on back to back reads:
                -- this is due to unclear reason why the original design is slower here than it could be
-               if (lateReadBypass = '1') then
+               -- (G-NET B2B_RAM_COMP = 0: skipped when both reads go to main RAM)
+               if (lateReadBypass = '1' and (B2B_RAM_COMP /= 0 or executeReadAddress(28 downto 0) >= 16#800000# or lateReadRam = '0')) then
                   -- one additional wait cycle if target of first read is to be used after second read
                   if ((decodeReqSource1 = '1' and decodeSource1 = lateReadTarget) or (decodeReqSource2 = '1' and decodeSource2 = lateReadTarget)) then
                      lateReadStall <= not TURBO;

@@ -77,6 +77,7 @@ card types and the game configuration byte of each set are in
 - **The 2011 conversions:** G-Darius, Ray Storm, Aero Fighters Special,
   Brave Blade, Flame Gunner, Fighters' Impact, Shanghai Matekibuyuu and
   The Block Kuzushi. They boot from a modified BIOS on a plain ATA card.
+  Not planned: see [Roadmap](#roadmap).
 
 ## Installation
 
@@ -94,28 +95,59 @@ have not found the game manuals, so the buttons are Button 1 to 3.
 
 | Function | Joypad (default) | Keyboard, player 1 | Keyboard, player 2 |
 |---|---|---|---|
-| Buttons 1, 2, 3 | A, B, X | Left Ctrl, Left Alt, Space | A, S, Q |
+| Buttons 1, 2, 3 | B, A, Y | Left Ctrl, Left Alt, Space | A, S, Q |
 | Start | Start | 1 | 2 |
 | Coin | Select | 5 | 6 |
-| Service | L | 9 | |
-| Test | R | F2 | |
+| Service | map it in the OSD | 9 | |
+| Test | map it in the OSD | F2 | |
 | Pause | map it in the OSD | P | |
 
 Movement is the stick or D-pad, the arrow keys for player 1, and R, F, D,
-G for player 2. The keyboard keys are MAME's defaults.
+G for player 2. The keyboard keys are MAME's defaults. The pad names are
+MiSTer's (SNES layout): B is the bottom face button, A the right, Y the
+left and X the top. A mapping you defined for an earlier version is kept
+and overrides these: define the buttons again in the OSD, or delete the
+game's file in `config/inputs/` on the SD card (for example
+`raycris_input_<vid>_<pid>_v3.map`).
+
+Chaos Heat has a Dash button (X on the pad; Left Shift for player 1 and W
+for player 2 on the keyboard). It is a shortcut I added, not a cabinet
+button: hold a direction and press Dash, and it taps that direction twice
+for you, which is the game's own dash move.
 
 Four sets use other controls, as MAME 0.288 maps them:
 
 - **Mahjong panel** (Mahjong Oh, Usagi), on the keyboard with MAME's
   default keys: A to N for the tiles, Left Ctrl Kan, Left Alt Pon, Space
   Chi, Left Shift Reach, Z Ron, 1 Start. Mahjong Oh also keeps the player
-  1 stick and buttons; Usagi has neither.
+  1 stick and buttons; Usagi has neither. On a pad, L and R are shift
+  buttons and the D-pad and the four face buttons give the keys, counted
+  from the left and going clockwise (Left, Up, Right, Down, then Y, X, A,
+  B with the default mapping):
+
+  | Hold | Left | Up | Right | Down | Y | X | A | B |
+  |---|---|---|---|---|---|---|---|---|
+  | nothing (Usagi), or L and R together | A | B | C | D | E | F | G | H |
+  | R | I | J | K | L | M | N | | |
+  | L | Kan | Pon | Chi | Reach | Ron | | | |
+
+  Start is Start. In Mahjong Oh the D-pad and A, B, X without a shift are
+  the player 1 stick and buttons, so its tiles A to H need L and R held
+  together. A key keeps the shift it was pressed with until you let go of
+  it. Service, Test and Pause have no pad button by default; map them in
+  the OSD if needed.
 - **RC wheel and trigger** (Go By RC, RC De Go), one player: the analog
-  stick's X axis or a paddle steers, the stick's Y axis is the trigger;
-  the D-pad or arrow keys give full deflection. With a fresh EEPROM the
-  game stops on its CALIBRATION screen, as it does in MAME: leave the
-  stick centred and press Start. The game saves the calibration to the
-  EEPROM.
+  stick's X axis or a paddle steers, the stick's Y axis is the trigger
+  (up accelerates, down brakes); the D-pad or arrow keys give full
+  deflection. Button 1 (B by default) is full accelerate and Button 2
+  (Y) full brake. With a fresh EEPROM the game stops on its CALIBRATION
+  screen, as it does in MAME. It takes three presses of Start (the
+  game's own instructions): let go of the stick and press Start; push
+  the stick fully up, down, left and right, holding each for about a
+  second, then press Start; press Start again. The trigger has to move
+  both ways from centre, otherwise the game reports a TRIGGER problem:
+  press Start and repeat. The game saves the calibration to the EEPROM;
+  open the OSD once afterwards so it is written to the SD card.
 
 ## OSD options
 
@@ -154,16 +186,20 @@ NVRAM when the OSD opens after the game has written to it.
 
 ## Known issues
 
-- **Loading is slower than on the board.** The CPU spends about 9.6 of its
-  cycles on each main RAM load where the real chip needs about 7, so
-  CPU-bound work runs slow. Ray Crisis's "Prepares the start." bar takes
-  about 16.9 s on the core, 14.69 s on a real board and 12.3 s in MAME.
-  Screens after the loaders come 1.5 to 5 s later than in MAME.
-- **480i games on a CRT.** Flip Maze, Kollon and Otenami Haiken Final draw
-  480-line interlaced screens (512 or 640 by 480). On a 15 kHz CRT the
-  picture does not look right yet (fine detail shimmers), and the
-  Deinterlacing option is not offered in that mode. The 240-line games
-  are not affected.
+- **Slowdown is matched to one board recording** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)).
+  Alpha 3 makes the CPU's main RAM loads faster and lets the GPU fetch
+  textures ahead, so heavy scenes no longer slow down more than on the
+  board. The GPU's texture wait is then set so that Ray Crisis's first
+  attract demo takes 51.4 s, against 51.5 s on a real board (54.7 s in
+  alpha 2). With the texture prefetch, Shikigami no Shiro's stage 1 boss
+  fight ran within about 3% of a board video. The setting comes from one board recording per game;
+  60 fps captures of heavy scenes on a real board would refine it.
+- **480i games on a CRT** ([#3](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/3)).
+  Flip Maze, Kollon, Otenami Haiken Final and Zooo draw 480-line
+  interlaced screens. Alpha 3 sends both fields to direct video, so the
+  picture is complete; fine horizontal lines flicker a little, as
+  interlaced video does on a real monitor. Reports from more CRT setups
+  are welcome. On HDMI, the Deinterlacing option (Weave or Bob) applies.
 - **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real
@@ -184,7 +220,7 @@ NVRAM when the OSD opens after the game has written to it.
   agrees with MAME to about 0.3%, which cannot tell the two apart; a
   frequency counter on a board would.
 - **Not yet checked on hardware:** play in the sets marked Boots; the 3
-  sets marked Not tested; slowdown in heavy scenes against a real board;
+  sets marked Not tested; slowdown in heavy scenes of other games;
   the EEPROM save across a power cycle; rotation and Flip Screen on every
   display.
 
@@ -192,34 +228,28 @@ NVRAM when the OSD opens after the game has written to it.
 
 Roughly in this order. None of it has a date.
 
-- **Fixes for the [open issues](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues):**
-  Space Invaders Anniversary resets on Start ([#1](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/1)),
-  Usagi's mahjong controls ([#2](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/2)),
-  direct video in the 480i games ([#3](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/3)),
-  Go By RC calibration ([#4](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/4)),
-  Shikigami no Shiro slowdown, the same CPU timing as the slow loading in
-  Known issues ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)),
-  Super Puzzle Bobble animations ([#6](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/6))
-  and a Dash button for Chaos Heat ([#7](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/7)).
-- **Next core build:** more timing margin in the FPGA build (no change in
-  behaviour), with the fixes above as they are ready.
-- **[Known issues](#known-issues):** 480i on a CRT, sound balance, saving
-  card writes. Some need measurements from a real board.
-- **The 2011 conversions:** G-Darius, Ray Storm and Fighters' Impact first
-  (their originals run on the FX-1B core, which gives a check), then Aero
-  Fighters Special and Brave Blade, then Flame Gunner, Shanghai
-  Matekibuyuu and The Block Kuzushi. The core needs the modified BIOS
-  EPROM, the JP1 jumper and plain ATA cards, and the converter needs the
-  new card type. Plan: [docs/gnet_set_survey.md](docs/gnet_set_survey.md#5-second-wave), sections 2.6, 3 and 5.
+- **Slowdown** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)):
+  check the texture wait against more board recordings of heavy scenes.
+- **Psyvariar's settings not kept** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).
+- **[Known issues](#known-issues):** sound balance, saving card writes,
+  the watchdog period. Some need measurements from a real board.
 - **CompactFlash sets from a first boot:** Kollon (V2.04JC) and Otenami
   Haiken Final run with quick start only, because the core cannot yet run
-  the BIOS EPROM's flasher. This comes with the same EPROM work.
+  the BIOS EPROM's flasher. This needs the modified BIOS EPROM and the JP1
+  jumper.
 - **Mawasunda:** it runs on the ZN-1 G-NET board (`coh1002t`), a different
   CPU board, so it comes last.
 - **Load MAME CHDs directly.** A pull request to
   [Main_MiSTer](https://github.com/MiSTer-devel/Main_MiSTer) so an MRA can
   load a game's CHD as it is, with no conversion step. Until then, CHDs
   need the one-off conversion in [Installation](#installation).
+
+**Not planned:** the 2011 "Arcade MOD BIOS" conversions (G-Darius, Ray
+Storm, Fighters' Impact, Aero Fighters Special, Brave Blade, Flame Gunner,
+Shanghai Matekibuyuu, The Block Kuzushi). They are bootlegs, and the
+original versions of all eight already run on XelaNotPu's
+[ZN1-TaitoFX1B](https://github.com/XelaNotPu/ZN1-TaitoFX1B_MiSTer) and
+[ZN1](https://github.com/XelaNotPu/ZN1_MiSTer) cores.
 
 ## Accuracy
 
@@ -246,9 +276,9 @@ and the measurements listed at the end of the guide.
 
 ## Building
 
-- Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULLO`.
+- Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULLR`.
   Releases are built only from a fit with every clock meeting timing.
-  `Arcade-TaitoGNET_20261007.rbf` is the GNET_Z1FULLO build of the RTL in
+  `Arcade-TaitoGNET_20261015.rbf` is the GNET_Z1FULLR build of the RTL in
   this repository (Quartus 17.0.2, every clock met).
 - Simulation: NVC 1.23 and Verilator 5.x benches in `sim/`. The MAME
   reference traces need MAME 0.288 and your own files; the trace scripts

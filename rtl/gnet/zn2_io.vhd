@@ -29,7 +29,17 @@
 --   A10300 znsecsel (R/W): bit 2 CAT702 #1 select, bit 3 CAT702 #2 select
 --          (both active low), bit 4 znmcu analog, bit 5 znmcu trackball,
 --          znmcu selected while (value and 8Ch) = 8Ch
---   A20000 coin (R/W): counters and lockouts, out to the shell
+--   A20000 coin (R/W): counters and lockouts, out to the shell. Bit 1
+--          clear locks out coin 1, bit 5 clear coin 2 (zn.cpp coin_w
+--          233-241, coin_lockout_w(0, !BIT(m_coin, 1)) and (1, !BIT(m_coin,
+--          5))); a locked-out coin reads as not inserted at A00300, as
+--          MAME's ioport.cpp 1312-1327 drops a coin input while its lockout
+--          is set (coin_lockout option, on by default, emuopts.cpp 151).
+--          The lockouts start unlocked and are not reset, as MAME's
+--          bookkeeping (constructor, bookkeeping.cpp 25-34; no reset).
+--          Coins 3 and 4 (ttgncl4_state, taitogn.cpp 634-647) are never
+--          pressed in this core; ttgncl0_state (the 2011 conversions,
+--          taitogn.cpp 619-632) has no lockout and is not supported
 --   A40000 reads 0; A51C00-A51DFF reads 0; A60000 bit 3 (MAME's "work
 --          around for mismatched CPU and SPU clock", R2: the real register is
 --          unknown). The games' SPU register read routine does a dummy read
@@ -126,6 +136,8 @@ architecture arch of zn2_io is
    signal ee_timer  : integer range 0 to WRITE_CYCLES := 0;
    signal ee_last   : std_logic_vector(7 downto 0) := (others => '0');
    signal spuhack   : std_logic := '0';
+   -- coin lockouts, 1 = locked: bit 0 coin 1, bit 1 coin 2 (A20000)
+   signal coin_lock : std_logic_vector(1 downto 0) := "00";
 
    -- pipeline: request latched, then RAM data available
    signal p_valid   : std_logic := '0';
@@ -279,7 +291,10 @@ begin
             r   := (others => '0');
             if (p_we = '1') then
                if (p_addr(23 downto 2) = x"A1030" & "00" and p_be(0) = '1') then znsecsel <= p_wdata(7 downto 0); end if;
-               if (p_addr(23 downto 2) = x"A2000" & "00" and p_be(0) = '1') then coin     <= p_wdata(7 downto 0); end if;
+               if (p_addr(23 downto 2) = x"A2000" & "00" and p_be(0) = '1') then
+                  coin      <= p_wdata(7 downto 0);
+                  coin_lock <= not p_wdata(5) & not p_wdata(1);
+               end if;
                if (p_addr(23 downto 11) = x"AF0" & '0' and ee_timer = 0) then
                   ee_timer <= WRITE_CYCLES;
                   ee_last  <= ee_data_a;   -- same lowest-enabled-lane byte (Quartus 17: no signal-bounded slice)
@@ -289,7 +304,7 @@ begin
                   when 16#A00000# / 4 => r(7 downto 0) := in_p1;
                   when 16#A00100# / 4 => r(7 downto 0) := in_p2;
                   when 16#A00200# / 4 => r(7 downto 0) := in_service;
-                  when 16#A00300# / 4 => r(7 downto 0) := in_system;
+                  when 16#A00300# / 4 => r(7 downto 0) := in_system or ("00" & coin_lock & "0000");   -- COIN2 bit 5, COIN1 bit 4
                   when 16#A10000# / 4 => r(7 downto 0) := x"FF";
                   when 16#A10100# / 4 =>
                      r(7 downto 0) := x"FF";

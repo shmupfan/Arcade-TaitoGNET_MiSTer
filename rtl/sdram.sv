@@ -56,7 +56,7 @@ module sdram
 
 	input      [26:0]  ch1_addr,    // 25 bit address for 8bit mode. addr[0] = 0 for 16bit mode for correct operations.
 	output reg [127:0] ch1_dout,    // data output to cpu
-	output reg [31:0]  ch1_dout32,  // data output to cpu
+	output     [31:0]  ch1_dout32,  // data output to cpu
 	input      [15:0]  ch1_din,     // data input from cpu
 	input              ch1_req,     // request
 	input              ch1_rnw,     // 1 - read, 0 - write
@@ -151,6 +151,10 @@ reg clk3xIndex      = 0;
 
 reg ram_idleNext    = 0;
 
+reg [31:0] ch1_dout32_b = 0;
+reg [31:0] ch1_dout32_f = 0;
+assign ch1_dout32 = (CLK_FAST_RATIO == 2 && EARLY_READY != 0) ? ch1_dout32_f : ch1_dout32_b;
+
 assign ram_idle = ram_idleNext && !ch3_req;
 
 reg [10:0] lastbank;
@@ -178,14 +182,7 @@ always @(posedge clk_base) begin
       end
    end
    
-   if (ch1_ready_ramclock) begin
-      // EARLY_READY: when the second halfword arrives on this very edge
-      // (data_ready_delay1[6]), it is in dq_reg, not yet in ch1_dout
-      if (CLK_FAST_RATIO == 2 && EARLY_READY != 0 && data_ready_delay1[6])
-         ch1_dout32 <= {dq_reg, ch1_dout[15:0]};
-      else
-         ch1_dout32 <= ch1_dout[31:0];
-   end
+   if (ch1_ready_ramclock) ch1_dout32_b <= ch1_dout[31:0];
    
    dma_wr  <= 0;
    dma_ack <= 0;
@@ -314,6 +311,18 @@ always @(posedge clk) begin
 	data_ready_delay3 <= data_ready_delay3>>1;
 
 	dq_reg <= SDRAM_DQ;
+
+   // EARLY_READY at 2:1: ch1_dout32 is a clk register loaded only on the
+   // clk edges that coincide with a clk_base edge (clk3xIndex = 0 there),
+   // from the same values the clk_base register used to sample, so the CPU
+   // sees the same word on the same clk_base edge. The dq_reg (I/O input
+   // register) to ch1_dout32 path becomes a clk-to-clk path, and
+   // ch1_dout32 holds for two clk cycles before clk_base samples it
+   // (multicycle in GNET_CPU50_B1.sdc).
+   if (!clk3xIndex && ch1_ready_ramclock) begin
+      if (data_ready_delay1[6]) ch1_dout32_f <= {dq_reg, ch1_dout[15:0]};
+      else                      ch1_dout32_f <= ch1_dout[31:0];
+   end
    
    cache_wr     <= 0;
    cache_done_0 <= 0;
