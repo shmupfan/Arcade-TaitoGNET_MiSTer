@@ -121,12 +121,18 @@ def game_of(s):
     return RELEASE[ALT_OF.get(s, s)][0].split(" (")[0]
 
 
-# per controls value: players, joystick, button names (J1 bits 4-11)
+# per controls value: players, joystick, button names (J1 bits 4-11).
+# Unused buttons are named "-": Main_MiSTer (joymapping.cpp read_buttons)
+# cuts a name at "(" and stops at the first empty name, so "(unused)" left
+# no buttons at all and Start had no default mapping (Go By RC, 2026-10-15);
+# "-" is skipped in place, the later buttons keep their bits. The default
+# list counts only the named buttons. Go By RC: buttons 1 and 2 are full
+# accelerate and brake (the core's RC mode), default B and Y.
 CONTROLS = {
     0: ("2", "8-way", "Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause"),
     1: ("1", "8-way", "Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause"),
-    2: ("1", "none", "(unused),(unused),(unused),Start,Coin,Service,Test,Pause"),
-    3: ("1", "analog (wheel X, trigger Y)", "(unused),(unused),(unused),Start,Coin,Service,Test,Pause"),
+    2: ("1", "none", "-,-,-,Start,Coin,Service,Test,Pause"),
+    3: ("1", "analog (wheel X, trigger Y)", "Accelerate,Brake,-,Start,Coin,Service,Test,Pause"),
 }
 
 FLASH_WARM = """    <rom index="3" zip="gnet_{set}.zip" md5="none">
@@ -155,7 +161,7 @@ TEMPLATE = """<misterromdescription>
         <dip name="Unknown (S551:3)" bits="2" ids="On,Off" />
         <dip name="Test Mode (S551:4)" bits="3" ids="On,Off" />
     </switches>
-    <buttons names="{buttons}" default="A,B,X,Start,Select,L,R" />
+    <buttons names="{buttons}" default="{bdefault}" />
     <rom index="0" zip="coh3002t.zip" md5="none">
         <part name="m534002c-60.ic353" crc="03967fa7" />
     </rom>
@@ -218,7 +224,7 @@ def main():
             flash = (FLASH_WARM if boot == "warm" else FLASH_COLD).format(set=s)
             with open(p, "w") as f:
                 f.write(TEMPLATE.format(title=title_of(s) + suffix, set=s, rbf=a.rbf, year=year, mfr=mfr,
-                                        cat=cat, players=players, joy=joy, buttons=buttons, flash=flash,
+                                        cat=cat, players=players, joy=joy, buttons=buttons, bdefault=("Start,Select" if buttons.startswith("-,") else "B,Y,Start,Select" if buttons.startswith("Accelerate") else "B,A,Y,Start,Select"), flash=flash,
                                         rot="vertical (ccw)" if vert else "horizontal", cfg=config_byte(s)))
             print("wrote", os.path.relpath(p, a.out))
             n += 1

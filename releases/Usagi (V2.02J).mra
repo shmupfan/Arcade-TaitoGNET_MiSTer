@@ -15,7 +15,7 @@
         <dip name="Unknown (S551:3)" bits="2" ids="On,Off" />
         <dip name="Test Mode (S551:4)" bits="3" ids="On,Off" />
     </switches>
-    <buttons names="(unused),(unused),(unused),Start,Coin,Service,Test,Pause" default="A,B,X,Start,Select,L,R" />
+    <buttons names="Tile G,Tile H,Tile F / R+N,Start,Coin,Service,Test,Pause,Tile E / R+M / L+Ron,Shift L (calls),Shift R (tiles I-N)" default="A,B,X,Start,Select,-,-,-,Y,L,R" />
     <rom index="0" zip="coh3002t.zip" md5="none">
         <part name="m534002c-60.ic353" crc="03967fa7" />
     </rom>
