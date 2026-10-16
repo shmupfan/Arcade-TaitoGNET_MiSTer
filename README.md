@@ -191,15 +191,25 @@ NVRAM when the OSD opens after the game has written to it.
   textures ahead, so heavy scenes no longer slow down more than on the
   board. The GPU's texture wait is then set so that Ray Crisis's first
   attract demo takes 51.4 s, against 51.5 s on a real board (54.7 s in
-  alpha 2). With the texture prefetch, Shikigami no Shiro's stage 1 boss
-  fight ran within about 3% of a board video. The setting comes from one board recording per game;
-  60 fps captures of heavy scenes on a real board would refine it.
+  alpha 2). Shikigami no Shiro's stage 1 boss fight is within about 1%
+  of a board video (23.8 s against 23.5 s for the same stretch of the
+  in-game TIME counter; about 16% slower before the texture prefetch).
+  The setting comes from one board recording per game; 60 fps captures of
+  heavy scenes on a real board would refine it.
 - **480i games on a CRT** ([#3](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/3)).
   Flip Maze, Kollon, Otenami Haiken Final and Zooo draw 480-line
   interlaced screens. Alpha 3 sends both fields to direct video, so the
-  picture is complete; fine horizontal lines flicker a little, as
-  interlaced video does on a real monitor. Reports from more CRT setups
-  are welcome. On HDMI, the Deinterlacing option (Weave or Bob) applies.
+  picture is complete, and a tester reports these games now look right on
+  direct video. Fine horizontal lines flicker a little, as interlaced
+  video does on a real monitor. Reports from more CRT setups are welcome.
+  On HDMI, the Deinterlacing option (Weave or Bob) applies.
+- **Space Invaders Anniversary** ([#10](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/10)). Coin and Start work in alpha 3, but a
+  tester sees a triangle covering the playfield from the top right corner
+  to the bottom left in game. Not yet reproduced.
+- **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)). A tester loses the picture with any Fx setting
+  other than None. Any Fx setting turns the scandoubler on, so the output
+  goes to 31 kHz, which a 15 kHz CRT cannot show; on HDMI or a 31 kHz
+  monitor it would be a bug. Details are still to come.
 - **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real
@@ -230,6 +240,10 @@ Roughly in this order. None of it has a date.
 
 - **Slowdown** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)):
   check the texture wait against more board recordings of heavy scenes.
+- **Faster loading** ([#12](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/12)): a game takes about 35 s to load,
+  because Main sends the 51 MB of card and flash data one word at a time.
+  Loading the card image straight into DDR3, as the MRA format allows,
+  should bring it well under 10 s.
 - **Psyvariar's settings not kept** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).
 - **[Known issues](#known-issues):** sound balance, saving card writes,
   the watchdog period. Some need measurements from a real board.
