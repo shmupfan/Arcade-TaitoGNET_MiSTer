@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the release MRAs for every G-NET set the converter knows into releases/.
 
-  tools/gnet/make_release_mras.py [--rbf TaitoGNET] [--out releases]
+  tools/gnet/make_release_mras.py [--rbf TaitoGNET] [--out releases] [--ddr3 none|card|all]
 
 The release layout (releases/README.md), the MiSTer arcade convention:
   releases/<Game>.mra
@@ -44,7 +44,9 @@ Loads (docs/zn2_layer_design.md 13.5, docs/m4_shell.md 3):
            controls (PSX.sv gnet_inmode): 0 joysticks, 1 mahjong panel and
            P1 joystick (mahjngoh), 2 mahjong panel (usagi), 3 RC wheel and
            trigger (gobyrc, rcdego); the mahjong keys are on the keyboard
-           (MAME defaults)
+           (MAME defaults) and on pad 1 (issue #2: the face buttons, Y, L
+           and R shifts); bit 4 = the Dash button (Chaos Heat, issue #7,
+           rtl/gnet/gnet_dash.sv), listed after Button 3 in the MRA
   index 254 switches, byte 0: bits 3-0 DIP S551 (active low, all Off, MAME
            DSW 0Fh), bit 4 JP1 (BIOS Flash). JP1 is 0 (open) for every set
            and not offered in the OSD: with JP1 closed the BIOS runs the
@@ -53,6 +55,23 @@ Loads (docs/zn2_layer_design.md 13.5, docs/m4_shell.md 3):
            has no EPROM in bank 2). docs/gnet_set_survey.md 2.3.
 gnet_<set>.zip is made from the user's own MAME set with
 tools/gnet/gnet_tester_zips.py (MiSTer cannot read the CHD).
+
+DDR3 loads (issue #12, docs/i12_ddr3_load.md): with
+address="0x..." on a <rom>, Main_MiSTer copies the data straight into DDR3
+and the core only gets the length, instead of one 16-bit word per handshake
+(about 1.6 to 1.8 MB/s on my MiSTer, 2026-10-16).
+  --ddr3 card: the card image (index 5) to 0x34000000, where every
+      core version keeps it (zn2_cardmem, DDR3 window 0x30000000 + 64 MB).
+      These MRAs work with every RBF released so far.
+  --ddr3 all: also the flash area (index 3) to 0x31000000; the core copies
+      it to SDRAM after the download. Needs an RBF built with GNET_DDR3_LOAD
+      (alpha 4 on); with an older RBF the flash stays unloaded and the game
+      does not start. Not for release: on hardware the alpha 4 test
+      build stops with ERROR C094 when the flash comes this way, so the
+      alpha 4 release MRAs are made with --ddr3 card.
+  --ddr3 none (default): every ROM through the word handshake, as alpha 1 to 3.
+Needs Main_MiSTer from 2021-03-01 or later (commit 1844709a sends the
+length of a DDR3 load to the core).
 """
 import argparse
 import os
@@ -65,6 +84,7 @@ from gnet_tester_zips import SETS as CONVERTER_SETS  # noqa: E402
 # year, manufacturer, rotation, init_nozoom and input port from MAME 0.288
 # taitogn.cpp GAME lines; controls from the input port (taitogn 0,
 # mahjngoh 1, usagi 2, gobyrc 3); category is the game's genre.
+# Dash (configuration bit 4) is in DASH below.
 RELEASE = {
     "raycris": ("Ray Crisis (V2.03O)", "1998", "Taito", False, False, 0, "Shooter"),
     "raycrisj": ("Ray Crisis (V2.03J)", "1998", "Taito", False, False, 0, "Shooter"),
@@ -100,6 +120,11 @@ RELEASE = {
     "usagi": ("Usagi (V2.02J)", "2001", "Warashi / Mahjong Kobo / Taito", False, False, 2, "Mahjong"),
 }
 
+# Sets with the Dash button (issue #7): configuration bit 4, and Dash after
+# Button 3 in the MRA's button list (J1 bit 7; the core's gnet_dash_remap
+# takes it out and moves Start and the rest back), default X.
+DASH = {"chaoshea", "chaosheaj"}
+
 # Sets that are not their game's main MRA, and the main set they go under.
 # Every MAME clone (the converter's parent column) is here; MAME lists the
 # Shikigami no Shiro internal build as a separate game, but it is the same game.
@@ -121,25 +146,34 @@ def game_of(s):
     return RELEASE[ALT_OF.get(s, s)][0].split(" (")[0]
 
 
-# per controls value: players, joystick, button names (J1 bits 4-11).
+# per controls value: players, joystick, button names (J1 bits 4-11, and
+# for the mahjong sets bits 12-14), default pad buttons.
 # Unused buttons are named "-": Main_MiSTer (joymapping.cpp read_buttons)
 # cuts a name at "(" and stops at the first empty name, so "(unused)" left
 # no buttons at all and Start had no default mapping (Go By RC, 2026-10-15);
-# "-" is skipped in place, the later buttons keep their bits. The default
-# list counts only the named buttons. Go By RC: buttons 1 and 2 are full
-# accelerate and brake (the core's RC mode), default B and Y.
+# "-" is skipped in place, the later buttons keep their bits. Go By RC:
+# buttons 1 and 2 are full accelerate and brake (the core's RC mode),
+# default B and Y. Mahjong sets (issue #2, PSX.sv "Mahjong panel on pad 1"):
+# the panel on pad 1, face buttons A, B, X, Y as inputs s7, s8, s6, s5
+# (J1 bits 4, 5, 6, 12) and L and R as the shifts (bits 13, 14); a "-" in
+# the default list leaves Service, Test and Pause without a pad button.
+# Mahjong Oh keeps buttons 1 to 3 without a shift; Usagi has no stick or
+# buttons, so its names are the tiles.
 CONTROLS = {
-    0: ("2", "8-way", "Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause"),
-    1: ("1", "8-way", "Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause"),
-    2: ("1", "none", "-,-,-,Start,Coin,Service,Test,Pause"),
-    3: ("1", "analog (wheel X, trigger Y)", "Accelerate,Brake,-,Start,Coin,Service,Test,Pause"),
+    0: ("2", "8-way", "Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause", "B,A,Y,Start,Select"),
+    1: ("1", "8-way", "Button 1 / L+R+G,Button 2 / L+R+H,Button 3 / L+R+F / R+N,Start,Coin,Service,Test,Pause,"
+                      "L+R+E / R+M / L+Ron,Shift L (calls),Shift R (tiles I-N)", "A,B,X,Start,Select,-,-,-,Y,L,R"),
+    2: ("1", "none", "Tile G,Tile H,Tile F / R+N,Start,Coin,Service,Test,Pause,"
+                     "Tile E / R+M / L+Ron,Shift L (calls),Shift R (tiles I-N)", "A,B,X,Start,Select,-,-,-,Y,L,R"),
+    3: ("1", "analog (wheel X, trigger Y)", "Accelerate,Brake,-,Start,Coin,Service,Test,Pause", "B,Y,Start,Select"),
 }
+DASH_BUTTONS = ("Button 1,Button 2,Button 3,Dash,Start,Coin,Service,Test,Pause", "B,A,Y,X,Start,Select")
 
-FLASH_WARM = """    <rom index="3" zip="gnet_{set}.zip" md5="none">
+FLASH_WARM = """    <rom index="3" zip="gnet_{set}.zip" md5="none"{flash_addr}>
         <part name="{set}.flash" />
     </rom>
 """
-FLASH_COLD = """    <rom index="3" zip="coh3002t.zip" md5="none">
+FLASH_COLD = """    <rom index="3" zip="coh3002t.zip" md5="none"{flash_addr}>
         <part name="flash.u30" crc="c48c8236" />
         <part repeat="0x800000">FF</part>
     </rom>
@@ -172,7 +206,7 @@ TEMPLATE = """<misterromdescription>
 {flash}    <rom index="4" zip="gnet_{set}.zip" md5="none">
         <part name="{set}.meta" />
     </rom>
-    <rom index="5" zip="gnet_{set}.zip" md5="none">
+    <rom index="5" zip="gnet_{set}.zip" md5="none"{card_addr}>
         <part name="{set}.img" />
     </rom>
     <rom index="7">
@@ -193,12 +227,14 @@ def title_of(s):
 
 def config_byte(s):
     _, _, _, vert, nozoom, ctl, _ = RELEASE[s]
-    return int(vert) | (int(nozoom) << 1) | (ctl << 2)
+    return int(vert) | (int(nozoom) << 1) | (ctl << 2) | (int(s in DASH) << 4)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rbf", default="TaitoGNET")
+    ap.add_argument("--ddr3", choices=("none", "card", "all"), default="none",
+                    help="which ROMs Main loads straight into DDR3 (see above)")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))), "releases"))
     a = ap.parse_args()
@@ -212,7 +248,11 @@ def main():
     n = 0
     for s in CONVERTER_SETS:
         fname, year, mfr, vert, nozoom, ctl, cat = RELEASE[s]
-        players, joy, buttons = CONTROLS[ctl]
+        players, joy, buttons, bdefault = CONTROLS[ctl]
+        if s in DASH:
+            if ctl != 0:
+                sys.exit(f"error: {s}: Dash is only for joystick sets")
+            buttons, bdefault = DASH_BUTTONS
         alt = os.path.join(a.out, "_alternatives", "_" + game_of(s))
         # CompactFlash cards need the v2 sub-BIOS in U30, which the BIOS installs from
         # its EPROM in flash-initialise mode; the core has no EPROM, so only quick start
@@ -221,11 +261,13 @@ def main():
             d = a.out if boot == "warm" and s not in ALT_OF else alt
             os.makedirs(d, exist_ok=True)
             p = os.path.join(d, fname + suffix + ".mra")
-            flash = (FLASH_WARM if boot == "warm" else FLASH_COLD).format(set=s)
+            flash = (FLASH_WARM if boot == "warm" else FLASH_COLD).format(
+                set=s, flash_addr=' address="0x31000000"' if a.ddr3 == "all" else "")
             with open(p, "w") as f:
                 f.write(TEMPLATE.format(title=title_of(s) + suffix, set=s, rbf=a.rbf, year=year, mfr=mfr,
-                                        cat=cat, players=players, joy=joy, buttons=buttons, bdefault=("Start,Select" if buttons.startswith("-,") else "B,Y,Start,Select" if buttons.startswith("Accelerate") else "B,A,Y,Start,Select"), flash=flash,
-                                        rot="vertical (ccw)" if vert else "horizontal", cfg=config_byte(s)))
+                                        cat=cat, players=players, joy=joy, buttons=buttons, bdefault=bdefault, flash=flash,
+                                        rot="vertical (ccw)" if vert else "horizontal", cfg=config_byte(s),
+                                        card_addr=' address="0x34000000"' if a.ddr3 != "none" else ""))
             print("wrote", os.path.relpath(p, a.out))
             n += 1
     print(n, "MRAs")

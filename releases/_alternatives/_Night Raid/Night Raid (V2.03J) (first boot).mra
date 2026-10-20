@@ -30,7 +30,7 @@
     <rom index="4" zip="gnet_nightrai.zip" md5="none">
         <part name="nightrai.meta" />
     </rom>
-    <rom index="5" zip="gnet_nightrai.zip" md5="none">
+    <rom index="5" zip="gnet_nightrai.zip" md5="none" address="0x34000000">
         <part name="nightrai.img" />
     </rom>
     <rom index="7">

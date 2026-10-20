@@ -29,7 +29,7 @@
     <rom index="4" zip="gnet_raycrisj.zip" md5="none">
         <part name="raycrisj.meta" />
     </rom>
-    <rom index="5" zip="gnet_raycrisj.zip" md5="none">
+    <rom index="5" zip="gnet_raycrisj.zip" md5="none" address="0x34000000">
         <part name="raycrisj.img" />
     </rom>
     <rom index="7">

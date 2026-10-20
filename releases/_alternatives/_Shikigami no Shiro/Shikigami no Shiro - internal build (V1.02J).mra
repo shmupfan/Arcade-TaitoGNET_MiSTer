@@ -29,7 +29,7 @@
     <rom index="4" zip="gnet_shikigama.zip" md5="none">
         <part name="shikigama.meta" />
     </rom>
-    <rom index="5" zip="gnet_shikigama.zip" md5="none">
+    <rom index="5" zip="gnet_shikigama.zip" md5="none" address="0x34000000">
         <part name="shikigama.img" />
     </rom>
     <rom index="7">

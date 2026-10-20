@@ -29,7 +29,7 @@
     <rom index="4" zip="gnet_gobyrc.zip" md5="none">
         <part name="gobyrc.meta" />
     </rom>
-    <rom index="5" zip="gnet_gobyrc.zip" md5="none">
+    <rom index="5" zip="gnet_gobyrc.zip" md5="none" address="0x34000000">
         <part name="gobyrc.img" />
     </rom>
     <rom index="7">

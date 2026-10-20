@@ -29,7 +29,7 @@
     <rom index="4" zip="gnet_psyvarij.zip" md5="none">
         <part name="psyvarij.meta" />
     </rom>
-    <rom index="5" zip="gnet_psyvarij.zip" md5="none">
+    <rom index="5" zip="gnet_psyvarij.zip" md5="none" address="0x34000000">
         <part name="psyvarij.img" />
     </rom>
     <rom index="7">

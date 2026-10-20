@@ -30,7 +30,7 @@
     <rom index="4" zip="gnet_chaosheaj.zip" md5="none">
         <part name="chaosheaj.meta" />
     </rom>
-    <rom index="5" zip="gnet_chaosheaj.zip" md5="none">
+    <rom index="5" zip="gnet_chaosheaj.zip" md5="none" address="0x34000000">
         <part name="chaosheaj.img" />
     </rom>
     <rom index="7">
