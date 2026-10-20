@@ -5,7 +5,7 @@ Branch `hdmi-timing` from 24235eb. Written 2026-10-20 from the fetched reports o
 ## Summary
 
 - **Failing logic.** The HDMI clock (`pll_hdmi|...|counter[0].output_counter|divclk`, 6.732 ns, 148.5 MHz in the SDC) fails setup only on paths that start and end in that clock: the Setup Transfers table of seed 4 lists `pll_hdmi ... -> pll_hdmi ...  138746` RR paths, and every transfer from another clock into it is `false path`. No crossing and no shell (PSX.sv, rtl/gnet) logic is involved.
-- **Path family.** The only path-level report we have for a failing HDMI fit (2026-10-07 z1fullos, seed 2) names three families, all inside the framework scaler `sys/ascal.vhd` (output side, `o_clk`): the horizontal accumulator `o_hacc_next -> o_hacc_next`, the horizontal phase divider `o_div[2] -> o_hfrac[1]`, and `o_vacpt -> o_vpixq_pre`. The 2026-10-20 seed 1, 3 and 4 reports carry summaries only, so whether the same families fail there is not yet measured; `tools/sta/hdmi_paths.tcl` gets it from the kept databases.
+- **Path family.** The only path-level report I have for a failing HDMI fit (2026-10-07 z1fullos, seed 2) names three families, all inside the framework scaler `sys/ascal.vhd` (output side, `o_clk`): the horizontal accumulator `o_hacc_next -> o_hacc_next`, the horizontal phase divider `o_div[2] -> o_hfrac[1]`, and `o_vacpt -> o_vpixq_pre`. The 2026-10-20 seed 1, 3 and 4 reports carry summaries only, so whether the same families fail there is not yet measured; `tools/sta/hdmi_paths.tcl` gets it from the kept databases.
 - **Cause.** Placement in an 87 % full device. `sys/` is byte-identical (md5) to the five glue cores and unchanged since upstream commit 480094b; G-NET builds a smaller scaler than upstream PSX (adaptive and YC disabled). The same scaler meets with +0.135 to +0.729 ns in all 30 glue-core STA summaries (33 to 72 % ALMs where the fit summary was kept), while unmodified upstream PSX_MiSTer at 97 % on our PC failed at -0.332, GNET_Z1FULLR at 84 to 87 % ranges from -0.408 to +0.344 over seeds and nearby commits, and five seeds of one commit (1f6d3dc) span -0.227 to +0.260.
 - **Not a false path or multicycle.** All three families are single-cycle by construction (details below). The quasi-static sources (`o_hsize`, `o_ihsize`, ...) are already false paths in `sys_top.sdc`.
 - **Fixes, smallest first.** F1 fitter-only over-constraint of the HDMI clock (constraint only, committed here as `GNET_HDMI_FITOC.sdc`); F2 a placement region for ascal (only if F1 fails); F3 a behaviour-identical rewrite of the `o_hacc_next` recurrence in ascal.vhd (documented, not applied: framework RTL); F4 the other two families (documented only).
@@ -52,7 +52,7 @@ Corrections to the brief, from the reports:
 - HDMI-domain logic in sys_top (fit.rpt, Fitter Resource Utilization by Entity, seed 4, ALMs needed): `ascal:ascal` 1923.1, `osd:hdmi_osd` 544.2, `pll_hdmi_adj` 542.1 (clocked by FPGA_CLK1_50, not HDMI), `shadowmask:HDMI_shadowmask` 136.6, `vga_out:vga_scaler_out` 155.1, `csync:csync_hdmi` 24.5. ascal is most of it.
 - TNS against worst slack: seed 3 -0.791 over a worst of -0.186 and seed 4 -0.629 over -0.227 mean several failing endpoints each (TimeQuest TNS sums the worst slack per failing endpoint); alpha3 seed 4's -9.819 over -0.408 means dozens.
 
-### 2.2 The one HDMI path report we have: 2026-10-07 z1fullos, seed 2
+### 2.2 The one HDMI path report I have: 2026-10-07 z1fullos, seed 2
 
 `gnet-mister-spu/builds/20261007_0604_z1fullos/` (GNET_Z1FULLO, 35,098 ALMs, 84 %, setup HDMI -0.233 in its sta.summary) has `hdmi_setup_7_slow_1100mv_100c.rpt` and `hdmi_setup_7_slow_1100mv_n40c.rpt` (20 worst paths each, summary). Lines quoted as Slack ; From ; To ; Relationship ; Clock Skew ; Data Delay:
 
@@ -95,9 +95,9 @@ All three are the same clock to itself, relationship 6.732 ns, inside one entity
 - **Framework source.** `md5` of `sys/ascal.vhd`, `sys/sys_top.v` and `sys/sys_top.sdc` is identical in gnet-mister-hdmitiming, hyperduel-mister, dooyong-mister, tecmo16-mister, dec8-mister and 1945kiii-mister (1b17376e..., f22545a2..., d7face00...). `git log -- sys/` ends at 480094b (TheJesusFish, 2026-08-07, "Sys update and hotfix"); no G-NET commit touches `sys/`.
 - **Scaler configuration.** ascal parameters come from QSF macros. Upstream PSX.qsf (357766b): `MISTER_FB`, `MISTER_DOWNSCALE_NN`, `MISTER_DISABLE_ALSA`; adaptive and YC enabled. GNET_Z1FULLR adds `MISTER_DISABLE_ADAPTIVE` and `MISTER_DISABLE_YC`, so its HDMI domain is a subset of upstream's. Hyper Duel uses none of the macros (adaptive on, no FB) and Dooyong only `MISTER_FB`: their scalers are at least as large as G-NET's.
 - **Same scaler, emptier devices.** HDMI setup slack in every glue-core `sta.summary` under `*/builds/`: 1945k III +0.266 to +0.729 (41 %), DEC8 +0.277 to +0.478 (40 to 41 %), Dooyong +0.135 to +0.574 (55 % where recorded), Hyper Duel +0.174 to +0.441 (72 % where recorded), Tecmo 16 +0.257 to +0.452 (33 to 34 %). 30 summaries (1945k III `c3` repeats the 0516 figures), none negative.
-- **Upstream PSX_MiSTer on our PC.** gnet-mister/builds/20261004_1426_psx (SOURCE_PUSHED: "357766b Merge MiSTer-devel/PSX_MiSTer main (cd17b5a) as the base; RTL unmodified upstream"), seed 1, 40,456 ALMs (97 %): HDMI setup -0.332, TNS -0.579. The framework scaler does not meet 148.5 MHz in a near-full PSX build without seed luck, before any G-NET change.
+- **Upstream PSX_MiSTer on my build PC.** gnet-mister/builds/20261004_1426_psx (SOURCE_PUSHED: "357766b Merge MiSTer-devel/PSX_MiSTer main (cd17b5a) as the base; RTL unmodified upstream"), seed 1, 40,456 ALMs (97 %): HDMI setup -0.332, TNS -0.579. The framework scaler does not meet 148.5 MHz in a near-full PSX build without seed luck, before any G-NET change.
 - **G-NET history.** Failing HDMI fits also appear at lower fill: GNET_F0_LEAN 76 % -0.209, GNET_F0_CPU50E5 64 % -0.085, GNET_Z1 70 % -0.252 (TNS -6.048), GNET_Z1_ZOOM 79 % -0.149 (TNS -3.576), each next to passing fits of the same revision family. So the PSX-based design places the scaler worse than the glue cores do at similar fill; a reasonable reading (not measured) is that the PSX GPU, SDRAM and DDR3 logic compete for the same region near the HPS memory interface and the HDMI pins.
-- **Our video changes.** The 480i output fix, `gnet_arcade_video` (786.2 ALMs in seed 4), crop and rotate (`GNET_ROT_DDR`) all run on `clk_vid` or `clk_sys` inside `emu`, plus the framebuffer read that upstream PSX also has (`MISTER_FB`). None adds a register in the HDMI domain; they add to the total fill.
+- **The G-NET video changes.** The 480i output fix, `gnet_arcade_video` (786.2 ALMs in seed 4), crop and rotate (`GNET_ROT_DDR`) all run on `clk_vid` or `clk_sys` inside `emu`, plus the framebuffer read that upstream PSX also has (`MISTER_FB`). None adds a register in the HDMI domain; they add to the total fill.
 - **Physical fill.** Seed 4: "ALMs needed" 36,482 (87 %) but `[A] ALMs used in final placement` 38,652.9, which is 92 % of 41,910 before dense packing recovery.
 
 ## 4. Fixes, smallest first
@@ -171,21 +171,16 @@ Risk: medium. It is a local change to a framework file that every `sys/` update 
 - `o_div`: splitting the last divider stage adds a cycle to `o_hfrac(1)`, so every C-numbered stage of the horizontal filter (`o_hfrac(2 TO 9)`, `o_hpixq`, `o_copyv`, `o_dcptv_*`) must move by one. Not a clearly correct single register; only if the Tcl run shows this family on the current seeds.
 - `o_vacpt`: register the two compare results (`o_vacpt > o_ivsize`, `= o_ivsize`) when `o_vacpt` is updated, so CYCLE 8 selects on flags. Correct only if no displayed pixel uses the flags in the cycle after an `o_vacpt` update; needs the same NVC bench as F3.
 
-## 5. Tcl for the main session (kept seed 3 and seed 4 databases)
+## 5. Tcl path report (seed 3 and seed 4 databases)
 
 Script: `tools/sta/hdmi_paths.tcl` on this branch. It opens the project, then for each slow corner (100C and -40C) and each of the HDMI clock, clk_cpu2x and clk_cpu writes: the 200 worst endpoints (summary), the 50 worst with `-detail full_path`, the endpoints under +0.1 ns grouped into from-family to to-family (bus indices folded, count, worst slack, data delay), the worst path from each launch clock, and one corners file with worst slack, TNS and failing endpoint count. Output goes to `output_files/setup_*.rpt`.
 
-It is a Quartus job: take the lock and run it as a scheduled task, per quartus_compile_pc.md. The script is not in the pushed file list (`pc_build.sh` pushes only `tools/sta/clk1x_hold.tcl` from tools/), so copy it first:
+Run it with Quartus 17.0 in the folder of a fitted GNET_Z1FULLR project
+(after a full compile, so the fitted database is there):
 ```
-ssh $PC_HOST "powershell -NoProfile -Command \"\$input | Set-Content -Encoding ASCII C:\gn_z1fullr_s3\tools\sta\hdmi_paths.tcl\"" < tools/sta/hdmi_paths.tcl
-ssh $PC_HOST "powershell -NoProfile -Command \"\$input | Set-Content -Encoding ASCII C:\gn_z1fullr_s4\tools\sta\hdmi_paths.tcl\"" < tools/sta/hdmi_paths.tcl
+quartus_sta -t tools/sta/hdmi_paths.tcl PSX GNET_Z1FULLR setup > sta_hdmi.log 2>&1
 ```
-Command line for the task (one per folder, s3 then s4):
-```
-cd /d C:\gn_z1fullr_s3 && start /B /WAIT /AFFINITY 0000FFFF C:\intelFPGA_lite\17.0\quartus\bin64\quartus_sta.exe -t tools/sta/hdmi_paths.tcl PSX GNET_Z1FULLR setup >> sta_hdmi.log 2>&1
-cd /d C:\gn_z1fullr_s4 && start /B /WAIT /AFFINITY 0000FFFF C:\intelFPGA_lite\17.0\quartus\bin64\quartus_sta.exe -t tools/sta/hdmi_paths.tcl PSX GNET_Z1FULLR setup >> sta_hdmi.log 2>&1
-```
-Fetch `output_files\setup_*.rpt` and `sta_hdmi.log` into the matching `builds/20261020_1743_z1fullr_seed3` and `_seed4` folders. The QSF in those folders says SEED 8 while the fits used 3 and 4; the flow's own STA printed `Assignment SEED changed value from 3 to 8` and still reported the seed-3 result, so the timing netlist comes from the fitted database and the message can be ignored. Sanity check: `setup_corners.rpt` must give hdmi at Slow 100C as -0.186 (seed 3) and -0.227 (seed 4), the values in the flow's sta.summary; if not, the netlist is not the one fetched.
+The reports land in `output_files/setup_*.rpt`. If the QSF's SEED was changed after the fit, quartus_sta prints `Assignment SEED changed value` and still reports the fitted result: the timing netlist comes from the fitted database, so the message can be ignored. Sanity check on the 2026-10-20 seed 3 and seed 4 fits: `setup_corners.rpt` gives hdmi at Slow 100C as -0.186 (seed 3) and -0.227 (seed 4), the values in the flow's sta.summary; if not, the netlist is not the one fitted.
 
 What to read: `setup_hdmi_*_families.rpt` first. If `ascal:ascal|o_hacc_next[*] -> ascal:ascal|o_hacc_next[*]` leads on both seeds, F3 is the structural fix; if the families differ between seeds and spread over ascal, F1 or F2 is the right lever. `setup_cpu2x_*` and `setup_cpu_*` give the same for the CPU clocks on the same placements.
 
