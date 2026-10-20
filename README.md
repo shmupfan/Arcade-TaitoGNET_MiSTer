@@ -16,8 +16,8 @@ Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 
 **Alpha.** There are MRAs for all 30 MAME 0.288 G-NET sets on Taito
 cards. On my MiSTer I have played 7 of them and seen 20 more boot; 3 are
-not tested yet. The results are from 2026-10-06 and 2026-10-07, on this
-release's RBF or test builds just before it. Some timings differ from the real board
+not tested yet. The results are from 2026-10-06 and 2026-10-07, on the
+alpha 1 RBFs (20261006 and 20261007) or test builds just before them. Some timings differ from the real board
 (see Known issues). I am publishing it to get test reports, especially
 from people who own a G-NET board.
 
@@ -87,6 +87,15 @@ your MAME `coh3002t.zip` (0.288 or later) and a `gnet_<set>.zip` per game, made 
 CHDs with the converter at **<https://gnet-converter.pages.dev>** (it runs in your
 browser and uploads nothing), in `/media/fat/games/mame/`. No game data is included.
 
+**Loading.** From alpha 4 the MRAs load each game's card image (38.6 to 64.2 MB)
+straight into the MiSTer's DDR3 memory, instead of sending it to the core
+one 16-bit word at a time. This needs Main_MiSTer from March 2021 or later.
+The 10 MB of flash still loads the old way. I expect Ray Crisis to load in
+about 12 to 13 s, against about 35 s with the alpha 3 MRAs.
+<!-- TO CONFIRM: replace the estimate with the measured alpha 4 load time (docs/i12_ddr3_load.md 8 gives 12.0 s plus Main's copy, 12.4 to 13.4 s). -->
+The first boot MRAs still need the BIOS's 2.5 minute flash copy after
+loading.
+
 ## Controls
 
 Two players, an 8-way stick and three buttons each, plus Start, Coin,
@@ -151,30 +160,71 @@ Four sets use other controls, as MAME 0.288 maps them:
 
 ## OSD options
 
-- **Aspect ratio** and **Scale** (HDMI): Original is 4:3 for the area the
-  game draws, as an arcade monitor adjusted to fill the tube shows it.
-  There is no 216p crop: the games use 240 lines, and a 216-line crop
-  would cut part of the picture.
-- **Orientation** and **Rotate Direction** (vertical games, HDMI): stand
-  the picture upright on a horizontal screen.
-- **Flip Screen** (vertical games): turns the picture 180 degrees for a
-  monitor rotated the other way. It works on a CRT and over HDMI.
-- **Scandoubler Fx**: HQ2x or CRT scanlines for 31 kHz output.
+For vertical games, at the top of the menu:
+
+- **Orientation** (HDMI): Vertical stands the picture upright on a
+  horizontal screen; Horizontal leaves it as the game draws it, for a
+  monitor turned on its side. Hidden on direct video.
+- **Rotate Direction** (HDMI): CCW or CW, the way the picture turns when
+  Orientation is Vertical.
+- **Flip Screen**: turns the picture 180 degrees for a monitor rotated the
+  other way. It works on a CRT and over HDMI.
+
+**Video Settings**
+
+- **Aspect ratio** (HDMI): Original, Full Screen, or the two custom ratios
+  from MiSTer.ini. Original is 4:3 for the area the game draws, as an
+  arcade monitor adjusted to fill the tube shows it. There is no 216p crop:
+  the games use 240 lines, and a 216-line crop would cut part of the
+  picture.
+- **Scale** (HDMI): Normal, V-Integer, Narrower HV-Integer, Wider
+  HV-Integer.
+- **Scandoubler Fx**: None, HQ2x, CRT 25%, CRT 50%, CRT 75%. Any setting
+  other than None turns the scandoubler on, so the analog and direct video
+  output becomes 31 kHz; leave it at None for a 15 kHz CRT.
+- **Deinterlacing** (HDMI): Weave or Bob, for the games that draw
+  480-line interlaced screens (Flip Maze, Kollon, Otenami Haiken Final,
+  Zooo and others). Hidden on direct video.
 - **CRT H Position** and **CRT V Position**: move the picture in 2 pixel
   steps (-16 to +14) and whole lines (-4 to +3). Only the sync pulses
   move; the game's timing stays as it is. Vertical sync starts and ends on
   a horizontal sync edge, so a CRT gets a clean composite sync.
-- **Pause when OSD is open**, plus the Pause button and the P key.
+
+The HDMI items (Aspect ratio, Scale, Deinterlacing, Orientation and Rotate
+Direction) are hidden when direct video is on.
+
+**Audio Settings**
+
 - **Volume**: Normal, +6 dB, -6 dB, -12 dB.
 - **SFX Level**: the PlayStation SPU's level in the mix against the Zoom
   board: 0.3 (MAME's setting, the default), 0.45, 0.6, 0.9, 1.2, 1.5.
-- **DIP switches**: S551. Switch 4 is Test Mode (the operator manual says
-  to use switch 4 only); switch 2 is the BIOS service mode in MAME;
-  switches 1 and 3 are unknown. Leave them off for normal play.
+
+**Pause Options**
+
+- **Pause when OSD is open**: On (default) or Off. The Pause button and
+  the P key pause the game at any time (see Controls).
+- **Dim video after 10s**: On (default) or Off. After 10 seconds of any
+  pause the picture is shown at half brightness, to protect the screen; it
+  comes back when the pause ends. It applies to HDMI, direct video and
+  analog alike.
+
+**DIP switches**: S551. Switch 4 is Test Mode (the operator manual says to
+use switch 4 only); switch 2 is the BIOS service mode in MAME; switches 1
+and 3 are unknown. Leave them off for normal play.
+
+**Service Menu**: Off (default) or On. On holds DIP switch 4 (Test Mode)
+on, whatever the DIP page says, so the game's test and service menu opens.
+If the menu does not appear, choose Reset with the option On. It is not
+the Test button.
+
+**Advanced**
+
 - **Watchdog**: leave it On. It resets a game that stops running, as the
   board's MB3773 does. Off is for debugging.
 - **Debug overlay**: a small box of hex numbers with the board state, for
   test reports ([docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md)).
+
+**Reset** restarts the game.
 
 The screen stays black, with sync running, while the MRA loads and while
 the core resets, so a CRT keeps its picture. The pixel clock is an exact
@@ -203,22 +253,39 @@ NVRAM when the OSD opens after the game has written to it.
   direct video. Fine horizontal lines flicker a little, as interlaced
   video does on a real monitor. Reports from more CRT setups are welcome.
   On HDMI, the Deinterlacing option (Weave or Bob) applies.
-- **Space Invaders Anniversary** ([#10](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/10)). Coin and Start work in alpha 3, but a
-  tester sees a triangle covering the playfield from the top right corner
-  to the bottom left in game. Not yet reproduced.
-- **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)). A tester loses the picture with any Fx setting
-  other than None. Any Fx setting turns the scandoubler on, so the output
-  goes to 31 kHz, which a 15 kHz CRT cannot show; on HDMI or a 31 kHz
-  monitor it would be a bug. Details are still to come.
+- **Space Invaders Anniversary, colour band mode** ([#10](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/10)).
+  In this mode the game draws the whole invader screen as one large
+  rotated picture made of two triangles. The graphics chip code gave up
+  on any shape that took more than about 15 ms to draw, and alpha 3's
+  slower texture timing pushed this picture past that limit, so half the
+  playfield was missing. Alpha 4 always finishes a shape that is still
+  making progress, and in simulation the frame matches MAME pixel for
+  pixel. Because the core now does all the drawing it skipped before,
+  this mode may run slower than on a real board. I do not know yet how
+  fast a board runs it; board footage of this mode would help.
+  <!-- TO CONFIRM: the full formation on hardware, and the speed against MAME. -->
+- **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)).
+  Up to alpha 3 the scandoubled output had no vertical sync, so any Fx
+  setting other than None lost the picture over HDMI, direct video and
+  VGA. Alpha 4 fixes this; reports over HDMI and on 31 kHz monitors are
+  welcome. Any Fx setting other than None switches the output to 31 kHz,
+  so a 15 kHz CRT still needs None.
 - **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real
   Psyvariar -Revision- cabinet suggests 0.6 to 0.8 for that game, but 0.7
   sounded wrong for Night Raid. A line-out recording of a board would
   settle it.
-- **Card writes are not saved.** Some games write a few sectors to their
-  PC card (what they hold is not known yet). The core keeps those writes
-  only until the core is reloaded.
+- **Settings that a game keeps on its card are lost at the next load**
+  ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).
+  Psyvariar keeps its service menu settings, such as the screen direction,
+  on its PC card, not in the board's EEPROM: saving a setting writes a
+  card sector, as MAME shows. The core keeps card writes in memory only,
+  and every load copies the card image from the zip again, so these
+  settings go back to their defaults. Psyvariar never writes the EEPROM,
+  so the NVRAM save cannot keep them. The TAITO logo is drawn by the BIOS
+  and does not turn with the game's setting, in MAME as well. Saving card
+  writes in the NVRAM file with the EEPROM is designed, not built yet.
 - **First boot MRAs** repeat the 2.5 minute copy at every load, because
   the flash chips are not saved. I have not yet confirmed the copy on my
   own hardware.
@@ -240,13 +307,13 @@ Roughly in this order. None of it has a date.
 
 - **Slowdown** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)):
   check the texture wait against more board recordings of heavy scenes.
-- **Faster loading** ([#12](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/12)): a game takes about 35 s to load,
-  because Main sends the 51 MB of card and flash data one word at a time.
-  Loading the card image straight into DDR3, as the MRA format allows,
-  should bring it well under 10 s.
-- **Psyvariar's settings not kept** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).
-- **[Known issues](#known-issues):** sound balance, saving card writes,
-  the watchdog period. Some need measurements from a real board.
+- **Faster loading** ([#12](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/12)): alpha 4 loads the card image
+  straight into DDR3 (see [Installation](#installation)). Loading the
+  10 MB of flash the same way would save about 5 more seconds; it works in
+  simulation but not yet on hardware.
+- **Psyvariar's settings not kept** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)):
+  save the card writes with the EEPROM (see [Known issues](#known-issues)).
+- **[Known issues](#known-issues):** sound balance, the watchdog period. Some need measurements from a real board.
 - **CompactFlash sets from a first boot:** Kollon (V2.04JC) and Otenami
   Haiken Final run with quick start only, because the core cannot yet run
   the BIOS EPROM's flasher. This needs the modified BIOS EPROM and the JP1
@@ -292,8 +359,9 @@ and the measurements listed at the end of the guide.
 
 - Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULLR`.
   Releases are built only from a fit with every clock meeting timing.
-  `Arcade-TaitoGNET_20261015.rbf` is the GNET_Z1FULLR build of the RTL in
+  `Arcade-TaitoGNET_YYYYMMDD.rbf` is the GNET_Z1FULLR build of the RTL in
   this repository (Quartus 17.0.2, every clock met).
+  <!-- TO CONFIRM: RBF date in the file name. -->
 - Simulation: NVC 1.23 and Verilator 5.x benches in `sim/`. The MAME
   reference traces need MAME 0.288 and your own files; the trace scripts
   are in `tools/mame/`. Game-derived data from these runs stays in
@@ -326,7 +394,7 @@ and the measurements listed at the end of the guide.
 
 ```
 PSX.sv, PSX.qpf               MiSTer shell and Quartus project
-GNET_Z1FULLO.qsf, GNET_*.sdc  release revision and its timing constraints
+GNET_Z1FULLR.qsf, GNET_*.sdc  release revision and its timing constraints
 PSX.qsf, PSX_DualSDRAM.*      upstream PSX_MiSTer revisions
 rtl/                          PSX_MiSTer core (upstream), with trims behind switches
 rtl/gnet/                     ZN-2 board layer, G-NET glue, shell blocks, DDR3 arbiter
