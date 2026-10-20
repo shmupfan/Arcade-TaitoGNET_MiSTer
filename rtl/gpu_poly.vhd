@@ -1089,6 +1089,14 @@ begin
                   if (pipeline_stall = '0' and (firstPixel = '0' or pipeline_busy = '0')) then
                      firstPixel <= '0';
                      
+                     -- G-NET issue #10: the watchdog above counts cycles
+                     -- without a pixel step, not the length of the whole
+                     -- primitive. A long textured quad (sianniv's rotated
+                     -- 256 x 240 formation, one texture cache miss per
+                     -- pixel) legitimately takes more than 1,048,575 clk2x
+                     -- on DDR3 VRAM and was cut off mid second triangle.
+                     timeout <= 0;
+                     
                      xPos  <= xPos + 1;
                      
                      if (rec_shading = '1') then

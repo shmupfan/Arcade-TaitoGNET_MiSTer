@@ -119,6 +119,7 @@ set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_regs.vhd
 set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_overlay.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crt_pos.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_arcade_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_sd_blank.sv
 # G-NET DDR3 arbiter (docs/ddr3_arbiter.md): rotation, Zoom port, flash mirror, core through rtl/gnet/gnet_ddr3_arb.sv
 set_global_assignment -name VERILOG_MACRO "GNET_DDR3_ARB=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_arb.sv
@@ -191,3 +192,13 @@ set_global_assignment -name VERILOG_MACRO "GNET_GPU_READ_INFL=2"
 # each texture cache fill so the slowdown matches the board (Ray Crisis demo
 # 1: board 1.078, prefetch alone 1.045). Bracket if the build misses: 5 / 10.
 set_global_assignment -name VERILOG_MACRO "GNET_TEX_MISS_DELAY=13"
+set_global_assignment -name SDC_FILE GNET_HDMI_FITOC.sdc
+
+# Issue #12, faster loading (docs/i12_ddr3_load.md): MRA DDR3 loads, in the
+# release from alpha 4. A card image with address="0x34000000" needs nothing
+# in the core; a flash area with address="0x31000000" is copied from DDR3 to
+# SDRAM by gnet_ddr3_flcopy, which shares the DDR3 arbiter's glue port with the
+# flash mirror (gnet_ddr3_gmux). MRAs without address= load as before.
+set_global_assignment -name VERILOG_MACRO "GNET_DDR3_LOAD=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_gmux.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_flcopy.sv

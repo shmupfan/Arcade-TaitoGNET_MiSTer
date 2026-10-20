@@ -79,7 +79,9 @@ set_global_assignment -name VERILOG_MACRO "GNET_NO_CHEATS=1"
 set_global_assignment -name VERILOG_MACRO "GNET_LEAN=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ADAPTIVE=1"
-set_global_assignment -name VERILOG_MACRO "GNET_NO_MDEC=1"
+# MDEC kept (no GNET_NO_MDEC): sianniv decodes MDEC stills and movies from the
+# coin onwards; without it the game spins at 0x80013300 and the watchdog resets
+# it (issue #1; tools/mame/sianniv_mdec_probe.lua)
 set_global_assignment -name VERILOG_FILE rtl/gnet/pll_vid_fixed.v
 set_global_assignment -name SDC_FILE GNET_LEAN.sdc
 set_global_assignment -name VERILOG_MACRO "GNET_VRAM_2MB=1"
@@ -110,9 +112,14 @@ set_global_assignment -name SDC_FILE GNET_CPU50_B1.sdc
 set_global_assignment -name VERILOG_MACRO "GNET_SHELL=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_sync_keeper.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_volume.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_coin_pulse.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_pause_dim.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_dash.sv
 set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_regs.vhd
 set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_overlay.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crt_pos.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_arcade_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_sd_blank.sv
 # G-NET DDR3 arbiter (docs/ddr3_arbiter.md): rotation, Zoom port, flash mirror, core through rtl/gnet/gnet_ddr3_arb.sv
 set_global_assignment -name VERILOG_MACRO "GNET_DDR3_ARB=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_arb.sv
@@ -151,3 +158,8 @@ set_global_assignment -name VERILOG_MACRO "GNET_READ_OVERLAP=1"
 
 # Fitter seed (2026-10-07: seed 1 left spu RamVoice_addrA -> VOICEREGS MLAB hold at -0.060 ns)
 set_global_assignment -name SEED 2
+
+# HDMI PLL output on physical counter C0 (issue #8). Main_MiSTer reprograms
+# only C0; seed 2 alone placed outclk_0 on X0_Y7_N1, so the HDMI divider
+# stayed at 3 (79.8 Hz at 1440x1080). Same pin as MiSTer-devel/Arcade-Cave.
+set_location_assignment PLLOUTPUTCOUNTER_X0_Y5_N1 -to "pll_hdmi|pll_hdmi_inst|altera_pll_i|cyclonev_pll|counter[0].output_counter"

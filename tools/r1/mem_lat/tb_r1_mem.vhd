@@ -132,6 +132,9 @@ entity tb_r1_mem is
       RATIO   : integer := 3;          -- SDRAM clock edges per clk_1x period (3 today, 2 proposed)
       CLK_FAST_RATIO : integer := 3;   -- RTL strobe selection (sdram.sv parameter, psx_top.vhd generic)
       EARLY_READY : integer := 0;      -- sdram.sv EARLY_READY (2:1 only)
+      RAM_READ_NOWAIT : integer := 0;  -- memorymux RAM_READ_NOWAIT (2:1 only)
+      RAM_LOAD_WINDOW : integer := 7;  -- memorymux RAM_LOAD_WINDOW (7 = upstream)
+      GAP1    : integer := 0;          -- 1: append the gap 1 back-to-back row (the CPU's spacing) after the other rows
       ROWS    : integer := 1;          -- 0: skip the latency rows (DMA phase only)
       DMA_N   : integer := 2048;       -- words for the DMA phase, 0 = no DMA phase
       T_FAST  : time    := 9842 ps;    -- SDRAM clock period (101.6064 MHz)
@@ -303,6 +306,7 @@ begin
    end process;
 
    imemorymux : entity work.memorymux
+   generic map (RAM_READ_NOWAIT => RAM_READ_NOWAIT, RAM_LOAD_WINDOW => RAM_LOAD_WINDOW)
    port map (
       clk1x => clk1x, clk2x => clk3x, ce => '1', reset => reset,
       pauseNext => '0', isIdle => isIdle,
@@ -788,6 +792,12 @@ begin
       writeline(fo, l);
       write(l, string'("clk_fast_ratio ") & integer'image(CLK_FAST_RATIO) & " early_ready " & integer'image(EARLY_READY) & " rows " & integer'image(ROWS) & " dma_n " & integer'image(DMA_N));
       writeline(fo, l);
+      -- only printed off the defaults, so default runs stay byte-identical to earlier output
+      if RAM_READ_NOWAIT /= 0 or RAM_LOAD_WINDOW /= 7 or GAP1 /= 0 then
+         write(l, string'("ram_read_nowait ") & integer'image(RAM_READ_NOWAIT) & " ram_load_window " & integer'image(RAM_LOAD_WINDOW) &
+                  " gap1 " & integer'image(GAP1));
+         writeline(fo, l);
+      end if;
       cyc(4);
       sdram_init <= '0';
       cyc(10);
@@ -827,6 +837,10 @@ begin
             wr32(x"1F801020", x"00000110");
             rows_read("spu_lh_00093184_com110", x"1F801C0C", 16, 24, '1', '0', "01", 2, 20, false);
          end if;
+         -- gap 1: the second read sampled 2 edges after the first one's done, the
+         -- earliest a real CPU issues a load after a load (cpu.vhd writeback
+         -- cycle); appended last so the rows above keep their random sequence
+         if not lost and GAP1 /= 0 then rows_pair("ram_lw_back_to_back_gap1", x"80020000", "10", 1); end if;
       end if;
 
       write(l, string'("data_errors ") & integer'image(errors));

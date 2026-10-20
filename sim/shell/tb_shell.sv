@@ -2,7 +2,12 @@
 //   gnet_sync_keeper: substitute raster while the core is silent (line,
 //     hsync, dot period, active area, vsync on hsync, black), hand-over to a
 //     running core, take-over two lines after the core stops;
-//   gnet_volume: the four OSD settings, saturation at +6 dB.
+//   gnet_volume: the four OSD settings, saturation at +6 dB;
+//   gnet_coin_pulse at PSX.sv's 100 ms (3,386,880 clocks of 33.8688 MHz):
+//     a 1 s hold gives one pulse, two presses give two pulses, a second
+//     press during a pulse is kept and follows after a 100 ms gap, a pause
+//     (hold) stretches the pulse by its length. The coin lockouts are
+//     zn2_io's, tested in sim/zn2/tb_zn2_io.vhd.
 // Run with sim/shell/run_shell.sh
 `timescale 1ns/1ps
 module tb_shell;
@@ -138,6 +143,67 @@ task automatic vcheck(input [1:0] v, input signed [15:0] a, input signed [15:0] 
 	end
 endtask
 
+// ------------------------------------------------------------------- coin
+reg clk1x = 0;
+always #14.7631 clk1x = ~clk1x;   // 33.8688 MHz (clk_1x)
+localparam integer CP = 3386880;  // PSX.sv: 100 ms
+reg  c_in = 0, c_hold = 0, coin_done = 0;
+wire c_out;
+gnet_coin_pulse #(.PULSE(CP)) cdut (.clk(clk1x), .hold(c_hold), .in(c_in), .out(c_out));
+
+// pulses seen, the length of the last one and the low time before it
+integer c_pulses = 0, c_len = 0, c_last = 0, c_low = 0, c_gap = -1;
+always @(posedge clk1x) begin
+	if (c_out) begin
+		if (c_len == 0 && c_pulses > 0) c_gap = c_low;
+		c_len = c_len + 1;
+		c_low = 0;
+	end else begin
+		if (c_len != 0) begin
+			c_pulses = c_pulses + 1;
+			c_last = c_len;
+		end
+		c_len = 0;
+		c_low = c_low + 1;
+	end
+end
+
+task automatic cwait(input integer n);
+	begin
+		repeat (n) @(posedge clk1x);
+	end
+endtask
+
+task automatic ccheck(input string name, input integer pulses, input integer len);
+	begin
+		if (c_pulses != pulses) fail($sformatf("coin %s: %0d pulses (expected %0d)", name, c_pulses, pulses));
+		if (c_last != len) fail($sformatf("coin %s: pulse %0d clocks (expected %0d)", name, c_last, len));
+		$display("coin %s: %0d pulses, last %0d clocks", name, c_pulses, c_last);
+	end
+endtask
+
+initial begin
+	cwait(10);
+	// 1. held for 1 s: one pulse of 100 ms
+	c_in <= 1; cwait(33868800); c_in <= 0;
+	cwait(2 * CP);
+	ccheck("1 s hold", 1, CP);
+	// 2. two presses of 50 ms, 300 ms apart: two pulses
+	c_in <= 1; cwait(CP / 2); c_in <= 0; cwait(3 * CP);
+	c_in <= 1; cwait(CP / 2); c_in <= 0; cwait(3 * CP);
+	ccheck("two presses", 3, CP);
+	// 3. second press 20 ms into the first pulse: kept, follows a 100 ms gap
+	c_in <= 1; cwait(CP / 10); c_in <= 0; cwait(CP / 10);
+	c_in <= 1; cwait(CP / 10); c_in <= 0; cwait(4 * CP);
+	ccheck("press during pulse", 5, CP);
+	if (c_gap != CP) fail($sformatf("coin gap %0d clocks (expected %0d)", c_gap, CP));
+	// 4. paused 5000 clocks during the pulse: pulse 5000 clocks longer
+	c_in <= 1; cwait(1000); c_hold <= 1; cwait(5000); c_hold <= 0; c_in <= 0;
+	cwait(3 * CP);
+	ccheck("pause", 6, CP + 5000);
+	coin_done = 1;
+end
+
 // ------------------------------------------------------------------ sequence
 integer t0;
 initial begin
@@ -183,6 +249,7 @@ initial begin
 	check_sub = 0;
 	$display("substitute again: %0d frames, first dot %0d, errors %0d", frames, ph, errors);
 
+	wait (coin_done);
 	if (errors == 0) $display("PASS");
 	else $display("FAILED: %0d errors", errors);
 	$finish;

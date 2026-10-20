@@ -304,7 +304,7 @@ From [MAME 0.288 psxgpu.cpp](https://github.com/mamedev/mame/blob/mame0288/src/d
 | Item | MAME type 2 | PSX_MiSTer (PS1 GPU) | Change needed |
 |---|---|---|---|
 | VRAM | 1024 x 1024 (2 MB), all Y & 1023 | 1024 x 512 | 10-bit Y in every unit (fill, copy, CPU/VRAM transfers, rasterisers, texture fetch, video out) |
-| Texture page (E1/poly tpage) | tx bits 0-3; ty = bit 4 (256) or bit 11 (512); ix bit 12, iy bit 13; GPUSTAT bit 15 from bit 11 | ty from bit 4 only (bit 11 = texture disable on PS1) | add the bit-11 page; check flip bits |
+| Texture page (E1/poly tpage) | tx bits 0-3; ty = bit 4 (256) or bit 11 (512); ix bit 12, iy bit 13; GPUSTAT bit 15 from bit 11 | ty from bit 4 only (bit 11 = texture disable on PS1) | add the bit-11 page; flip bits for rectangles done (section 6) |
 | Draw area E3/E4 | x bits 0-9, y bits 10-19 | same packing, Y 9 or 10 bits | 10-bit Y |
 | Draw offset E5 | x bits 0-10, y bits 11-21 | same | none expected |
 | Display start GP1(05h) | x bits 0-9, y bits 10-19 | y bits 10-18 | 10-bit Y |
@@ -341,11 +341,22 @@ Readings:
   measurement confirms it.
 - The 480i rate (MAME 59.9400523286) is 3412.5 x 262.5; PSX_MiSTer
   alternates 263 and 262 lines per field with 3413 clocks (59.9313 Hz). None
-  of the six games uses it: in the 60 s streams of all six (and the Ray
-  Crisis 40 s canary) every GP1(08h) write is NTSC, 240 lines, not
+  of the first six games uses it: in the 60 s streams of all six (and the
+  Ray Crisis 40 s canary) every GP1(08h) write is NTSC, 240 lines, not
   interlaced. Widths: 320 in five games; Ray Crisis also 512 and 640
   (values 01h 902, 02h 2,364, 03h 129 writes; 00h only during the four
   BIOS writes at start).
+- Later G-NET games do set the interlace bit (issue #3, 2026-10-14): in
+  MAME 0.288 Zooo and Mahjong Oh write GP1(08h) = 08000027h (640 x 480
+  interlaced) and Zoku Otenamihaiken 08000023h (640 x 240 with the
+  interlace bit, on its boot screen); Kollon, Otenami Haiken Final and
+  Flip Maze draw 480i. The video out handles it as upstream: every second
+  field's vsync starts half a line later (gpu_videoout_async.vhd, 1707
+  clocks after the hsync rise), so the fields are 262.5 lines apart. I
+  found that the release shell lost that half line on direct video and
+  15 kHz analog (the framework's arcade_video takes vsync only on an hsync
+  rise, and the CRT position block rebuilt vsync on hsync rises); the fix
+  is in docs/m4_shell.md 5 and 8.
 
 ## 5. GP1(10h) index 7, GPU type (2026-10-05)
 
@@ -362,3 +373,71 @@ Open from the same run: after a GPU reset MAME sets the draw area bottom
 right to 1023,1023 and gpu.vhd to 0, so the BIOS reads back a different
 value and sends E4000000 instead of E40FFFFF (no visible effect seen;
 needs-review against PS1 behaviour before changing).
+
+## 6. Textured rectangle X/Y flip (issue #6, 2026-10-14)
+
+Super Puzzle Bobble draws Bub and Bob with GP0 65h (4-bit CLUT, raw,
+opaque) after an E1 with bit 12 set, e.g. E1 1215h. MAME 0.288's type 2 GPU
+decodes bit 12 as ix and bit 13 as iy (psxgpu.cpp decode_tpage) and its
+rectangle functions (FlatTexturedRectangle, Sprite8x8, Sprite16x16, via
+SPRITESETUP) step U by -1 per pixel and V by -1 per line, start at the
+given U/V, and on left clipping add (clip width) x du to U; V steps once
+per line, clipped or not. The texture window is applied to the stepped U/V.
+psx-spx lists E1 bits 12/13 as textured rectangle X/Y flip on v2 GPUs.
+PSX_MiSTer's gpu_rect.vhd ignored both bits, so every flipped sprite read
+the neighbouring texels (the tester's pink, yellow and cyan mosaic).
+
+Change: generic RECT_FLIP (default 0 = upstream) on gpu_rect, gpu,
+psx_top and psx_mister. gpu.vhd passes drawMode(12) and drawMode(13);
+gpu_rect latches them when a rectangle command starts and, when set, steps
+U/V by -1 and subtracts the left/top clip offset (xdiff, ydiff including
+the interlace line skip) instead of adding it. Polygons and lines are
+unchanged. PSX.sv sets RECT_FLIP = 1 when GNET_ZN2 is defined (all G-NET
+builds, including GNET_Z1FULLO and GNET_Z1FULLR); sim/zn2/system's
+testbench template sets it too. GPUSTAT: MAME type 2 copies E1 bits 0-10 to
+GPUSTAT 0-10 and bit 11 to bit 15, and bits 12/13 appear nowhere; gpu.vhd
+does the same, so readback needs no change.
+
+One difference left as is: MAME also loads ix/iy from a textured polygon's
+tpage halfword (decode_tpage is called for polygons), while psx-spx says a
+polygon's tpage does not change E1 bits 12/13 and gpu.vhd keeps them. In
+every stream below no textured polygon has tpage bit 12 or 13 set and no
+rectangle is drawn differently under the two rules (0 of 451,167 in the
+SPB run).
+
+Verification:
+- Replay of MAME frames 4240 to 4306 (sim/oracle/i6_spb_bob_vram, seek
+  image vram_4240.bin, VRAM_Y_BITS 10, dither off, 16 dumped frames
+  covering the normal, jump and shock poses), RECT_FLIP 1 and 0, compared
+  with MAME snapshots within 6 frames on Bub's and Bob's area (x 0 to 73,
+  y 180 to 227): with flip on, Bub and Bob have 0 differing pixels in 15
+  of 16 frames; frame 21 (MAME 4261) has no matching snapshot (bubbles in
+  flight over the characters, the poses are those of 4260). On the pixels
+  the flip changes (25,765 over the 16 frames), RECT_FLIP 1 equals MAME on
+  25,523 and RECT_FLIP 0 on none. Control: with flip off Bub differs in
+  every frame; Bob differs in the normal and jump frames and matches
+  (0 pixels) in the shock frames, where the game draws him with E1 0217h
+  (no flip).
+- Directed bench, `tools/rect_flip_test.py stream` then check: 15
+  rectangles (65h, 7Dh, 75h; flip off, X, Y, both; clipped at the left,
+  the top and both; U wrapping through 0; odd start U; a texture window)
+  against a transcription of MAME's rectangle code: 0 of 2,992 pixels
+  differ with RECT_FLIP 1; with RECT_FLIP 0 the dump equals the no-flip
+  model (0 differ). A textured quad drawn with flip off and on is
+  identical (polygons ignore the bits).
+- Six shooters (60 s streams of raycris, nightrai, psyvaria, psyvarrv,
+  shikigam, xiistag): each has 4 E1 words with bit 12 set, all the BIOS
+  start-up E1001000 at frames 0 to 4, followed by E3/E4/E5 and an
+  untextured triangle and replaced by a non-flip E1 before any textured
+  rectangle: 0 textured rectangles drawn with a flip bit in effect, so the
+  change is inert for them. SPB (i6 run, 5,983 frames): 4,677 X-flipped
+  textured rectangles, 0 Y-flipped.
+
+Reproduce: `sim/oracle/i6_spb_bob_vram/replay/run_i6_flip.sh build`, `run 1`,
+`run 0`, `cmp 1` (gitignored data folder; builds the GPU from this tree into
+sim/m1/i6). Directed bench from sim/m1/i6/rf/f1: `nvc --std=2008 -H 256m -L
+../.. --work=../../work -e tb_gpu_replay -gSTREAM=../stream.txt
+-gVRAM_Y_BITS=10 -gDUMPS=2 -gMAXFRAME=3 -gDITHER_OFF="'1'" -gVIDCAP=false
+-gRECT_FLIP=1 -r`, then `tools/rect_flip_test.py check vram_2.bin`
+(`--noflip` for a RECT_FLIP 0 run). Hardware test on the MiSTer still to
+do.

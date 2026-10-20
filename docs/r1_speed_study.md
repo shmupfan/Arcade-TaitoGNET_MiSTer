@@ -278,6 +278,11 @@ demo 1 by aligning the PCB windows at 125.5 s (3 s) and 177.0 s (4 s) with
 - Demos 2 and 3 could be paired with a longer MAME run started in the same
   attract phase as the PCB, or by matching the US screen order. I have not
   done that yet.
+- GPU drawing time (R23, docs/gpu_draw_time.md, 2026-10-07): replaying
+  demo 1 through the core's GPU predicts 81 of the PCB's 223 extra
+  frames, and in other places. The PCB's drift is steady where the core's
+  GPU has 2 ms or more to spare, so GPU drawing time alone, as the core
+  models it, does not explain it.
 
 ## 7. Files
 

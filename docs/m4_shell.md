@@ -19,10 +19,14 @@ GNET_Z1, GNET_Z1_CPU50 and the upstream PSX revision build as before.
 | rtl/gnet/gnet_sync_keeper.sv | substitute black raster while the core's video timing is stopped |
 | rtl/gnet/gnet_volume.sv | OSD volume at the final mix |
 | rtl/gnet/gnet_crt_pos.sv | OSD CRT H/V position (section 8) |
+| rtl/gnet/gnet_pause_dim.sv | OSD Dim video after 10s (section 4) |
+| rtl/gnet/gnet_coin_pulse.sv | coin press to a 100 ms pulse (section 4); in GNET_Z1SHELL, GNET_Z1FULL, GNET_Z1FULLB and GNET_Z1FULLO |
+| rtl/gnet/gnet_arcade_video.sv | copy of the framework's arcade_video that keeps the 480i half-line vsync when not scandoubling (section 8, issue #3) |
+| rtl/gnet/gnet_dash.sv | Dash button for Chaos Heat (section 4, configuration bit 4); in the same four revisions |
 | rtl/gnet/zn2_io.vhd, zn2_board.vhd, rtl/psx_top.vhd, rtl/psx_mister.vhd | EEPROM copy for the NVRAM save and its ports `zn_nv_*` (section 9), unused (and removed in synthesis) outside GNET_SHELL |
 | GNET_Z1SHELL.qsf | GNET_Z1_CPU50 plus `GNET_SHELL=1`, the shell files and the debug overlay files |
 | tools/pc_build.sh | target `z1shell` (DIR gn_z1shell, TASK gnz1shell) |
-| sim/shell/ | tb_dotclock.vhd + run_dotclock.sh (NVC), tb_shell.sv + run_shell.sh, tb_crt_pos.sv + run_crt_pos.sh (Verilator) |
+| sim/shell/ | tb_dotclock.vhd + run_dotclock.sh (NVC), tb_shell.sv + run_shell.sh, tb_crt_pos.sv + run_crt_pos.sh, tb_arcade_video.sv + run_arcade_video.sh (Verilator) |
 | sim/zn2/tb_zn2_io.vhd | NVRAM copy checks added |
 | tools/lint_psx.py | from ddr3-arb-int, plus sys/hq2x.sv and a sync_fix stub for arcade_video |
 | README.md | core README (section 10) |
@@ -103,8 +107,9 @@ Raid).
   (usagi, `08`), 3 RC wheel and trigger (gobyrc, rcdego, `0C`). As MAME
   0.288 taitogn.cpp INPUT_PORTS, the bits MAME marks unused read as
   released: P2 bits 0-6 for 1-3, P1 bits 0-6 for 2-3, START1/START2 for 2,
-  START2 for 3. The MRA generator (tools/gnet/make_release_mras.py) writes
-  these bits.
+  START2 for 3. Bit 4 = the Dash button (`gnet_dash`, chaoshea and
+  chaosheaj, part `10`), see the Dash item in section 4. The MRA generator
+  (tools/gnet/make_release_mras.py) writes these bits.
 - Mahjong panel (taitogn.cpp ttgnmp_state mahjong_panel_r; rows KEY0-KEY3
   of mame shared/mahjong.cpp mahjong_matrix_1p): zn2_io answers A10100
   (P4) with the AND of the rows that coin bits 2, 3, 6, 7 select, bits 6-7
@@ -112,15 +117,51 @@ Raid).
   selected. Keys on the keyboard, MAME's defaults (emu/inpttype.ipp): A to
   N, Kan LCtrl, Pon LAlt, Chi Space, Reach LShift, Ron Z, Start 1 (KEY0
   bit 5, also the pad's Start). LCtrl, LAlt, Space stay P1 buttons 1-3 as
-  in MAME. Not on the pad: Psikyo SH2's convention (mahjong keys as
-  joystick buttons 4-23, MiSTer-devel Arcade-PsikyoSH2 rtl/hps2input.sv)
-  would collide with this core's joystick bits 16-17 (savestate, fast
-  forward of the PSX base).
+  in MAME. Psikyo SH2's convention (mahjong keys as joystick buttons 4-23,
+  MiSTer-devel Arcade-PsikyoSH2 rtl/hps2input.sv) is not used: it would
+  collide with this core's joystick bits 16-17 (savestate, fast forward of
+  the PSX base) and needs more buttons than a pad has.
+- Mahjong panel on pad 1 (issue #2; PSX.sv `mp_*`), ORed with the keys.
+  Eight inputs, numbered clockwise from the left on the D-pad and then on
+  the face buttons: s1 Left, s2 Up, s3 Right, s4 Down, s5 J1 bit 12, s6
+  bit 6, s7 bit 4, s8 bit 5 (MRA defaults Y, X, A, B). Two shifts, J1 bits
+  13 and 14 (defaults L and R), pick the layer:
+
+  | Held | s1 | s2 | s3 | s4 | s5 | s6 | s7 | s8 |
+  |---|---|---|---|---|---|---|---|---|
+  | nothing (Usagi) or L and R (both sets) | A | B | C | D | E | F | G | H |
+  | R | I | J | K | L | M | N | | |
+  | L | Kan | Pon | Chi | Reach | Ron | | | |
+
+  Start stays the pad's Start. Mahjong Oh keeps its P1 stick and buttons
+  1-3 on the unshifted pad, so its A-H layer is L and R together. Each
+  input keeps the layer it was pressed in until released (`mp_lay`), so
+  letting go of a shift before the key never turns a held key into a new
+  press of another key. An input pressed with a shift held is masked off
+  the P1 port (`mp_p1m`). The MRAs name the eleven J1 entries (bits 4-14)
+  in `<buttons names>` and map Service, Test and Pause to nothing by
+  default (L and R are the shifts); the CONF_STR J1 list, shared by every
+  set, is unchanged.
+- Service and Test on the pad, mahjong sets only (`mp_cs`): while Select
+  (J1 Coin, bit 8) is held, L is Service and R is Test, and neither acts
+  as a shift. Select still inserts a coin, but only when released with no
+  L or R pressed during the hold (`mp_coin`, one clock into coin1_pulse,
+  so still one 100 ms coin); Select with L or R never coins. In the
+  joystick sets Select coins on press as before. Keyboard 9 and F2 are
+  unchanged. Bench: sim/shell/run_mjsel.sh (section 6).
 - RC wheel and trigger (gobyrc ANALOG1 IPT_PADDLE, ANALOG2 IPT_PADDLE_V
   PORT_REVERSE, 00h-FFh, centre 80h): znmcu analog channels 0 and 1. Wheel
-  from the analog stick's X, or the paddle once it moves (the source that
-  moved last); trigger from the stick's Y reversed (stick up = FFh); the
-  D-pad or arrows give full deflection. FFh on both for every other set
+  from the analog stick's X (80h + X), or the paddle once it moves (the
+  source that moved last); trigger from the stick's Y reversed (80h - Y:
+  rest 80h, stick up FFh, down 01h; issue #4, the old ~(Y ^ 80h) rested at
+  7Fh); the D-pad or arrows give full deflection only while that stick axis
+  is within 16 of centre, so D-pad bits set by a deflected stick never
+  replace the analog value. Bench: sim/rc_input/run.sh. Calibration (MAME
+  0.288, checked with these values): 1. hands off, Start; 2. wheel fully
+  left and right, trigger fully up and down, Start; 3. Start again (writes
+  EEPROM 478h-487h; the core saves it with the NVRAM on OSD open). Before
+  step 1 the game shows any value off centre as full scale (80h or 7Fh).
+  FFh on both for every other set
   (MAME's unused ANALOG ports). Crossed to clk_cpu by cdc_bus_sync in
   zn2_cdc (whole bytes); the mahjong rows join the cdc_sync input group.
 - Flip Screen (status 104, shown for vertical sets only, forced off for
@@ -151,10 +192,28 @@ Raid).
 
 ## 4. System and audio
 
-- Pause: "Pause when OSD is open" (status 64, its PSX meaning, default
-  On), J1 button Pause (joystick bit 11) and the P key toggle a pause, as
-  upstream's button pause. The core's pause holds CPU, GPU and SPU; the
-  video keeps running.
+- Pause, as the official MiSTer arcade cores (Galaga, Centipede, Cave):
+  the J1 button Pause (joystick bit 11, either player; the MRAs leave it
+  unmapped) and the P key always toggle a pause, and a reset cancels it.
+  The "Pause Options" page has "Pause when OSD is open" (status 64, its
+  PSX meaning, default On) and "Dim video after 10s" (status 120, 0 = On,
+  default On): after 10 s of any pause (button, P key or OSD) the RGB is
+  halved to reduce burn-in, restored as soon as the pause ends
+  (rtl/gnet/gnet_pause_dim.sv, written for this core: Pause_MiSTer is
+  GPL-3). The dim is applied to the core RGB ahead of arcade_video and the
+  rotation feed, so HDMI, direct video and analog all dim; the syncs do
+  not pass through it. The core's pause holds CPU, GPU and SPU; the video
+  keeps running. Alpha 2's "Pause Button" on/off item (status 120, Off by
+  default) is gone; bit 120 now means Dim.
+- Service Menu (status 121, default Off): holds the board's test switch
+  S551:4 on, the same switch as the MRA DIP item "Test Mode (S551:4)" (MRA
+  DIP bit 3, active low as MAME taitogn.cpp DSW). PSX.sv passes zn_dsw as
+  the MRA byte with bit 3 ANDed with NOT status 121, so with the option On
+  the game sees Test Mode on whatever the DIP item says; Off leaves the DIP
+  item in charge. When a game reads the switch (at boot or while running)
+  is game code, not checked here: if the menu does not appear, reset with
+  the option On. It is not the J1 Test
+  button (the service port's test input).
 - Watchdog: gnet_ctrl's MB3773 model counts on the raw clock and would
   reset the board after one period (8 s since hw-debug-overlay 878ad18;
   MAME guesses 5 s) of pause. Its reset is ignored while paused and for the
@@ -195,7 +254,41 @@ Raid).
   unknown (R13).
 - Keyboard, MAME defaults: P1 arrows, LCtrl/LAlt/Space = B1-B3, 1 Start,
   5 Coin; P2 R/F/D/G, A/S/Q = B1-B3, 2 Start, 6 Coin; 9 Service, F2 Test,
-  P Pause. G-NET games use three buttons, so LShift (B4) is not mapped.
+  P Pause. G-NET games use three buttons, so LShift (B4) is not mapped,
+  except as Dash (P1 LShift, P2 W) for the sets with configuration bit 4.
+- Dash (issue #7, rtl/gnet/gnet_dash.sv, configuration bit 4): Chaos Heat
+  dashes on a double tap of a direction. The chaoshea and chaosheaj MRAs
+  name Button 1, Button 2, Button 3, Dash, Start, Coin, Service, Test,
+  Pause (default A, B, X, Y, Start, Select, L, R), so Dash is pad bit 7;
+  with bit 4 set, gnet_dash_remap moves bits 8-12 back to the J1 list's
+  7-11 and takes bit 7 as Dash (bits 16 and 17 untouched). Dash pressed
+  while a direction is held, from the next VBLANK: the direction released
+  4 frames, pressed 4, released 4, pressed 4, then the stick again (still
+  held, the player runs on). P1 and P2; the frame count stops while
+  paused. Measured in MAME 0.288 (sim/oracle/dash, player X/Z words
+  0x1426ec/0x1426f0 every frame, both VBLANK phases): a dash when the
+  second press starts at most 14 frames after the first (15 in one phase)
+  and the release before it is at least 2 frames (1 in one phase); first
+  presses of 2 to 12 frames work, 16 or more do not (a held direction is a
+  walk), and from a held direction the release before the first tap is
+  needed. 4/4 puts the second press 8 frames after the first. The
+  sequence dashed in all 8 directions in both phases (150 units a frame
+  against a walk's 82). Bench: sim/shell/run_dash.sh. Shell builds only.
+- Coin pulse (issue #1, rtl/gnet/gnet_coin_pulse.sv): Coin 1 and Coin 2
+  (J1 Coin, keys 5 and 6) give one 100 ms pulse per press (3,386,880
+  clk_1x clocks), however long the button is held, then at least 100 ms
+  released; one press made during a pulse or that gap is kept and follows.
+  The timer stops while the core is paused. Why: Space Invaders
+  Anniversary treats a coin held for 30 VBLANKs (0.5 s) as a jammed mech,
+  shows COIN ERROR and loops until the watchdog resets it (MAME 0.288,
+  routine 0x8001102c); a 0.1 s coin is counted, as from a real mech's short
+  pulse. This is an input-handling choice of the core, not board
+  behaviour. Service, Test and Start are unchanged. Shell builds only.
+- Coin lockouts (zn2_io): as MAME, a coin the game has locked out reads as
+  not inserted. Coin register 0x1FA20000 bit 1 clear locks coin 1, bit 5
+  clear locks coin 2 (zn.cpp coin_w 233-241); MAME drops a locked-out coin
+  input (ioport.cpp 1312-1327, coin_lockout option on by default). The
+  lockouts start unlocked and survive a reset, as MAME's bookkeeping.
 
 ## 5. OSD
 
@@ -203,24 +296,38 @@ Shell menu (GNET_SHELL):
 
 | Item | Bits | Shown |
 |---|---|---|
-| Aspect ratio | 33:32 | not on direct_video |
-| Scale | 35:34 | not on direct_video |
 | Orientation (Vertical, Horizontal) | 102 | vertical sets, HDMI, rotation built |
 | Rotate Direction (CCW, CW) | 103 | as Orientation, and Orientation Vertical |
 | Flip Screen | 104 | vertical sets |
-| Scandoubler Fx (None, HQ2x, CRT 25/50/75%) | 116:114 | always |
-| CRT H Position (0, +2 .. +14, -16 .. -2 dots) | 110:107 | always |
-| CRT V Position (0, +1 .. +3, -4 .. -1 lines) | 113:111 | always |
-| Pause when OSD is open | 64 | always |
-| Volume | 106:105 | always |
-| SFX Level (PS1 SPU gain in the mix: 0.3 MAME default, 0.45, 0.6, 0.9, 1.2, 1.5) | 119:117 | GNET_ZOOM builds (zoom_mix) |
+| Video Settings page (P1): Aspect ratio | 33:32 | not on direct_video |
+| Video Settings: Scale | 35:34 | not on direct_video |
+| Video Settings: Scandoubler Fx (None, HQ2x, CRT 25/50/75%) | 116:114 | always |
+| Video Settings: Deinterlacing (Weave, Bob) | 41 | not on direct_video |
+| Video Settings: CRT H Position (0, +2 .. +14, -16 .. -2 dots) | 110:107 | always |
+| Video Settings: CRT V Position (0, +1 .. +3, -4 .. -1 lines) | 113:111 | always |
+| Audio Settings page (P2): Volume | 106:105 | always |
+| Audio Settings: SFX Level (PS1 SPU gain in the mix: 0.3 MAME default, 0.45, 0.6, 0.9, 1.2, 1.5) | 119:117 | GNET_ZOOM builds (zoom_mix) |
+| Pause Options page (P3): Pause when OSD is open (On, Off) | 64 | always |
+| Pause Options: Dim video after 10s (On, Off) | 120 | always |
 | DIP | MRA | always |
-| Watchdog | 100 | always |
-| Debug overlay | 101 | always (docs/hw_debug_overlay.md) |
+| Service Menu (Off, On; holds S551:4 Test Mode on) | 121 | always |
+| Advanced page (P4): Watchdog | 100 | always |
+| Advanced: Debug overlay | 101 | always (docs/hw_debug_overlay.md) |
 | Reset | 0 | always |
 
-Removed from the earlier G-NET menu: Deinterlacing (bit 41; no game sets
-an interlaced mode). Nothing from the PS1 console menu is shown (CD,
+Layout (2026-10-14): rotation items at the top, then the Video Settings,
+Audio Settings and Pause Options pages, DIP and Service Menu, and the
+Advanced page. Every item keeps its status bit, so saved settings carry
+over. A page is "Pn,Name;" and its items "PnO[..]"; the H mask letter goes
+in front of the page prefix ("H0P1O[33:32]"), as upstream's
+"DEP1O[62]".
+
+Deinterlacing (bit 41, Weave or Bob, the PSX_MiSTer item and wiring
+HDMI_BOB_DEINT) was first left out because none of the first six games
+sets an interlaced mode. It is back since issue #3: Zooo, Mahjong Oh,
+Zoku Otenamihaiken, Kollon, Otenami Haiken Final and Flip Maze use the
+interlace bit (docs/m1_gpu_zn2.md 4). It only drives the HDMI scaler, so
+it is hidden on direct_video (H0). Nothing from the PS1 console menu is shown (CD,
 memory cards, pads, multitap, savestates, cheats, region, CD speed,
 texture filter, debug pages). Their logic is already fixed by GNET_LEAN
 and the trim switches; status bits that upstream logic still reads keep
@@ -244,6 +351,10 @@ only.
 | Verilator lint of PSX.sv (emu) with black-box stubs for the VHDL entities and PLLs, four configurations: GNET_Z1SHELL, GNET_Z1SHELL + GNET_ROT_DDR, GNET_Z1_CPU50, upstream PSX | no error; the only warning left is the framework's HPS_BUS inout; GNET_SHELL adds no width warning against GNET_Z1_CPU50 |
 | Verilator -Wall lint of gnet_sync_keeper and gnet_volume | clean (power-up initial values aside) |
 | sim/shell/run_crt_pos.sh (Verilator) | section 8 |
+| Coin pulse and lockouts (issue #1, 2026-10-14): tb_shell.sv coin cases (1 s hold, two presses, a press during a pulse, a pause) and tb_zn2_io.vhd lockout cases (each coin locked, both, after a reset); tools/lint_psx.py GNET_Z1FULLO and GNET_Z1 | lint clean; sim/shell/run_shell.sh PASS, sim/zn2/run_zn2_io.sh PASS (2026-10-14) |
+| Pause options and Service Menu (2026-10-14): sim/shell/run_pausedim.sh (Verilator) runs PSX.sv's own pause block, pause button wire and zn_dsw expression (gen_pausewd.py) with gnet_pause_dim at DIM_CLKS 1000: pad P1, pad P2 and P key toggle with no gate; no dim before 1000 clocks, RGB halved after; restored within 3 video clocks of unpause; Dim Off never dims; Dim On mid-pause; OSD pause dims; OSD pause Off; reset cancels the button pause; Service Menu clears DSW bit 3 only. tools/lint_psx.py GNET_Z1FULLO, GNET_Z1FULLR, GNET_Z1 | PASS, 23 checks; lint clean |
+| Mahjong Select + L / R (2026-10-14): sim/shell/run_mjsel.sh (Verilator) runs PSX.sv's own mahjong pad block, zj1 and coin1_pulse; Usagi and Mahjong Oh: Select tap = one 100 ms coin after release; Select + L = Service held, L not a shift, no coin; Select + R = Test held, R not a shift, no coin; R alone + s1 = tile I, no coin; keyboard 9 / F2; joystick sets: Select coins on press, no Service or Test | PASS, 27 checks |
+| Issue #3 (480i), PASS 2026-10-14: run_dotclock.sh modes 4 and 5 (08000027h, 08000026h; vsync intervals must alternate 895,913 / 895,912), run_crt_pos.sh 480i runs, run_arcade_video.sh (240p identical to the framework's arcade_video for every Fx; 480i Fx None intervals within one dot of 262.5 lines) | sections 2 and 8 |
 | sim/zn2/run_zn2_io.sh (NVC) with the NVRAM checks | section 9; all zn2_io tests PASS |
 | NVC analysis of every VHDL file of the system build plus psx_mister.vhd (the new zn_nv_* ports) | no error |
 | After merging gnet-cpu50 6cb9b78 and hw-debug-overlay 8866055: tools/lint_psx.py (from ddr3-arb-int) on GNET_Z1SHELL, GNET_Z1SHELL with -DGNET_ROT_DDR=1, GNET_Z1_CPU50, GNET_Z1, PSX; both benches rerun | no warning or error in PSX.sv for the G-NET revisions; PSX shows only upstream's IMPLICITSTATIC in the pll_cfg block; benches unchanged (PASS, same DV1 table) |
@@ -299,6 +410,23 @@ settling):
 Every moved setting is exactly -16 x crt_h - 3413 x crt_v clocks plus a
 constant 2 clocks (the line counter and the output register). PASS.
 
+480i (issue #3, 2026-10-14): in an interlaced mode every second field's
+source vsync rises and falls mid-line, 1707 clocks after the hsync rise
+(rtl/gpu_videoout_async.vhd), and that half line is what makes a CRT
+interleave the fields. The block above rebuilt vsync on new hsync rises,
+so with any non-zero setting it dropped the half line. It now records
+the clocks from the source hsync rise to each source vsync rise; when that
+is not 0 the field's new vsync edges come the same number of clocks after
+their new hsync rise, and since the field lengths alternate (263 and 262
+new hsyncs between vsyncs), the next field's line count and phase are
+taken from two fields back. The 240p logic is kept as it was: it runs
+whenever neither of the last two source vsyncs rose mid-line, so 240p
+output is unchanged. The bench has a 480i source added (fields A and B,
+every setting above): field B's new vsync edges 1707 clocks after the new
+hsync rise, both fields at -16 x crt_h - 3413 x crt_v + 2 from their
+source vsync, vsync intervals alternating 895,912 and 895,913; then the
+240p settings again. Not run yet.
+
 Scandoubler Fx: PSX.sv's own gamma_corr and VGA_* assignments are replaced
 in GNET_SHELL by the framework's arcade_video (WIDTH 640, DW 24, gamma
 inside), fed from video_aspect and the debug overlay; video_aspect and the
@@ -307,6 +435,21 @@ mixer's output. With Fx None and no forced scandoubler CE_PIXEL is ce_pix
 delayed (DV1 unchanged). Scandoubled, the 512-dot mode (one dot every 5
 clocks) gives alternating 2 and 3 clock dots at 31 kHz; that output is not
 direct_video.
+
+Since issue #3 the instance is rtl/gnet/gnet_arcade_video.sv, a copy of
+the framework's module (sys/ stays as upstream) with one change. The
+framework takes VSync only on an HSync rising edge, which moved the 480i
+mid-line vsync to the next line start: the fields came out 262 and 263
+lines apart (894,206 and 897,619 clocks) instead of 262.5, and a CRT on
+direct video or 15 kHz analog drew them on top of each other. The copy
+takes VSync on every dot enable when the scandoubler is off (Fx None and
+no forced scandoubler) and keeps the HSync-aligned latch when it is on
+(31 kHz, HQ2x, scanlines). In 240p the source's vsync edges come on the
+same clock as its hsync rises (section 2, "vsync edge not on hsync rise:
+0"), so both latches give the same VSync and the output is unchanged.
+Scaled HDMI was never affected (the scaler weaves on VGA_F1). Bench:
+sim/shell/run_arcade_video.sh runs the copy beside the framework's module
+on the same input; not run yet.
 
 ## 9. EEPROM save and button names
 

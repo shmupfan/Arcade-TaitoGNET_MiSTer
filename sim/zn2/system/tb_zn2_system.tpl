@@ -575,7 +575,7 @@ begin
    generic map
    (
       HAS_CD => 0, HAS_PADS => 0, HAS_SAVESTATES => 0, HAS_CHEATS => 0, HAS_MDEC => 0,
-      VRAM_Y_BITS => 10, ZN2_BOARD => 1, ZN2_READ_OVERLAP => READ_OVERLAP,
+      VRAM_Y_BITS => 10, RECT_FLIP => 1, ZN2_BOARD => 1, ZN2_READ_OVERLAP => READ_OVERLAP,
       @SPLITGEN@
    )
    port map

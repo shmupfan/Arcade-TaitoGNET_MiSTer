@@ -26,7 +26,14 @@ cause, in this order:
   gte      the opcode is a COP2 instruction or a GTE register move
   other    none of the above (branch/exception/unknown)
 Output: totals in cycles and as a share of the window, per class and
-region, plus per-class counts and mean stall per event.
+region, plus per-class counts and mean stall per event. Main RAM load
+stalls are also split by pair class (docs/r1_cpu_domain_design.md, "Main
+RAM load timing at 2:1"): isolated; back-to-back (the previous data read
+was a main RAM load at PC - 4, the case of cpu.vhd's lateReadBypass);
+back-to-back special (as back-to-back, and both loads have the same target
+or the instruction after the second reads the first one's target: the
+cases of cpu.vhd's compensation cycle; register use decoded from the
+opcode, approximate).
 """
 import struct
 import sys
@@ -120,6 +127,37 @@ def main(run, biosf, mhz=50.0, ramf=None):
             valid[line][k] = True
         return "miss"
 
+    def srcs(op):
+        # registers an instruction reads (approximate decode)
+        if op is None:
+            return set()
+        o, rs, rt = op >> 26, (op >> 21) & 31, (op >> 16) & 31
+        if o == 0:
+            return {rs, rt}
+        if o in (0x02, 0x03, 0x0F):                  # J, JAL, LUI
+            return set()
+        if o in (0x04, 0x05) or 0x28 <= o <= 0x2E:   # BEQ, BNE, stores
+            return {rs, rt}
+        if o in (0x22, 0x26):                        # LWL, LWR merge into rt
+            return {rs, rt}
+        return {rs}
+
+    def pair_class(j):
+        _, _, _, pc = acc[j]
+        k = j - 1
+        if k < 0 or acc[k][1] != "R" or region(acc[k][2]) != "RAM" or acc[k][3] != pc - 4:
+            return "isolated"
+        op, op_prev = opcode(pc), opcode(pc - 4)
+        if op is None or op_prev is None:
+            return "back-to-back (no opcode)"
+        t_prev = (op_prev >> 16) & 31
+        if t_prev != 0 and (((op >> 16) & 31) == t_prev or t_prev in srcs(opcode(pc + 4))):
+            return "back-to-back special"
+        return "back-to-back"
+
+    pair_stall = Counter()
+    pair_events = Counter()
+    pair_hist = defaultdict(Counter)
     pc_cycles = Counter()
     stall = Counter()
     events = Counter()
@@ -152,6 +190,11 @@ def main(run, biosf, mhz=50.0, ramf=None):
         while j < len(acc) and acc[j][0] < t + dt:
             if acc[j][0] >= t - 3 * cyc:
                 cause = ("load " if acc[j][1] == "R" else "store ") + region(acc[j][2])
+                if cause == "load RAM":
+                    pc_ = pair_class(j)
+                    pair_stall[pc_] += extra
+                    pair_events[pc_] += 1
+                    pair_hist[pc_][extra] += 1
                 break
             j += 1
         if cause is None:
@@ -182,6 +225,11 @@ def main(run, biosf, mhz=50.0, ramf=None):
     for c, v in stall.most_common():
         top = ", ".join(f"{k}:{n}" for k, n in sorted(hist_stall[c].items(), key=lambda x: -x[1])[:4])
         print(f"{c:32s} {v:9d} cycles {100.0 * v / total:5.1f}%  events {events[c]:8d}  mean {v / events[c]:5.2f}  (stall:count {top})")
+    if pair_events:
+        print("main RAM load stalls by pair class:")
+        for c, v in pair_stall.most_common():
+            top = ", ".join(f"{k}:{n}" for k, n in sorted(pair_hist[c].items(), key=lambda x: -x[1])[:4])
+            print(f"  {c:30s} {v:9d} cycles  events {pair_events[c]:8d}  mean {v / pair_events[c]:5.2f}  (stall:count {top})")
     reg = Counter(region(a[2]) + " " + a[1] for a in acc)
     print("data accesses in the window:", ", ".join(f"{k} {v}" for k, v in reg.most_common()))
     # where the time goes: 16-byte code blocks by cycles, with the data

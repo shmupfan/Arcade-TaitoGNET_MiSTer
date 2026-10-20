@@ -5,3 +5,11 @@ obj_dir_crt/
 obj_dir_crt.log
 obj_dir_pausewd/
 obj_dir_pausewd.log
+obj_dir_pausedim/
+obj_dir_pausedim.log
+obj_dir_mjsel/
+obj_dir_mjsel.log
+obj_dir_sdt*/
+obj_dir_sdt*.log
+obj_dir_av/
+obj_dir_av.log

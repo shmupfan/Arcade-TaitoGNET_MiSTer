@@ -164,7 +164,7 @@ static uint64_t block_hash(const std::vector<uint32_t>& Y, int w, int h, int bx,
     return hsh;
 }
 struct Video {
-    std::string dir; int every = 1; long frames = 0; FILE* ftsv = nullptr; double t_ps = 0;
+    std::string dir; int every = 1; long frames = 0; FILE* ftsv = nullptr; double t_ps = 0; bool append = false;
     std::vector<uint8_t> line, img; int lines = 0, width = 0;
     bool hb1 = true, vb1 = true;
     void sample(bool ce, bool hb, bool vb, uint8_t r, uint8_t g, uint8_t b) {
@@ -177,7 +177,7 @@ struct Video {
         }
         if (vb && !vb1) {
             frames++;
-            if (!ftsv) { ftsv = fopen((dir + "/frames.tsv").c_str(), "w"); if (ftsv) fprintf(ftsv, "#frame\tt_s\tw\th\tcrc555\tcrc555_x1\tahash\tdhash\tluma\n"); }
+            if (!ftsv) { ftsv = fopen((dir + "/frames.tsv").c_str(), append ? "a" : "w"); if (ftsv && !append) fprintf(ftsv, "#frame\tt_s\tw\th\tcrc555\tcrc555_x1\tahash\tdhash\tluma\n"); }
             if (ftsv) {
                 int w = lines > 0 ? width : 0, h = lines;
                 std::vector<uint32_t> Y((size_t)w * h); std::vector<uint8_t> row; uint32_t c0 = 0, c1 = 0; uint64_t ysum = 0;
@@ -226,7 +226,13 @@ static std::vector<uint8_t> read_hex(const char* fn) {
 // clk_sys = clk1x. The HPS program writes io_clk with the data, polls io_ack,
 // writes io_clk low, polls io_ack low; -hps_w / -hps_r are its bus write and
 // read times in clk1x cycles.
-struct DlFile { int index; std::vector<uint8_t> data; std::string desc; };
+// "<index>@<address>" (e.g. "5@0x34000000") is an MRA DDR3 load (issue #12,
+// docs/i12_ddr3_load.md): Main_MiSTer's rom_finish sends the length in the
+// FIO_FILE_TX start (ioctl_addr = length when ioctl_download rises), copies
+// the data into DDR3 at that physical address (memcpy through /dev/mem, here
+// -hps_mbs MB/s spread over the download) and ends the download; no
+// ioctl_wr. The model's DDR3 holds physical 0x30000000 at offset 0.
+struct DlFile { int index; std::vector<uint8_t> data; std::string desc; uint32_t ddr_addr = 0; };
 static std::vector<DlFile> read_dl_list(const char* fn) {
     std::vector<DlFile> v; FILE* f = fopen(fn, "r");
     if (!f) { fprintf(stderr, "cannot open %s\n", fn); exit(1); }
@@ -235,6 +241,11 @@ static std::vector<DlFile> read_dl_list(const char* fn) {
         char* s = strtok(line, " \t\r\n");
         if (!s || s[0] == '#') continue;
         DlFile d; d.index = atoi(s);
+        if (const char* at = strchr(s, '@')) {
+            d.ddr_addr = strtoul(at + 1, nullptr, 0);
+            if (d.ddr_addr < 0x30000000u || d.ddr_addr >= 0x40000000u) { fprintf(stderr, "%s: DDR3 address outside the core window\n", s); exit(1); }
+            d.desc = std::string("DDR3 ") + (at + 1) + " ";
+        }
         while ((s = strtok(nullptr, " \t\r\n"))) {
             std::string a = s; d.desc += a + " ";
             if (a.rfind("fill:", 0) == 0) {
@@ -265,6 +276,8 @@ struct Hps {
     // HPS program
     int file = -1; size_t word = 0; int st = 0; int cnt = 0; double t_next = 0; bool done = false;
     int hps_w = 2, hps_r = 2; double gap_ps = 1e9;
+    // DDR3 loads: memcpy rate (bytes per clk1x edge from -hps_mbs) and progress
+    double mbs = 100; double acc = 0; size_t copied = 0;
     // one clk1x edge; wait = ioctl_wait before the edge
     void edge(bool wait, double now, std::vector<DlFile>& files, FILE* log) {
         bool strobe = !rack && gpr_clk;
@@ -286,12 +299,33 @@ struct Hps {
         switch (st) {
         case 0:   // between files
             if (now < t_next) return;
+            // every HPS command word waits for its ack, which sys_top holds
+            // while io_wait (ioctl_wait) is high: Main cannot start the next
+            // file before the core lets it
+            if (wait) return;
             if (++file >= (int)files.size()) { done = true; fprintf(log, "%.3f us downloads done\n", now / 1e6); fflush(log); return; }
             index = files[file].index; cnt = 4; st = 1;
             fprintf(log, "%.3f us download index %d, %zu bytes: %s\n", now / 1e6, index, files[file].data.size(), files[file].desc.c_str()); fflush(log);
             return;
-        case 1:   // FIO_FILE_TX start
-            download = true; addr = 0; skip_add = true; word = 0; cnt = 4; st = 2; return;
+        case 1:   // FIO_FILE_TX start (with the length for a DDR3 load)
+            if (wait) return;
+            download = true; addr = 0; skip_add = true; word = 0; cnt = 4; st = 2;
+            if (files[file].ddr_addr) {
+                addr = files[file].data.size() & 0x7FFFFFF; st = 6; acc = 0; copied = 0;
+            }
+            return;
+        case 6: { // DDR3 load: Main's memcpy into DDR3 while the download is open
+            auto& d = files[file].data;
+            acc += mbs * 1e6 * (1e12 / 33868800.0) / 1e12;
+            size_t n = (size_t)acc; acc -= n;
+            uint8_t* mem = (uint8_t*)ddr + (files[file].ddr_addr - 0x30000000u);
+            if (copied + n > d.size()) n = d.size() - copied;
+            memcpy(mem + copied, d.data() + copied, n); copied += n;
+            if (copied >= d.size()) {
+                fprintf(log, "%.3f us DDR3 load index %d: %zu bytes at 0x%08X\n", now / 1e6, index, d.size(), files[file].ddr_addr); fflush(log);
+                st = 5; cnt = 4;
+            }
+            return; }
         case 2: { // word: io_clk high with the data
             auto& d = files[file].data;
             if (word * 2 >= d.size()) { st = 5; cnt = 4; return; }
@@ -303,6 +337,7 @@ struct Hps {
             if (!io_ack) { word++; st = 2; } else cnt = hps_r;
             return;
         case 5:   // FIO_FILE_TX end
+            if (wait) return;
             if (download) addr += 2;
             download = false; st = 0; t_next = now + gap_ps;
             fprintf(log, "%.3f us download index %d end, %zu words\n", now / 1e6, index, word); fflush(log);
@@ -320,9 +355,18 @@ struct Hps {
 static void check_downloads(std::vector<DlFile>& files, FILE* log) {
     for (auto& f : files) {
         const uint8_t* mem = nullptr; uint32_t base = 0; const char* where = "";
+        if (f.index == 3 && f.ddr_addr) {
+            // DDR3 flash load: Main's copy in DDR3 (the mirror writes the
+            // same bytes back), and the core's copy in SDRAM below
+            const uint8_t* dm = (const uint8_t*)ddr; uint32_t db = f.ddr_addr - 0x30000000u;
+            size_t bad = 0, first = (size_t)-1;
+            for (size_t i = 0; i < f.data.size(); i++) if (dm[db + i] != f.data[i]) { if (first == (size_t)-1) first = i; bad++; }
+            fprintf(log, "CHECK index 3 DDR3 copy (0x%08X, %zu bytes): %s", f.ddr_addr, f.data.size(), bad ? "" : "identical\n");
+            if (bad) fprintf(log, "%zu bytes differ, first at offset 0x%zX\n", bad, first);
+        }
         if (f.index == 0) { mem = (const uint8_t*)sdram; base = 0x800000; where = "SDRAM"; }
         else if (f.index == 3) { mem = (const uint8_t*)sdram; base = 0x1000000; where = "SDRAM"; }
-        else if (f.index == 5) { mem = (const uint8_t*)ddr; base = 0x4000000; where = "DDR3"; }
+        else if (f.index == 5) { mem = (const uint8_t*)ddr; base = f.ddr_addr ? f.ddr_addr - 0x30000000u : 0x4000000; where = "DDR3"; }
         else continue;
         size_t n = f.data.size(), bad = 0, first = (size_t)-1;
         for (size_t i = 0; i < n; i++) if (mem[base + i] != f.data[i]) { if (first == (size_t)-1) first = i; bad++; }
@@ -355,6 +399,18 @@ int main(int argc, char** argv) {
     // line can belong to a neighbouring access; the rdata of W lines is stale.
     double iolog_from = 1e300, iolog_to = -1; FILE* fio = nullptr; bool iopend = false; char ioline[160];
     double ps1_phase_ps = 0;
+    int nozoom = 0;                    // -nozoom 1: zn_nozoom (MRA index 7 bit 1, MAME init_nozoom)
+    // -inmode N: the special controls at rest, as PSX.sv drives them from MRA
+    // index 7 bits 3:2: 0 joysticks, 1 mahjong panel and P1 (mahjngoh),
+    // 2 mahjong panel (usagi), 3 RC wheel 80h and trigger 7Fh (gobyrc).
+    // -mjkey R,B,FROM,TO: mahjong row R bit B pressed (zn_in_mj bit 6R+B low)
+    // from FROM to TO ms; -an0 / -an1 V,FROM: znmcu analog channel 0 / 1 = V
+    // (hex) from FROM ms on. Applied every 100 us (the progress tick).
+    int inmode = 0, mj_bit = -1, an_v[2] = {-1, -1};
+    double mj_from = 0, mj_to = 0, an_from[2] = {0, 0};
+    // -iolog_addr LO,HI (hex, physical): the io.log address window
+    // (default 1F801000,1F803000, the I/O registers)
+    uint32_t iolog_lo = 0x1f801000, iolog_hi = 0x1f803000;
     bool iolog_all = false;            // -iolog_all 1: io.log takes every CPU data access, not only I/O
     // -pctrace_from/-pctrace_to us: every new CPU PC to pc.log (CPU clock domain);
     // -ramdump_us T: the first 64 KB of main RAM to ram_<T>.bin at T
@@ -399,6 +455,11 @@ int main(int argc, char** argv) {
         else if (a == "-iolog_all") iolog_all = atoi(argv[++i]) != 0;
         else if (a == "-ddr_lat") DDR_LAT = atoi(argv[++i]);
         else if (a == "-ddr_hold") DDR_HOLD = atoi(argv[++i]);
+        else if (a == "-nozoom") nozoom = atoi(argv[++i]);
+        else if (a == "-inmode") inmode = atoi(argv[++i]);
+        else if (a == "-mjkey") { int r, b; sscanf(argv[++i], "%d,%d,%lf,%lf", &r, &b, &mj_from, &mj_to); mj_bit = 6 * r + b; }
+        else if (a == "-an0" || a == "-an1") { int c = a[3] - '0'; sscanf(argv[++i], "%x,%lf", &an_v[c], &an_from[c]); }
+        else if (a == "-iolog_addr") sscanf(argv[++i], "%x,%x", &iolog_lo, &iolog_hi);
         else if (a == "-ddr_jit") DDR_JIT = atoi(argv[++i]);
         else if (a == "-ddr_gap") DDR_GAP = atoi(argv[++i]);
         else if (a == "-ddr_busy") DDR_BUSYP = atoi(argv[++i]);
@@ -416,6 +477,7 @@ int main(int argc, char** argv) {
         else if (a == "-dl_gap_ms") hps.gap_ps = atof(argv[++i]) * 1e9;
         else if (a == "-pre_ms") pre_ms = atof(argv[++i]);
         else if (a == "-garbage") garbage = atoi(argv[++i]);
+        else if (a == "-hps_mbs") hps.mbs = atof(argv[++i]);
 #endif
         else if (a == "-restore") restore = argv[++i];
         else if (a[0] == '+') {}
@@ -441,6 +503,10 @@ int main(int argc, char** argv) {
         for (uint32_t i = 0; i < (1u << 25); i++) { x ^= x << 13; x ^= x >> 7; x ^= x << 17; ddr[i] = x; }
     }
     hps.t_next = pre_ms * 1e9;
+#if FS_HAS_DDR3ARB
+    if (DDR_HOLD < 0) DDR_HOLD = 1;   // the arbiter may issue while a read is outstanding
+#endif
+    if (DDR_HOLD < 0) DDR_HOLD = 0;
 #else
     for (uint32_t i = 0x1000000 / 2; i < 0x1a00000 / 2; i++) sdram[i] = 0xffff;   // erased flash chips
     load(bios, 0x800000, 0x80000);
@@ -468,7 +534,7 @@ int main(int argc, char** argv) {
     if (meta) { auto m = read_hex(meta); for (size_t i = 0; i + 1 < m.size() && i < 1024; i += 2) ld.push_back({1, (int)i, m[i] | m[i + 1] << 8}); }
     if (card) {
         FILE* f = fopen(card, "rb"); if (!f) { fprintf(stderr, "cannot open %s\n", card); return 1; }
-        size_t n = fread((uint8_t*)ddr + 0x4000000, 1, 40960000, f); fclose(f);
+        size_t n = fread((uint8_t*)ddr + 0x4000000, 1, 0xC000000, f); fclose(f);   // T1/T2 40 MB, taitocf 64 MB; up to the 256 MB window end
         fprintf(stderr, "card image at DDR3 0x4000000, %zu bytes\n", n);
     }
     size_t ld_i = 0; int ld_phase = 0;
@@ -483,6 +549,28 @@ int main(int argc, char** argv) {
     top->ioctl_download = 0; top->ioctl_wr = 0; top->ioctl_index = 0; top->ioctl_addr = 0; top->ioctl_dout = 0;
 #else
     top->reset = 1; top->sdram_init = 1;
+#if FS_HAS_NOZOOM
+    top->zn_nozoom = nozoom;
+#else
+    if (nozoom) { fprintf(stderr, "-nozoom: this build has no zn_nozoom port\n"); return 1; }
+#endif
+#endif
+#if FS_HAS_MJ
+    // the special-controls ports at time t (ps); before -inmode these were
+    // left at the generator's 0xFF: mahjong panel enabled, rows 1-3 pressed
+    auto inputs_at = [&](double t) {
+        uint32_t mj = 0xFFFFFF;
+        if (mj_bit >= 0 && t >= mj_from * 1e9 && t < mj_to * 1e9) mj &= ~(1u << mj_bit);
+        int an[2] = {inmode == 3 ? 0x80 : 0xFF, inmode == 3 ? 0x7F : 0xFF};
+        for (int c = 0; c < 2; c++) if (an_v[c] >= 0 && t >= an_from[c] * 1e9) an[c] = an_v[c];
+        top->zn_in_mj = mj; top->zn_in_mj_en = inmode == 1 || inmode == 2;
+        top->zn_in_an0 = an[0]; top->zn_in_an1 = an[1];
+    };
+    inputs_at(0);
+    fprintf(stderr, "inputs: mode %d, mj_en %d, an0 %02X an1 %02X%s\n", inmode, (int)top->zn_in_mj_en, (int)top->zn_in_an0, (int)top->zn_in_an1,
+            mj_bit >= 0 || an_v[0] >= 0 || an_v[1] >= 0 ? ", timed changes set" : "");
+#else
+    if (inmode || mj_bit >= 0 || an_v[0] >= 0 || an_v[1] >= 0) { fprintf(stderr, "-inmode/-mjkey/-an: this build has no zn_in_mj port\n"); return 1; }
 #endif
     top->ddr3_BUSY = 0; top->ddr3_DOUT_READY = 0; top->ddr3_DOUT = 0;
 #if !FS_HAS_ZN2
@@ -595,6 +683,9 @@ int main(int argc, char** argv) {
     fzn = fopen((out + "/zn.log").c_str(), lmode);
 #endif
     if (restore) fprintf(fprog, "%.0f us restored from %s\n", now_ps / 1e6, restore);
+    // a restored run appends to frames.tsv (rows after the checkpoint; the
+    // earlier rows stay from the run that wrote it)
+    video.append = restore != nullptr;
 
     // DUT outputs before an edge, for the memory models and the HPS model
     struct Pre { bool d_rd, d_we; uint32_t d_addr; int d_bc; uint64_t d_din; uint8_t d_be;
@@ -688,7 +779,7 @@ int main(int argc, char** argv) {
         if (now_ps >= iolog_from && now_ps <= iolog_to) {
             if (!fio) fio = fopen((out + "/io.log").c_str(), "w");
             uint32_t a = top->dbg_cpuaddr & 0x1fffffff;
-            if (top->dbg_cpureq && (iolog_all || (a >= 0x1f801000 && a < 0x1f803000))) {
+            if (top->dbg_cpureq && (iolog_all || (a >= iolog_lo && a < iolog_hi))) {
                 iopend = true;
                 snprintf(ioline, sizeof ioline, "%.3f %s %08X %X %08X PC %08X", now_ps / 1e6, top->dbg_cpurnw ? "R" : "W", a,
                          top->dbg_cpumask, top->dbg_cpuwdata, top->dbg_pc);
@@ -712,6 +803,14 @@ int main(int argc, char** argv) {
             }
             static bool rs1 = false;
             if (top->dbg_reset != rs1) { fprintf(fprog, "%.3f us psx reset %d\n", now_ps / 1e6, top->dbg_reset); rs1 = top->dbg_reset; }
+            static bool wt1 = false;
+            if (top->ioctl_wait != wt1) { wt1 = top->ioctl_wait; if (!hps.download) fprintf(fprog, "%.3f us ioctl_wait %d (no download open)\n", now_ps / 1e6, wt1); }
+#if FS_HAS_DLFULL
+            static bool fb1 = false, mo1 = false, oo1 = false;
+            if (top->dbg_flc_busy != fb1) { fb1 = top->dbg_flc_busy; fprintf(fprog, "%.3f us DDR3 flash copier busy %d\n", now_ps / 1e6, fb1); fflush(fprog); }
+            if (top->dbg_mir_ovf != mo1) { mo1 = top->dbg_mir_ovf; fprintf(fprog, "%.3f us MIRROR OVERFLOW %d\n", now_ps / 1e6, mo1); }
+            if (top->dbg_own_ovf != oo1) { oo1 = top->dbg_own_ovf; fprintf(fprog, "%.3f us ARBITER OWNER FIFO OVERFLOW %d\n", now_ps / 1e6, oo1); }
+#endif
 #endif
             if (!reset_done && t_reset < 0) {
 #if FS_HAS_ZN2 && !FS_HAS_DL
@@ -763,6 +862,9 @@ int main(int argc, char** argv) {
                 fflush(fzn);
 #endif
                 next_prog += 100e6;
+#if FS_HAS_MJ
+                inputs_at(now_ps);
+#endif
             }
     };
 #if FS_HAS_CPUCLK
@@ -823,7 +925,21 @@ int main(int argc, char** argv) {
     cpu_on_cpu = split;
     if (split) ck[CC].half = 1e6 / cpu_mhz / 4;   // clk_cpu2x half period
     int cc_div = 0;                     // clk_cpu toggles every second clk_cpu2x edge
-    top->clk_cpu = top->clk_cpu2x = top->clk_cpu3x = 1;
+    // after -restore the clocks continue from now_ps: edge k of a clock is at
+    // off + k x half, so the edges up to now_ps (already evaluated before the
+    // checkpoint) give its count, level and the clk_cpu divider. Without this
+    // every clock restarted at count 0, so emulated time (frames.tsv t_s,
+    // checkpoint names) restarted from 0 on top of the restored state.
+    if (restore) {
+        for (int i = 0; i < 5; i++) {
+            if (i == CC && !split) continue;
+            const int v0 = ck[i].v;
+            ck[i].n = (uint64_t)std::floor((now_ps - ck[i].off) / ck[i].half + 1e-6);
+            ck[i].v = v0 ^ (int)(ck[i].n & 1);
+        }
+        if (split) { cc_div = (int)((ck[CC].n / 2) % 2); top->clk_cpu = cc_div == 0 ? 1 : 0; top->clk_cpu2x = top->clk_cpu3x = ck[CC].v; }
+    }
+    if (!restore) top->clk_cpu = top->clk_cpu2x = top->clk_cpu3x = 1;
     while (now_ps < end_ps) {
         double T = 1e300;
         for (int i = 0; i < 5; i++) if ((i != CC || split) && ck[i].next() < T) T = ck[i].next();

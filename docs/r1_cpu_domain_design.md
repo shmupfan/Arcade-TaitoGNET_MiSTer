@@ -2331,3 +2331,101 @@ Checks (NVC, nice -n 15):
 
 Whether the restructured path meets 10 ns needs a fit. I can't run that
 here. tools/sta/cpu2x_worst.tcl on the next fit shows it.
+
+### Main RAM load timing at 2:1 (issue #5, branch ram-timing, 2026-10-14)
+
+Goal agreed with Lee: give a main RAM data load the cycle count PSX_MiSTer
+has at 3:1, 5 CPU cycles from request to done (about 7.6 per load with the
+pipeline), instead of 7 (about 9.6). Read-only trace behind it: at 2:1 the
+SDRAM part of a read costs 2 more CPU cycles than at 3:1, and memorymux's
+back-to-back discount (ram_load_last, 7) never fires for real CPU loads,
+because the CPU issues the next load 2 cycles after done (cpu.vhd writeback
+cycle), at request + 9.
+
+Options, all off by default, so GNET_Z1FULLO and every other revision build
+the same logic as before:
+
+| Option | Where | What it does |
+|---|---|---|
+| GNET_EARLY_READY (C1, option B above) | sdram.sv EARLY_READY | plain ch1 read ready one fast edge earlier: 7 -> 6 |
+| GNET_RAM_READ_NOWAIT (C3) | memorymux RAM_READ_NOWAIT, psx_top/psx_mister/PSX.sv as ZN2_READ_OVERLAP | every main RAM data read takes the existing bypass branch (no WAITFORRAMREAD): 6 -> 5. Instruction fetches unchanged |
+| (tied to C3) | cpu B2B_RAM_COMP = 1 - RAM_READ_NOWAIT | the back-to-back compensation cycle (cpu.vhd lateReadStall, 09c5029) is skipped when both loads are main RAM data loads |
+| GNET_RAM_B2B_WINDOW (C2) | memorymux RAM_LOAD_WINDOW | window 8 with EARLY_READY, 9 without (upstream 7), so the discount fires at done + 2 as at 3:1. No effect with C3 |
+
+PSX.sv sets RAM_READ_NOWAIT and RAM_LOAD_WINDOW only at CLK_FAST_RATIO = 2,
+and psx_top asserts it. With the defaults the memorymux counter keeps its
+range 0 to 7 and the cpu.vhd condition is the upstream one.
+
+Why the compensation is tied to C3. Upstream at 3:1: an isolated RAM load
+5, a load right after a RAM load 4 (window), and 5 again in the special
+cases (same target, or the next instruction reads the first load's target),
+where cpu.vhd adds its cycle. So the special pair costs what an isolated
+load costs. With C3 every RAM load is 5 and there is no discount left; the
+compensation would make the special pair 6, one more than isolated, a case
+upstream never has. B2B_RAM_COMP = 0 keeps special = isolated. Pairs with a
+non-RAM load keep the compensation, as upstream.
+
+What C1 + C3 does not reach: the 3:1 core's 4 for a plain back-to-back
+pair. The SDRAM path alone is 5 CPU cycles at 2:1 with C1 (READ to the
+second halfword in dq_reg plus the clk_base register), so 4 needs option D
+(the CPU consuming the word on a fast-domain edge), which the trace rated
+high risk. So with GNET_Z1FULLR: isolated 5 (3:1: 5), back-to-back 5 (3:1:
+4), back-to-back special 5 (3:1: 5). The C2 alternative keeps upstream's
+split one cycle higher everywhere (6 / 5 / 6).
+
+Timing. The z1fullb clk_cpu2x failure (-0.129 ns, ram_ena to SDRAM_A) is
+fixed in the RTL by 87d11e7 (row address selected in the last mux level),
+which is on at 2:1 in every revision, Z1FULLO included. C3 adds no path:
+the bypass branch registers the same ram_ena, ram_Adr and readram on the
+same edge. C1 adds dq_reg to ch1_dout32 (clk_cpu2x to clk_cpu, 10 ns,
+one 2:1 mux). GNET_Z1FULLR keeps Z1FULLO's SEED 2 and the HDMI PLL counter
+location; a miss is a seed question first, then tools/sta/cpu2x_worst.tcl.
+
+Predicted Ray Crisis prepare bar (my estimate, 6.000 to 6.050 s window mix:
+174,468 RAM loads in 2,500,000 cycles, bar 16.9 s on 98f4c77): 2 cycles off
+every RAM load gives 2,151,064 cycles, ratio 0.860, about 14.5 s against
+the PCB's 14.69 s (Z1FULLO's read overlap, estimated at about 0.15 s off,
+would put it nearer 14.4 s). Special pairs gain one more cycle each; their
+share is not measured yet (cpu_breakdown.py now splits it out).
+
+Benches (written, not run on 2026-10-14):
+- mem_lat, `T_FAST=10ns tools/r1/mem_lat/run.sh r2p2g r2p2eg r2p2ewg r2p2eng r3`
+  (n = RAM_READ_NOWAIT, w = window rescaled, g = a gap 1 row, the real
+  CPU's spacing, appended last so the other rows keep their random
+  sequence). Expected request to done:
+
+| Row | r2p2g | r2p2eg | r2p2ewg | r2p2eng (Z1FULLR) |
+|---|---|---|---|---|
+| RAM LW isolated | 7 | 6 | 6 | 5 |
+| back to back gap 0 | 7 | 5 | 5 | 5 |
+| back to back gap 1 (CPU) | 7 | 6 | 5 | 5 |
+| back to back gap 2 | 7 | 6 | 6 | 5 |
+| RAM LBU | 7 | 6 | 6 | 5 |
+| ifetch cached line (6cb9b78) | 9, last word 8.02 | 9, 8.02 | 9, 8.02 | 9, 8.02 |
+| ifetch uncached | 7 | 6 | 6 | 6 |
+| BIOS LW / LH / LB | 33 / 17 / 9 | 32 / 16 / 8 | same | same |
+
+  Plus data errors 0, DMA OTC 2,048 / 2,048, GPU DMA 2,048 words 0 errors,
+  result COMPLETE. r3 and r2p2 without g must be byte-identical to the
+  output before this change.
+- fullsys (gnet-mister-fullsys, gen_top.py FS_EARLY_READY, EXTRA_GEN_ADD in
+  zn2cpu50.sh and zn2full.sh):
+  `TAG=ramt FS_EARLY_READY=1 EXTRA_GEN_ADD="-gZN2_READ_OVERLAP=1 -gRAM_READ_NOWAIT=1" sim/fullsys/zn2full.sh ram-timing`,
+  then a warm Shikigami boot with `-cpu_mhz 50 -wd_apply 1` to NOTICE. The
+  landmine: any change to SDRAM read timing must get a warm Shikigami boot
+  past 0.49 s (the 6cb9b78 I-cache refill race). Then Ray Crisis with
+  `-pctrace_from 6000000 -pctrace_to 6050000 -iolog_all 1` and
+  tools/r1/cpu_breakdown.py: main RAM load mean extra cycles about 6.6
+  (from 8.61), and the back-to-back special class no higher than isolated.
+
+Home test plan (Lee):
+1. Run the mem_lat variants; compare against the table.
+2. Build the fullsys tree and run the warm Shikigami boot; it must reach
+   NOTICE with no MB3773 pulse and no BREAK at 0x316C.
+3. `tools/pc_build.sh z1fullr push`, task, fetch; check setup on clk_cpu2x
+   and hold on clk_1x/clk_2x in the reports.
+4. Hardware: Ray Crisis prepare bar on Z1FULLR against Z1FULLO and the
+   PCB's 14.69 s (frame count from a capture, as docs/r1_speed_study.md);
+   Night Raid NOTICE time; warm and cold boots of every set; a few minutes
+   of play in Shikigami and Ray Crisis watching for slowdown changes and
+   graphics or sound faults.

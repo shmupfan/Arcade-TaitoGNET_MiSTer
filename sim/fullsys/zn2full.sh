@@ -5,6 +5,10 @@
 # exported to work/$TAG/src. zn2_ch3_arb (three ports) and zoom_sdram_link
 # are synthesised as extra tops and wired as PSX.sv does. Run with -cpu_mhz 50.
 #   TAG=zn2zoom sim/fullsys/zn2zoom.sh [ref]     (default ref: zoom-into-z1)
+# EXTRA_GEN_ADD: more psx_top generics (e.g. -gZN2_READ_OVERLAP=1, or the
+# R1 RAM load timing -gRAM_READ_NOWAIT=1 / -gRAM_LOAD_WINDOW=8); FS_EARLY_READY=1:
+# sdram.sv EARLY_READY = 1 (PSX.sv GNET_EARLY_READY). GNET_Z1FULLR:
+#   TAG=ramt FS_EARLY_READY=1 EXTRA_GEN_ADD="-gZN2_READ_OVERLAP=1 -gRAM_READ_NOWAIT=1" sim/fullsys/zn2full.sh ram-timing
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REF=${1:-gnet-full}
@@ -13,6 +17,12 @@ S=$HERE/work/$T/src
 rm -rf $S; mkdir -p $S
 git -C $HERE/../.. archive $(git -C $HERE/../.. rev-parse $REF) rtl sim/system/src/mem | tar -x -C $S
 git -C $HERE/../.. rev-parse $REF > $S/COMMIT
+# OVERLAY="<ref>:<path> ...": files taken from another commit on top of the
+# export (e.g. one branch's gnet_ata.sv on another's tree); recorded in COMMIT
+for o in ${OVERLAY:-}; do
+  git -C $HERE/../.. show "$o" > "$S/${o#*:}"
+  echo "overlay $(git -C $HERE/../.. rev-parse --short ${o%%:*}):${o#*:}" >> $S/COMMIT
+done
 R=$S/rtl
 # sim-only copy: the MN10200 microcode hex paths are relative to the Quartus
 # project root; make them absolute for the simulation binary
@@ -27,5 +37,5 @@ ZSV="$Z/mn10200_decode.sv $Z/mn10200_rf.sv $Z/mn10200_core.sv $Z/mn10200_periph.
 W=$HERE/work/$T
 export EXTRA_SV="$R/gnet/gnet_fc.sv $R/gnet/gnet_ctrl.sv $R/gnet/gnet_flash.sv $R/gnet/gnet_rf5c296.sv $R/gnet/gnet_ata.sv $ZSV $R/gnet/gnet_ddr3_arb.sv $R/gnet/gnet_ddr3_zport.sv $R/gnet/gnet_ddr3_mirror.sv $W/zn2_ch3_arb.v"
 $HERE/convert.sh $S psx_top
-printf 'RTL_ROOT=%s\nEXTRA_SV="%s"\nexport FS_CPU50=1\nexport FS_ZOOM=1\nexport FS_DDR3ARB=1\nexport FS_DL=\n' "$S" "$EXTRA_SV" > $W/build.env
+printf 'RTL_ROOT=%s\nEXTRA_SV="%s"\nexport FS_CPU50=1\nexport FS_ZOOM=1\nexport FS_DDR3ARB=1\nexport FS_DL=\nexport FS_EARLY_READY=%s\n' "$S" "$EXTRA_SV" "${FS_EARLY_READY:-}" > $W/build.env
 $HERE/build.sh

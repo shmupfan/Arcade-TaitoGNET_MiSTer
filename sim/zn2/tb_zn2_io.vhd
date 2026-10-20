@@ -1,6 +1,6 @@
 -- Directed testbench for rtl/gnet/zn2_io.vhd (expected values from MAME
--- 0.288 zn.cpp / taitogn.cpp / at28c16.cpp and the ZN-2 map trace,
--- docs/zn2_layer_design.md 5 and 16).
+-- 0.288 zn.cpp / taitogn.cpp / at28c16.cpp / ioport.cpp and the ZN-2 map
+-- trace, docs/zn2_layer_design.md 5 and 16). Run with sim/zn2/run_zn2_io.sh
 
 library IEEE;
 use IEEE.std_logic_1164.all;
@@ -105,6 +105,24 @@ begin
       acc(16#A10300#, "0001", false, x"00000000", r); check("znsecsel read", r(7 downto 0), x"88");
       acc(16#A20000#, "0001", true, x"00000022", r); check("coin out", coin, x"22");
       acc(16#A20000#, "0001", false, x"00000000", r); check("coin read", r(7 downto 0), x"22");
+      -- coin lockouts (zn.cpp coin_w 233-241: bit 1 clear locks coin 1, bit
+      -- 5 clear coin 2; ioport.cpp 1312-1327: a locked-out coin reads as not
+      -- inserted). Both coins held (SYSTEM bits 4 and 5 low).
+      sy <= x"CF"; tick;
+      acc(16#A00300#, "0001", false, x"00000000", r); check("coins, both enabled", r(7 downto 0), x"CF");
+      acc(16#A20000#, "0001", true, x"00000020", r);
+      acc(16#A00300#, "0001", false, x"00000000", r); check("coin 1 locked out", r(7 downto 0), x"DF");
+      acc(16#A20000#, "0001", true, x"00000002", r);
+      acc(16#A00300#, "0001", false, x"00000000", r); check("coin 2 locked out", r(7 downto 0), x"EF");
+      acc(16#A20000#, "0001", true, x"00000000", r);
+      acc(16#A00300#, "0001", false, x"00000000", r); check("both locked out", r(7 downto 0), x"FF");
+      -- the lockouts survive a reset, as MAME's bookkeeping; the register clears
+      reset <= '1'; tick(2); reset <= '0'; tick(2);
+      acc(16#A20000#, "0001", false, x"00000000", r); check("coin after reset", r(7 downto 0), x"00");
+      acc(16#A00300#, "0001", false, x"00000000", r); check("lockouts after reset", r(7 downto 0), x"FF");
+      acc(16#A20000#, "0001", true, x"00000022", r);
+      acc(16#A00300#, "0001", false, x"00000000", r); check("coins enabled again", r(7 downto 0), x"CF");
+      sy <= x"FF"; tick;
       -- mahjong panel at A10100 (ttgnmp mahjong_panel_r): Mahjong A (row 0
       -- bit 0) and Pon (row 3 bit 3) pressed
       mj <= "110111" & "111111" & "111111" & "111110";

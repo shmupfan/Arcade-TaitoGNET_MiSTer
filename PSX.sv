@@ -757,7 +757,48 @@ always @(posedge clk_1x) begin
 	ee_download    <= ioctl_download & (ioctl_index == 6);
 	dip_download   <= ioctl_download & (ioctl_index == 254);
 end
+`ifdef GNET_DDR3_LOAD
+// MRA DDR3 load (issue #12, docs/i12_ddr3_load.md). With address="0x..." on
+// a <rom>, Main_MiSTer (support/arcade/mra_loader.cpp rom_finish) starts the
+// download with the length in ioctl_addr (hps_io FIO_FILE_TX words 1 and 2,
+// set before ioctl_download rises), copies the data into DDR3 itself and
+// ends the download; the core sees no ioctl_wr. A normal download starts
+// with ioctl_addr = 0. The data is complete when ioctl_download falls.
+//   index 5, address="0x34000000": the card image lands where zn2_cardmem
+//     keeps it (BASE 64 MB in the core's window at 0x30000000); nothing
+//     to do here, and the same MRA works on cores without this macro.
+//   index 3, address="0x31000000": the flash images land at the flash
+//     mirror's place (0x30000000 + 0x1000000); gnet_ddr3_flcopy copies
+//     them to SDRAM 0x1000000 after the download, holding the core in
+//     reset and ioctl_wait high (Main waits) until the last word is written.
+`ifndef GNET_DDR3_ARB
+GNET_DDR3_LOAD_needs_GNET_DDR3_ARB_the_copier_reads_DDR3_through_the_glue_port();
+`endif
+reg         flash_download_1 = 1'b0;
+reg         fl_ddr3 = 1'b0;          // the index 3 download in progress (or just ended) is a DDR3 load
+reg  [26:0] flc_len = 27'd0;         // its length in bytes
+reg         flc_start = 1'b0;
+wire        flc_busy;                // gnet_ddr3_flcopy copying (clk_1x)
+wire        flc_wreq;
+wire [26:0] flc_waddr;
+wire [31:0] flc_wdata;
+always @(posedge clk_1x) begin
+	flash_download_1 <= flash_download;
+	flc_start        <= 1'b0;
+	if (flash_download & ~flash_download_1) begin
+		fl_ddr3 <= (ioctl_addr != 27'd0);
+		flc_len <= ioctl_addr;
+	end
+	if (~flash_download & flash_download_1 & fl_ddr3) flc_start <= 1'b1;
+	// fl_ddr3 drops at the edge where the copier takes start and raises
+	// busy, so fl_ddr3 | flc_busy has no gap (no reset release between)
+	if (flc_start) fl_ddr3 <= 1'b0;
+end
+wire flc_hold = (fl_ddr3 & ~flash_download) | flc_busy;
+assign gnet_download = flash_download | keys_download | meta_download | card_download | ee_download | flc_hold;
+`else
 assign gnet_download = flash_download | keys_download | meta_download | card_download | ee_download;
+`endif
 
 reg  [7:0] zn_sw0 = 8'h0F;
 reg        zn_card_loaded = 0;
@@ -1105,7 +1146,10 @@ localparam EXE_START = 16777216;
 localparam BIOS_START = 8388608;
 
 reg [26:0] ramdownload_wraddr;
-`ifdef GNET_ZN2
+`ifdef GNET_DDR3_LOAD
+// the copier's writes take the flash download's path to channel 3
+wire gnet_flash_dl = flash_download | flc_busy;
+`elsif GNET_ZN2
 wire gnet_flash_dl = flash_download;
 `else
 wire gnet_flash_dl = 0;
@@ -1156,6 +1200,20 @@ reg [31:0] exe_stackpointer;
 
 always @(posedge clk_1x) begin
 	ramdownload_wr <= 0;
+`ifdef GNET_DDR3_LOAD
+	// DDR3 flash load: the copier owns the write path; Main waits (no word
+	// is acknowledged) from the end of the download to the last write
+	if (flc_busy) begin
+		if (flc_wreq) begin
+			ramdownload_wraddr <= flc_waddr;
+			ramdownload_wrdata <= flc_wdata;
+			ramdownload_wr     <= 1;
+		end
+		ioctl_wait <= 1;
+	end else if (fl_ddr3 & ~flash_download) begin
+		ioctl_wait <= 1;
+	end else
+`endif
 	if(exe_download | bios_download | cdinfo_download | gnet_flash_dl) begin
       if (ioctl_wr) begin
          if(~ioctl_addr[1]) begin
@@ -2739,6 +2797,61 @@ always @(posedge clk_2x) arb_rst_s <= {arb_rst_s[1:0], ~pll_locked};
 wire        gnet_ddr3_rot_ovf, gnet_ddr3_own_ovf, gnet_ddr3_mirror_ovf;
 wire  [9:0] gnet_ddr3_rot_hiwater;
 assign gnet_ddr3_mirror_ovf = mir_ovf;
+
+`ifdef GNET_DDR3_LOAD
+// glue port: the flash mirror first and the DDR3 flash copier behind it
+// (rtl/gnet/gnet_ddr3_gmux.sv); without the macro the mirror alone
+wire        arb_g_rd, arb_g_we, arb_g_busy, arb_g_dout_ready;
+wire [28:0] arb_g_addr;
+wire  [7:0] arb_g_burstcnt, arb_g_be;
+wire [63:0] arb_g_din;
+wire        flc_g_rd, flc_g_busy, flc_g_dout_ready;
+wire [28:0] flc_g_addr;
+wire  [7:0] flc_g_burstcnt;
+gnet_ddr3_gmux gmux
+(
+	.a_we(mir_we),
+	.a_addr(mir_addr),
+	.a_din(mir_din),
+	.a_be(mir_be),
+	.a_busy(mir_busy),
+	.b_rd(flc_g_rd),
+	.b_we(1'b0),
+	.b_addr(flc_g_addr),
+	.b_burstcnt(flc_g_burstcnt),
+	.b_din(64'd0),
+	.b_be(8'hFF),
+	.b_busy(flc_g_busy),
+	.b_dout_ready(flc_g_dout_ready),
+	.g_rd(arb_g_rd),
+	.g_we(arb_g_we),
+	.g_addr(arb_g_addr),
+	.g_burstcnt(arb_g_burstcnt),
+	.g_din(arb_g_din),
+	.g_be(arb_g_be),
+	.g_busy(arb_g_busy),
+	.g_dout_ready(arb_g_dout_ready)
+);
+gnet_ddr3_flcopy flcopy
+(
+	.clk1x(clk_1x),
+	.start(flc_start),
+	.len(flc_len),
+	.busy(flc_busy),
+	.w_req(flc_wreq),
+	.w_addr(flc_waddr),
+	.w_data(flc_wdata),
+	.w_done(sdramCh3_done),
+	.clk2x(clk_2x),
+	.g_rd(flc_g_rd),
+	.g_addr(flc_g_addr),
+	.g_burstcnt(flc_g_burstcnt),
+	.g_busy(flc_g_busy),
+	.g_dout_ready(flc_g_dout_ready),
+	.g_dout(arb_rdata),
+	.done_q()
+);
+`endif
 gnet_ddr3_arb ddr3_arb
 (
 	.clk(clk_2x),
@@ -2761,6 +2874,16 @@ gnet_ddr3_arb ddr3_arb
 	.z_line(arb_z_line),
 	.z_ready(arb_z_ready),
 	.z_rvalid(arb_z_rvalid),
+`ifdef GNET_DDR3_LOAD
+	.g_rd(arb_g_rd),
+	.g_we(arb_g_we),
+	.g_addr(arb_g_addr),
+	.g_burstcnt(arb_g_burstcnt),
+	.g_din(arb_g_din),
+	.g_be(arb_g_be),
+	.g_busy(arb_g_busy),
+	.g_dout_ready(arb_g_dout_ready),
+`else
 	.g_rd(1'b0),
 	.g_we(mir_we),
 	.g_addr(mir_addr),
@@ -2769,6 +2892,7 @@ gnet_ddr3_arb ddr3_arb
 	.g_be(mir_be),
 	.g_busy(mir_busy),
 	.g_dout_ready(),
+`endif
 	.c_rd(core_ddr_rd),
 	.c_we(core_ddr_we),
 	.c_addr(core_ddr_addr),
@@ -2987,13 +3111,33 @@ gnet_pause_dim pause_dim
 // rtl/gnet/gnet_arcade_video.sv is the framework's arcade_video with VSync
 // passed on every dot when not scandoubling, so the 480i half-line field
 // offset reaches direct video and 15 kHz analog (issue #3).
+// Issue #11: the core's hblank stays high for the whole line on the lines it
+// does not draw (vertical blanking), and the framework's scandoubler steps
+// its lines, hsync and vsync only on hblank falling edges, so Fx or the
+// forced scandoubler gave a 31 kHz output with no vsync. With the
+// scandoubler on, rtl/gnet/gnet_sd_blank.sv adds an hblank pulse to those
+// lines (same dots as a drawn line) with vblank held high; with it off the
+// signals pass unchanged (docs/i11_scandoubler.md).
+wire sd_hb, sd_vb;
+gnet_sd_blank sd_blank
+(
+	.clk (CLK_VIDEO),
+	.ce  (ce_pix),
+	.en  ((|status[116:114]) | forced_scandoubler),
+	.hs  (video_aspect.hs),
+	.hb  (video_aspect.hb),
+	.vb  (video_aspect.vb),
+	.hb_o(sd_hb),
+	.vb_o(sd_vb)
+);
+
 gnet_arcade_video #(.WIDTH(640), .DW(24)) arcade_video
 (
 	.clk_video(CLK_VIDEO),
 	.ce_pix   (ce_pix),
 	.RGB_in   (rgb_shell),
-	.HBlank   (video_aspect.hb),
-	.VBlank   (video_aspect.vb),
+	.HBlank   (sd_hb),
+	.VBlank   (sd_vb),
 	.HSync    (video_aspect.hs),
 	.VSync    (video_aspect.vs),
 	.CLK_VIDEO(),

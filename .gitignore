@@ -75,6 +75,7 @@ sim/gnet/probe/
 sim/gnet/obj_*.build.log
 # ZN-2 layer testbench work data: vectors from MAME traces and BIOS keys are game-derived, never commit
 sim/zn2/work/
+.claude/
 sim/m1/gtime/
 # G-NET per-game zips from tools/gnet/make_game_zip.py: card images are game data, never commit
 gnet_games/

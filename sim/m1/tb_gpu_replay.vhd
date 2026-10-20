@@ -27,6 +27,8 @@
 -- then that word's time); vblank = GPU vblanks seen at start. Also
 -- vblank_busy.txt: per GPU vblank interval, vblank count, non-idle clk2x
 -- edges, all clk2x edges. VIDCAP = false skips the video capture process.
+-- GPUREAD_DRAIN = true reads VRAM to CPU data (GP0 C0h) at one word per
+-- clk1x, as DMA2 from the GPU would; without it such a command never ends.
 -- VRAM_RD_LAT adds clk2x cycles of read latency to the VRAM model (default 0:
 -- data one cycle after the request, as before).
 
@@ -49,7 +51,9 @@ entity tb_gpu_replay is
       DITHER_OFF  : std_logic := '0';  -- '1' forces dithering off (MAME 0.288 does not dither)
       GTIME       : boolean := false;  -- write frames_time.txt and vblank_busy.txt (R23)
       VRAM_RD_LAT : integer := 0;      -- extra clk2x cycles before read data (R23 sensitivity)
-      VIDCAP      : boolean := true    -- video output capture for the frames in DUMPS
+      VIDCAP      : boolean := true;   -- video output capture for the frames in DUMPS
+      GPUREAD_DRAIN : boolean := false; -- read GPUREAD data as soon as the GPU offers it (VRAM to CPU)
+      RECT_FLIP   : integer := 0       -- gpu RECT_FLIP: 1 = textured rectangle X/Y flip (G-NET builds)
    );
 end entity;
 
@@ -76,6 +80,7 @@ architecture arch of tb_gpu_replay is
    signal DMA_GPU_write    : std_logic_vector(31 downto 0) := (others => '0');
 
    signal irq_VBLANK : std_logic;
+   signal dma_readEna : std_logic;
    signal vblank_count : integer := 0;
 
    signal vram_BUSY        : std_logic := '0';
@@ -118,6 +123,11 @@ architecture arch of tb_gpu_replay is
 
 begin
 
+   -- GP0 C0h (VRAM to CPU) keeps the GPU busy until the data is read; the
+   -- stream has no reads (MAME's DMA2 from the GPU is a kind 4 record), so
+   -- with GPUREAD_DRAIN the testbench reads every word as the DMA would
+   dma_readEna <= '1' when GPUREAD_DRAIN else '0';
+
    clk1x  <= not clk1x  after T1X / 2 when not done;
    clk2x  <= not clk2x  after T2X / 2 when not done;
    clkvid <= not clkvid after TVID / 2 when not done;
@@ -135,7 +145,7 @@ begin
    end process;
 
    igpu : entity psx.gpu
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP)
    port map
    (
       clk1x => clk1x, clk2x => clk2x, clk2xIndex => clk2xIndex, clkvid => clkvid,
@@ -158,7 +168,7 @@ begin
       bus_addr => bus_addr, bus_dataWrite => bus_dataWrite, bus_read => '0',
       bus_write => bus_write, bus_dataRead => bus_dataRead, bus_stall => bus_stall,
       dmaOn => dmaOn, gpu_dmaRequest => gpu_dmaRequest, DMA_GPU_waiting => '0',
-      DMA_GPU_writeEna => DMA_GPU_writeEna, DMA_GPU_readEna => '0',
+      DMA_GPU_writeEna => DMA_GPU_writeEna, DMA_GPU_readEna => dma_readEna,
       DMA_GPU_write => DMA_GPU_write, DMA_GPU_read => open,
       irq_VBLANK => irq_VBLANK, irq_GPU => open,
       vram_pause => '0', vram_paused => open,
@@ -433,6 +443,7 @@ begin
                   if not ended then t_end := now; busy_end := busy; emit(1); else emit(0); end if;
                end if;
                cur := feed_frame; words := 0; active := true; t_start := now; busy := 0;
+               vb_start := vb_prev;
             end if;
             words := words + 1;
             ended := false;

@@ -12,6 +12,17 @@
 --     the hsync rising edge (the same on every line = no line-to-line jitter)
 --   * line length between hsync rising edges and lines per frame
 --   * vsync edges that do not fall on an hsync rising edge
+--   * vsync rise to vsync rise intervals
+-- Modes 4 and 5 (issue #3) are the 480i modes GP1(08h) = 08000027h (640)
+-- and 08000026h (512) that Zooo, Mahjong Oh and Zoku Otenamihaiken write
+-- in MAME (GP1(06h) as the 240p mode of the same width; GP1(07h) only
+-- moves vblank). There every second field's vsync starts half a line later
+-- ("half line later" in the video out, 1707 clocks after the hsync rise),
+-- so the vsync intervals must alternate 895,913 and 895,912 clocks
+-- (2 x 262.5 lines of 3413) and that field's two vsync edges are off the
+-- hsync rise. Five fields are measured per 480i mode. Modes 0 to 3 print
+-- the same RESULT values as before (docs/m4_shell.md 2), plus their vsync
+-- interval (263 x 3413 = 897,619).
 -- Prints one RESULT line per mode; stops with failure on a violation.
 
 library ieee;
@@ -62,7 +73,11 @@ begin
          when 0 => settings.GPUSTAT_HorRes1 <= "00"; settings.hDisplayRange <= x"C40240";   -- 08000000, 06C40240
          when 1 => settings.GPUSTAT_HorRes1 <= "01"; settings.hDisplayRange <= x"C58258";   -- 08000001, 06C58258
          when 2 => settings.GPUSTAT_HorRes1 <= "10"; settings.hDisplayRange <= x"C67267";   -- 08000002, 06C67267
-         when others => settings.GPUSTAT_HorRes1 <= "11"; settings.hDisplayRange <= x"C6C26C";   -- 08000003, 06C6C26C
+         when 3 => settings.GPUSTAT_HorRes1 <= "11"; settings.hDisplayRange <= x"C6C26C";   -- 08000003, 06C6C26C
+         when 4 => settings.GPUSTAT_HorRes1 <= "11"; settings.hDisplayRange <= x"C6C26C";   -- 08000027, 640x480i
+                   settings.GPUSTAT_VerRes <= '1'; settings.GPUSTAT_VertInterlace <= '1';
+         when others => settings.GPUSTAT_HorRes1 <= "10"; settings.hDisplayRange <= x"C67267";   -- 08000026, 512x480i
+                   settings.GPUSTAT_VerRes <= '1'; settings.GPUSTAT_VertInterlace <= '1';
       end case;
    end process;
 
@@ -83,12 +98,16 @@ begin
       reset <= '1';
       wait for 2 us;
       reset <= '0';
-      for m in 0 to 3 loop
+      for m in 0 to 5 loop
          mode <= m;
          measure <= false;
          wait for FRAME;           -- settle: new divider, a full frame
          measure <= true;
-         wait for 3 * FRAME;
+         if m >= 4 then
+            wait for 5 * FRAME;    -- 480i: about 5 fields, 4 intervals
+         else
+            wait for 3 * FRAME;
+         end if;
          measure <= false;
          wait for 1 us;
       end loop;
@@ -113,6 +132,8 @@ begin
       variable hs_rise    : boolean;
       variable divs       : integer;
       variable lines_meas : integer;
+      variable last_vs    : integer := -1;
+      variable iv, iv_min, iv_max, iv_prev, iv_same : integer;
       procedure clear is
       begin
          act_min := 9999; act_max := 0; all_min := 9999; all_max := 0;
@@ -120,6 +141,7 @@ begin
          ph_min := 9999; ph_max := -1; len_min := 9999; len_max := 0;
          lines := -1; lines_frame_min := 9999; lines_frame_max := 0; vs_bad := 0;
          last_ce := -1; last_hs := -1; lines_meas := 0;
+         last_vs := -1; iv_min := 999999999; iv_max := 0; iv_prev := -1; iv_same := 0;
       end procedure;
    begin
       if rising_edge(clkvid) then
@@ -168,6 +190,14 @@ begin
             if vout.vsync /= vs_q then
                if not hs_rise then vs_bad := vs_bad + 1; end if;
                if vout.vsync = '1' then
+                  if last_vs >= 0 then
+                     iv := n - last_vs;
+                     iv_min := minimum(iv_min, iv);
+                     iv_max := maximum(iv_max, iv);
+                     if iv = iv_prev then iv_same := iv_same + 1; end if;
+                     iv_prev := iv;
+                  end if;
+                  last_vs := n;
                   if lines > 0 then
                      lines_frame_min := minimum(lines_frame_min, lines);
                      lines_frame_max := maximum(lines_frame_max, lines);
@@ -181,7 +211,9 @@ begin
                when 0 => divs := 10;
                when 1 => divs := 8;
                when 2 => divs := 5;
-               when others => divs := 4;
+               when 3 => divs := 4;
+               when 4 => divs := 4;
+               when others => divs := 5;
             end case;
             report "RESULT mode " & integer'image(mode) &
                    " width " & integer'image(to_integer(vout.DisplayWidth)) &
@@ -193,11 +225,21 @@ begin
                    " line " & integer'image(len_min) & ".." & integer'image(len_max) &
                    " lines/frame " & integer'image(lines_frame_min) & ".." & integer'image(lines_frame_max) &
                    " lines_measured " & integer'image(lines_meas) &
-                   " vs_not_on_hs " & integer'image(vs_bad);
+                   " vs_not_on_hs " & integer'image(vs_bad) &
+                   " vs_interval " & integer'image(iv_min) & ".." & integer'image(iv_max) &
+                   " vs_interval_repeats " & integer'image(iv_same);
             assert act_min = divs and act_max = divs report "active dot period not constant" severity failure;
             assert ph_min = ph_max report "first dot phase differs between lines" severity failure;
             assert len_min = 3413 and len_max = 3413 report "line length" severity failure;
-            assert vs_bad = 0 report "vsync edge off hsync" severity failure;
+            if mode <= 3 then
+               assert vs_bad = 0 report "vsync edge off hsync" severity failure;
+               assert iv_min = 263 * 3413 and iv_max = 263 * 3413 report "240p vsync interval" severity failure;
+            else
+               -- 480i: half-line field offset, intervals alternate
+               assert vs_bad > 0 report "480i: no mid-line vsync edge" severity failure;
+               assert iv_min = 895912 and iv_max = 895913 report "480i vsync interval not 895912/895913" severity failure;
+               assert iv_same = 0 report "480i vsync intervals do not alternate" severity failure;
+            end if;
          end if;
          hs_q := vout.hsync;
          vs_q := vout.vsync;

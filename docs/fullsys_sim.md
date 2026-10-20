@@ -369,6 +369,11 @@ setting; harness flags `-h_ps`, `-vid_half_ps` and `-reset_us` set the
 bench timing (the NVC bench: 2461, 9312, 10); `FS_EXP_GPUVER=2` with a
 separate TAG builds the D1 experiment; `OVERLAY="<ref>:<path> ..."` takes files
 from another commit on top of the zn2-layer export.
+`FS_EARLY_READY=1` (zn2cpu50.sh, zn2full.sh) builds the top with sdram.sv
+EARLY_READY = 1, as PSX.sv does with GNET_EARLY_READY; `EXTRA_GEN_ADD`
+passes more psx_top generics, e.g. the R1 RAM load timing options
+`-gRAM_READ_NOWAIT=1` or `-gRAM_LOAD_WINDOW=8` (gnet-mister
+docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1").
 
 `TAG=zn2hw FS_DL=1 sim/fullsys/zn2.sh <ref>` builds the download-path
 top; run it with `-dl <list>` (one line per MRA index: `<index> <file> ...`,
