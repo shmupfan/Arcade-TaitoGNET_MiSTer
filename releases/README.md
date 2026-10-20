@@ -4,16 +4,16 @@ The released core and its MRA files, in the MiSTer arcade layout.
 
 | File | md5 |
 |---|---|
-| `Arcade-TaitoGNET_20261015.rbf` | `a4e2f4cdcdc0fb0aed36d63e3a8ece3c` |
+| `Arcade-TaitoGNET_YYYYMMDD.rbf` | `TO FILL` |
 
 Revision GNET_Z1FULLR, Quartus 17.0.2, every clock met timing (worst
-setup slack +0.017 ns, worst hold slack +0.084 ns).
+setup slack TO FILL ns, worst hold slack TO FILL ns).
 
 ## Layout
 
 | Path | Copy to | Holds |
 |---|---|---|
-| `Arcade-TaitoGNET_20261015.rbf` | `/media/fat/_Arcade/cores/` | the core |
+| `Arcade-TaitoGNET_YYYYMMDD.rbf` | `/media/fat/_Arcade/cores/` | the core |
 | `<Game>.mra` | `/media/fat/_Arcade/` | one quick start MRA per game, for MAME's parent set |
 | `_alternatives/_<Game>/` | `/media/fat/_Arcade/_alternatives/_<Game>/` | quick start MRAs for the game's other versions, and the first boot MRAs |
 
@@ -23,6 +23,11 @@ setup slack +0.017 ns, worst hold slack +0.084 ns).
 - **First boot** MRAs (`... (first boot).mra`) load `flash.u30` from
   `coh3002t.zip` and erased chips, so the BIOS copies the card into the
   flash (about 2.5 minutes) at every load.
+- Every MRA loads the card image (rom index 5) straight into DDR3 at
+  0x34000000 (`address="0x34000000"`), so Main_MiSTer copies it into memory
+  instead of sending it to the core a word at a time. This needs
+  Main_MiSTer from March 2021 or later. The flash area still loads through
+  the core.
 
 Every MRA also needs `coh3002t.zip` (MAME 0.288 or later) and the set's
 `gnet_<set>.zip`, both in `/media/fat/games/mame/`. Make the zips from
