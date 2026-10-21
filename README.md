@@ -287,7 +287,7 @@ settings in it are kept.
   unchanged. The loudest game in that simulation, Psyvariar, now peaks at
   -3.9 dBFS with Volume at Normal. Reports of distortion, most of all
   with Volume at +6 dB, are welcome.
-  <!-- TO CONFIRM: listen check on hardware. -->
+  On my MiSTer (Ray Crisis, 2026-10-21) it sounds clean at Normal and at +6 dB.
 - **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real

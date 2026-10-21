@@ -53,7 +53,7 @@ reports on this one are the ones that decide it.
   OSD Volume steps (Normal, +6 dB, -6 dB, -12 dB) are the same as before,
   now on top of the louder mix. The loudest game in that simulation,
   Psyvariar, now peaks at -3.9 dBFS at Normal.
-  <!-- TO CONFIRM: listen check on hardware. At +6 dB the same Psyvariar peak would be about +2.1 dBFS, which the core limits to full scale (gnet_volume.sv saturates). -->
+  On my MiSTer it sounds clean at Normal and at +6 dB (Ray Crisis).
 - **Button names.** XII Stag's button 1 is now called Shot (the game's
   how-to screen), and Night Raid's buttons Shoot, Wave and Bomb (the
   game's arcade-history entry). MAME gives no names, so the other games
