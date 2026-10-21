@@ -14,8 +14,7 @@ zips: they are made from your own files.
 In order of value:
 
 1. **Each game from its main MRA to the attract mode and into play**
-   (test 1), most of all the sets the README's game list marks Boots or
-   Not tested.
+   (test 1), most of all the sets the README's game list marks Boots.
 2. **A first-boot copy with a first boot MRA** (test 2): does the copy
    finish and the game start?
 3. **Sound balance** between the music and the sound effects (test 3),

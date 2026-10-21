@@ -15,9 +15,10 @@ Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 ## Status
 
 **Alpha.** There are MRAs for all 30 MAME 0.288 G-NET sets on Taito
-cards. On my MiSTer I have played 7 of them and seen 20 more boot; 3 are
-not tested yet. The results are from 2026-10-06 and 2026-10-07, on the
-alpha 1 RBFs (20261006 and 20261007) or test builds just before them. Some timings differ from the real board
+cards. On my MiSTer I have played 7 of them (2026-10-06 and 2026-10-07,
+on the alpha 1 RBFs 20261006 and 20261007 or test builds just before
+them). On 2026-10-21 all 30 reached their title, attract, demo or
+calibration screen with this release's RBF and quick start MRAs. Some timings differ from the real board
 (see Known issues). I am publishing it to get test reports, especially
 from people who own a G-NET board.
 
@@ -45,14 +46,14 @@ calibration screen on my MiSTer, not played. MRA: **main** is
 | Otenami Haiken Final | V2.07JC | otenamhf | CompactFlash | main | Boots | No Zoom board; quick start only; 480i |
 | Otenki Kororin | V2.01J | otenki | Type 1 | main | Boots | |
 | Psyvariar -Medium Unit- | V2.02O | psyvaria | Type 1 | main | Played | Vertical |
-| Psyvariar -Medium Unit- | V2.04J | psyvarij | Type 1 | alt | Not tested | Vertical |
+| Psyvariar -Medium Unit- | V2.04J | psyvarij | Type 1 | alt | Boots | Vertical |
 | Psyvariar -Revision- | V2.04J | psyvarrv | Type 1 | main | Played | Vertical; played to the end |
 | Ray Crisis | V2.03O | raycris | Type 1 | main | Played | |
 | Ray Crisis | V2.03J | raycrisj | Type 1 | alt | Played | |
 | Shanghai Sangokuhai Tougi | Ver 2.01J | shangtou | Type 1 | main | Boots | |
 | Shanghai Shoryu Sairin | V2.03J | shanghss | Type 1 | main | Boots | |
 | Shikigami no Shiro | V2.03J | shikigam | Type 1 | main | Played | Vertical |
-| Shikigami no Shiro | V1.02J internal build | shikigama | Type 1 | alt | Not tested | Vertical |
+| Shikigami no Shiro | V1.02J internal build | shikigama | Type 1 | alt | Boots | Vertical |
 | Soutenryu | V2.07J | soutenry | Type 1 | main | Boots | |
 | Space Invaders Anniversary | V2.02J | sianniv | Type 1 | main | Boots | Vertical; no Zoom board |
 | Super Puzzle Bobble | V2.05O | spuzbobl | Type 2 | main | Boots | High scores saved |
@@ -60,7 +61,7 @@ calibration screen on my MiSTer, not played. MRA: **main** is
 | Usagi | V2.02J | usagi | Type 2 | main | Boots | Mahjong panel |
 | XII Stag | V2.01J | xiistag | Type 1 | main | Boots | Vertical; runs to its gameplay demo |
 | Zoku Otenamihaiken | V2.03J | zokuotena | Type 1 | main | Boots | No Zoom board |
-| Zoku Otenamihaiken | V2.05J | zokuoten | Type 2 | alt | Not tested | No Zoom board; I do not have this card |
+| Zoku Otenamihaiken | V2.05J | zokuoten | Type 2 | alt | Boots | No Zoom board |
 | Zooo | V2.01JA | zooo | Type 1 | main | Boots | No Zoom board |
 
 The main MRA of each game is MAME's parent set. Vertical games rotate for
@@ -300,18 +301,20 @@ settings in it are kept.
   core kept card writes in memory only, so these settings went back to
   their defaults at every load. Alpha 4 saves the card sectors a game
   writes in the NVRAM file with the EEPROM (see Saving, above). On my
-  MiSTer a test core with this save kept Go By RC's calibration (an EEPROM
-  setting) across a reload; I have not yet checked the Psyvariar settings
-  themselves on hardware, so a report is welcome. The TAITO logo is drawn
+  MiSTer, with this release's RBF, Psyvariar -Medium Unit- (V2.02O) kept
+  a service menu change (Free Play) across a reload of the MRA, and a
+  test core with the same save kept Go By RC's calibration (an EEPROM
+  setting). I have not yet checked a power cycle, so a report is
+  welcome. The TAITO logo is drawn
   by the BIOS and does not turn with the game's screen direction setting,
   in MAME as well.
-  <!-- TO CONFIRM (#9): Lee's Psyvariar settings test on the release RBF; if it fails, say so here. -->
 - **High scores** are saved for Super Puzzle Bobble (V2.05O) only, the
   one G-NET game in MAME's high score list (hiscore.dat). The real board
   and MAME lose them at power off. MiSTer may write a new score only
   when you open the OSD a second time, rather than the first time after
-  the score; I have not yet checked which on hardware.
-  <!-- TO CONFIRM: high score save on hardware, and that the release RBF has GNET_HISCORE. -->
+  the score. On my MiSTer, with this release's RBF, a new ranking entry
+  was kept across a reload of the MRA; I have not yet checked a power
+  cycle, or which OSD opening saves it.
 - **XII Stag's intro flash runs too long.** After the Triangle Service
   logo, the flash in the intro lasts about 1.8 s on a real board (board
   footage), but more than 5 s on the core in my simulation, and it is
@@ -321,8 +324,9 @@ settings in it are kept.
   gameplay. I am working on it for the beta.
   <!-- TO CONFIRM: XII Stag flash length on hardware with the release RBF. -->
 - **First boot MRAs** repeat the 2.5 minute copy at every load, because
-  the flash chips are not saved. I have not yet confirmed the copy on my
-  own hardware.
+  the flash chips are not saved. On my MiSTer the Ray Crisis first boot
+  MRA loads with this release and the copy runs (its loading bar was
+  showing 120 s after loading); I have not yet watched a copy to the end.
 - **Watchdog period.** The core uses 8 s where MAME uses 5 s. The board's
   real period is not known (the timing capacitor's value is not legible
   in any photo I have found).
@@ -330,11 +334,11 @@ settings in it are kept.
   MAME and a note from a real board give 59.826 Hz. A cabinet recording
   agrees with MAME to about 0.3%, which cannot tell the two apart; a
   frequency counter on a board would.
-- **Not yet checked on hardware:** play in the sets marked Boots; the 3
-  sets marked Not tested; slowdown in heavy scenes of other games;
-  the save across a power cycle; the Psyvariar settings save; the Super
-  Puzzle Bobble high score save; rotation and Flip Screen on every
-  display.
+- **Not yet checked on hardware:** play in the sets marked Boots;
+  slowdown in heavy scenes of other games; the saves across a power
+  cycle (the Psyvariar settings and the Super Puzzle Bobble high scores
+  are checked across a reload of the MRA only); a first boot copy to
+  the end; rotation and Flip Screen on every display.
 
 ## Roadmap
 
@@ -382,7 +386,7 @@ by sample. The core differs from MAME 0.288 on purpose in three places:
 
 The [testing guide](docs/TESTING_GUIDE.md) lists the tests, what each game
 should show, and how to report. The most useful reports are play
-reports for the sets marked Boots or Not tested, a first boot copy run
+reports for the sets marked Boots, a first boot copy run
 to the end, and anything from a real G-NET board: timings, recordings
 and the measurements listed at the end of the guide.
 

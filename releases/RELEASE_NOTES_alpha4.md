@@ -22,20 +22,20 @@ reports on this one are the ones that decide it.
   still need the BIOS's 2.5 minute flash copy after loading.
   <!-- TODO: measured Ray Crisis load time on the release RBF. -->
 - **Settings a game keeps on its card are saved
-  ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)),
-  please confirm.** Psyvariar stores its service menu settings, such as
+  ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).**
+  Psyvariar stores its service menu settings, such as
   the screen direction, on the game card, not in the board's EEPROM. The
   core now saves the card sectors a game writes in the NVRAM file
   (`config/nvram/<MRA name>.nvm`) together with the EEPROM. As with other
   MiSTer arcade cores, the file is written when you open the OSD after
   the game has changed something. The file is now 268,288 bytes for every
   game instead of 2 KB; an existing 2 KB file still loads, and the EEPROM
-  settings in it are kept. On my MiSTer, a test core with this save kept
-  Go By RC's calibration (an EEPROM setting) across a reload, the first
-  time I have checked the EEPROM save on hardware. I have not yet checked
-  the Psyvariar settings themselves on hardware, so please tell me
-  whether they survive a reload.
-  <!-- TO CONFIRM (#9): Lee's Psyvariar settings test on the release RBF (change a setting, save, open the OSD, reload). If it fails, reword this item and keep #9 under Known issues. -->
+  settings in it are kept. On my MiSTer, with this RBF, Psyvariar
+  -Medium Unit- (V2.02O) kept a service menu change (Free Play) across
+  a reload of the MRA, and a test core with the same save kept Go By
+  RC's calibration (an EEPROM setting), the first time I have checked
+  the EEPROM save on hardware. I have not yet checked a power cycle, so
+  please tell me whether your settings survive one.
 - **High scores for Super Puzzle Bobble (V2.05O).** The core saves its
   ranking table in the same NVRAM file and puts it back after the game
   has booted. It uses MAME's high score list (hiscore.dat), which has
@@ -44,8 +44,9 @@ reports on this one are the ones that decide it.
   MAME do not keep these scores when the power goes off. There is no OSD
   option to turn the save off. MiSTer may write a new score only when
   you open the OSD a second time, rather than the first time after the
-  score; I have not yet checked which on hardware.
-  <!-- TO CONFIRM: high score save on hardware (score, open the OSD once or twice, power cycle, ranking shows it), and that the release RBF has GNET_HISCORE (beta-cand, not the beta-nohs build). -->
+  score. On my MiSTer, with this RBF, a new ranking entry was kept
+  across a reload of the MRA; I have not yet checked a power cycle, or
+  which OSD opening saves it.
 - **Louder sound.** The whole mix is 6 dB louder. In my simulation of six
   games the core played about 7 to 17 dB below the reference level I use
   for my cores (Final Star Force on the Tecmo 16 core, about -16.4 dBFS).
