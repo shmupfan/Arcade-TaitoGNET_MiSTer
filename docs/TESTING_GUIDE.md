@@ -98,7 +98,7 @@ Revision yet and expect the same flow.
 | Coin, Start | How-to screen, then the game over clouds |
 
 After the Triangle Service logo the intro has a bright flash. On a real
-board it lasts about 1.8 s. If you play XII Stag, time the flash, and say
+board it lasts about 1.9 s. If you play XII Stag, time the flash, and say
 whether anything in the game itself looks slower than you expect.
 <!-- TO FILL: XII Stag texture timing fix result (the flash length on the beta 1 core) -->
 
