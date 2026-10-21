@@ -2,9 +2,8 @@
 
 <!-- TO CONFIRM: release name. Alpha 4 was staged but never published; this release is built from the development line after it (dev branch beta-cand). If it is called alpha 5, rename this file and the "alpha 4" mentions in README.md, releases/README.md and docs/TESTING_GUIDE.md. -->
 
-Core: `Arcade-TaitoGNET_YYYYMMDD.rbf` (md5 TO FILL, see
+Core: `Arcade-TaitoGNET_20261021.rbf` (md5 `8623149b677c03d2333e42bc2a225d58`, see
 [README.md](README.md)).
-<!-- TO CONFIRM: RBF date and md5. -->
 
 I would like the release after this one to be the first beta, so test
 reports on this one are the ones that decide it.
