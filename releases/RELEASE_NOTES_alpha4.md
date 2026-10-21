@@ -17,10 +17,9 @@ reports on this one are the ones that decide it.
   into memory through MiSTer's DDR3 load path, instead of one word at a
   time; the core then copies the flash into place itself. Games load much
   faster: Ray Crisis took about 35 s with the alpha 3 MRAs and now takes
-  TODO s. The new MRAs need this RBF and a Main_MiSTer from March 2021 or
+  about 6 s (timed by hand on my MiSTer). The new MRAs need this RBF and a Main_MiSTer from March 2021 or
   later; with an older RBF the game does not start. The first boot MRAs
   still need the BIOS's 2.5 minute flash copy after loading.
-  <!-- TODO: measured Ray Crisis load time on the release RBF. -->
 - **Settings a game keeps on its card are saved
   ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).**
   Psyvariar stores its service menu settings, such as

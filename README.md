@@ -92,8 +92,7 @@ browser and uploads nothing), in `/media/fat/games/mame/`. No game data is inclu
 and its 10 MB of flash straight into the MiSTer's DDR3 memory, instead of
 sending them to the core one 16-bit word at a time; the core then copies
 the flash into SDRAM itself. Games load much faster: Ray Crisis took about
-35 s with the alpha 3 MRAs and now takes TODO s.
-<!-- TODO: measured Ray Crisis load time on the release RBF, from pressing the MRA to the first picture. -->
+35 s with the alpha 3 MRAs and now takes about 6 s (timed by hand on my MiSTer, MRA to first picture).
 This needs Main_MiSTer from March 2021 or later, and the alpha 4 or later
 RBF: with an older RBF the flash is not loaded and the game does not
 start. The first boot MRAs still need the BIOS's 2.5 minute flash copy
