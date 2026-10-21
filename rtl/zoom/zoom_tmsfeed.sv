@@ -1,17 +1,39 @@
+// zoom_tmsfeed: Taito Zoom board TMS57002 slot feeder (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: two TMS57002 instruction slots per MN10200 machine cycle from the
+//           one 25 MHz crystal (docs/zoom_board_design.md 6.3); MAME 0.288
+//           access placement for host events (docs/zoom_board_design.md
+//           15.1).
+// Design: docs/zoom_board_design.md 6.3 and 15.
+// Bench: sim/zoomboard/.
+//
 // Taito Zoom board: TMS57002 slot feeder (docs/zoom_board_design.md 6.3, 15).
 //
-// Runs in the sound chips' clock domain (clk_1x). The time base
-// (zoom_tbase, in the MN10200's domain, clk_1x or clk_2x phase aligned)
-// publishes the machine cycles stepped (cyc_cnt, mod 256), a toggle per
-// sample boundary (bnd_tog) and cyc_cnt after the cycle that reached it
-// (bnd_cnt). Each clock this block takes the new cycles, two instruction
-// slots each, and the boundary between them, and delivers slots and SYNC in
-// order, at most one pulse per STEP_GAP clocks (the TMS57002 core executes
-// a slot in two clocks, docs/tms57002_rtl.md 1). Slots of the cycle that
-// reaches a boundary come before its SYNC (slot j of sample k is at
-// B_k + j / 2 cycles). Boundaries are at least 192 cycles apart, so at most
-// one arrives per clock; the inputs are registers of a synchronous,
-// phase-aligned clock and need no synchroniser.
+// Runs in the sound chips' clock domain (clk_1x). The time base (zoom_tbase,
+// in the MN10200's domain: clk_2x in the release, clk_1x at zoom_board CLK_H
+// 2; phase aligned either way) publishes the machine cycles stepped
+// (cyc_cnt, mod 256), a toggle per sample boundary (bnd_tog) and cyc_cnt
+// after the cycle that reached it (bnd_cnt). Each clock this block takes the
+// new cycles, two instruction slots each, and the boundary between them, and
+// delivers slots and SYNC in order, at most one pulse per STEP_GAP clocks
+// (the TMS57002 core executes a slot in two clocks, docs/tms57002_rtl.md 1).
+// Slots of the cycle that reaches a boundary come before its SYNC (slot j of
+// sample k is at B_k + j / 2 cycles). Boundaries are at least 192 cycles
+// apart, so at most one arrives per clock; the inputs are registers of a
+// synchronous, phase-aligned clock and need no synchroniser.
 //
 // Host events (I5, docs/zoom_board_design.md 15): a TMS57002 host byte or a
 // PLOAD/CLOAD change carries its time in slots (ev_slot = 2 x the machine
@@ -33,7 +55,7 @@ module zoom_tmsfeed #(
     input  logic [7:0]  cyc_cnt,
     input  logic        bnd_tog,
     input  logic [7:0]  bnd_cnt,
-    input  logic        tms_ready,
+    input  logic        tms_ready,      // 0 holds back slots and events; zoom_board ties it to 1
     input  logic        tms_busy,       // TMS57002: slots given but not executed, or a host request open
     input  logic        ev_valid,       // head of the host event queue
     input  logic [16:0] ev_slot,

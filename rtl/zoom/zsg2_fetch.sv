@@ -1,3 +1,24 @@
+// zsg2_fetch: ZSG-2 sample memory port: prefetch queue, ROM readback, line
+// buffer fill (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 zsg2.cpp (m_mem_blocks, ROM readback registers 0x1c to
+//           0x1f, control_w and control_r at zsg2.cpp:514-607).
+// Design: docs/zsg2_rtl.md 3.3.
+// Bench: sim/zsg2/.
+//
 // ZSG-2 sample memory port (docs/zsg2_rtl.md 3.3): per-channel prefetch
 // request queue, ROM readback (0x638-0x63E) and the line buffer fill.
 //

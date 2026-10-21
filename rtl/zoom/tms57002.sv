@@ -1,3 +1,27 @@
+// tms57002: TI TMS57002 effects DSP of the Taito Zoom sound board (modules
+// tms57002 and its external RAM port tms57002_xram) (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects); ppriest's GPL-3.0 TMS57002 was not used
+//         (docs/licensing.md).
+// Evidence: TMS57002 User's Guide (TI 1992, "guide" below, pages cited
+//           inline); MAME 0.288 src/devices/cpu/tms57002 (tag mame0288) only
+//           where the guide is silent.
+// Design: docs/zoom_zsg2_tms57002_design.md 4 and 6.3 ("design study" below),
+//         docs/tms57002_rtl.md.
+// Bench: sim/tms57002/ (replay against MAME 0.288).
+//
 // TI TMS57002 "DASP" effects DSP for the Taito Zoom sound board (FC PCB).
 // Own implementation from docs/zoom_zsg2_tms57002_design.md and the
 // TMS57002 User's Guide (TI 1992, "guide" below); MAME 0.288
@@ -170,6 +194,10 @@ module tms57002 #(
         logic       known;
     } dec_t;
 
+    // Opcode numbers below are MAME 0.288 tmsinstr.lst's: primary (category 1)
+    // in bits 23:18, secondary (category 2) in bits 17:11, category 3 when the
+    // primary field is 3F (guide Fig. 4-2 and 4-3). docs/tms57002_rtl.md 3.1
+    // lists the mnemonic of each one implemented.
     function automatic dec_t decode(input logic [23:0] w);
         dec_t r;
         logic xc, xinc;

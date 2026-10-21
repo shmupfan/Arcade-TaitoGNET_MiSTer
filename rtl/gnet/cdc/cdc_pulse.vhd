@@ -1,3 +1,23 @@
+-- cdc_pulse: pulse synchroniser with a Gray event counter (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: none needed; a clock-crossing building block that models no board
+--           behaviour.
+-- Design: docs/r1_cpu_domain_design.md, "CDC building blocks".
+--         Bench: sim/cdc/tb_cdc_pulse.vhd
+--
 -- Pulse synchroniser. Each source cycle with src_pulse = '1' gives exactly one
 -- destination cycle with dst_pulse = '1'.
 --
@@ -7,8 +27,10 @@
 -- synchroniser. Conditions for no lost and no duplicated pulse:
 --   CNT_W = 1: consecutive source pulses at least one destination period
 --              plus the synchroniser aperture apart (in practice: spacing
---              > 1.2 destination periods; the dot clock, C15, has 4 clk_vid
---              periods = 3.7 clk_cpu periods). Pulses closer than that merge.
+--              > 1.2 destination periods; the plan's clk_vid dot clock for
+--              C15 had 4 clk_vid periods = 3.7 clk_cpu periods; as built,
+--              cpu_split takes gpu.vhd's clk1x copy with CNT_W = 2).
+--              Pulses closer than that merge.
 --   CNT_W > 1: any pattern, as long as pulses not yet emitted never reach
 --              2**CNT_W - 1. Bursts are queued and leave at one per
 --              destination cycle, so the long-term rate must stay below the

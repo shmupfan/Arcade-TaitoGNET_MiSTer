@@ -1,6 +1,8 @@
--- ZN I/O MCU (NEC uPD78081, ROM not dumped): behavioural model on SIO0.
+-- znmcu: ZN I/O MCU (NEC uPD78081, ROM not dumped), behavioural model on
+-- SIO0 (Taito G-NET core).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -10,14 +12,23 @@
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
 --
--- The MCU ROM is NO_DUMP (taitogn.cpp 1023-1024, R16), so this follows the
+-- Origin: written for this core (own implementation from MAME's behaviour, no
+--         code copied; see below).
+-- Evidence: MAME 0.288 znmcu.cpp:65-142 (rank 5; R16 in docs/PLAN.md 6:
+--           no MCU dump); replay against MAME 0.288 SIO0 traffic
+--           (docs/zn2_layer_design.md 16.4).
+--
+-- The MCU ROM is NO_DUMP (MAME 0.288 taitogn.cpp:1023-1024, R16), so this follows the
 -- behaviour of MAME 0.288 src/mame/sony/znmcu.cpp (rank 5), written as
 -- hardware (docs/zn2_layer_design.md 7):
 --   select falling : byte and bit counters 0; 50 us later DSR goes low for
 --                    5 us; at that first pulse the reply is built: byte 0 =
 --                    (data byte count << 4) | DSW, count 8 with the analog
 --                    flag (8 analog channels follow), 6 with the trackball
---                    flag (deltas, 0 here: no trackball), else 1 (00h)
+--                    flag (deltas, 0 here: no trackball), else 1; with
+--                    neither flag byte 1 is not rewritten and keeps the
+--                    value of the last reply that wrote it (00h from
+--                    power-up here), as MAME 0.288 znmcu.cpp:113-137
 --   SCK falling    : while selected, TXD = bit n of the current byte (0
 --                    past the last byte), LSB first; after bit 7 the byte
 --                    counter advances and, if more bytes follow, DSR pulses

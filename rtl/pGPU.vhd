@@ -1,3 +1,13 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: record field vramRange widened from 19 to 20 bits, in every build,
+-- for the ZN-2 2 MB VRAM (gpu.vhd generic VRAM_Y_BITS 10). gpu.vhd resizes
+-- its register into it, so at VRAM_Y_BITS 9 (upstream) the top bit is 0 and
+-- the readers that take bits 18..10 see the upstream value.
+-- G-NET commits: c71a991 (2026-10-04) ZN-2 2 MB VRAM GPU behind VRAM_Y_BITS.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;     
@@ -21,7 +31,7 @@ package pGPU is
       GPUSTAT_HorRes1         : std_logic_vector(1 downto 0);
       GPUSTAT_ColorDepth24    : std_logic;
       GPUSTAT_DisplayDisable  : std_logic;
-      vramRange               : unsigned(19 downto 0);   -- display start: X 9..0, Y 18..10 (PS1) or 19..10 (ZN-2)
+      vramRange               : unsigned(19 downto 0);   -- G-NET: widened from 19 bits; display start X 9..0, Y 18..10 (PS1) or 19..10 (ZN-2)
       hDisplayRange           : unsigned(23 downto 0);
       vDisplayRange           : unsigned(19 downto 0);
       pal60                   : std_logic;

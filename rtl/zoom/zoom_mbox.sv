@@ -1,3 +1,26 @@
+// zoom_mbox: Taito Zoom board M66220FP mailbox (dual-port shared RAM) (Taito
+// G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects); the RAM is coded after Quartus 17's "True Dual-
+//         Port RAM with dual clocks" HDL template.
+// Evidence: Mitsubishi M66220SP/FP data sheet pp.3-3 to 3-8
+//           (docs/evidence_sources.md); MAME 0.288 taito_zm.cpp:88-96, 124
+//           and taitogn.cpp:487.
+// Design: docs/zoom_board_design.md 3.2.
+// Bench: sim/zoomboard/.
+//
 // Taito Zoom board: M66220FP mailbox (docs/zoom_board_design.md 3.2).
 //
 // The M66220FP is a 256 x 8 RAM with two independent asynchronous ports and
@@ -13,8 +36,8 @@
 //     bits 7:1, byte enables as on its bus;
 //   - main CPU side (0x1FBE0000-0x1FBE01FF, umask32 0x00FF00FF): byte lane
 //     0 of 32-bit word k is byte 2k, lane 2 is byte 2k + 1, so word k with
-//     the lo byte from lane 0 and the hi byte from lane 2 (as zn2_io's stub
-//     on branch zn2-layer).
+//     the lo byte from lane 0 and the hi byte from lane 2 (as the mailbox
+//     stub in rtl/gnet/zn2_io.vhd).
 // Two clocks: hclk for the main-CPU side, clk for the Zoom side.
 module zoom_mbox (
     input  logic        hclk,

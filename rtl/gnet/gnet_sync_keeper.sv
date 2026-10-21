@@ -1,12 +1,20 @@
 //============================================================================
 //  G-NET core: video sync keeper (black picture with running sync)
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
 //  Software Foundation; either version 2 of the License, or (at your option)
 //  any later version.
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: the raster of PSX_MiSTer's rtl/gpu_videoout_async.vhd (htotal
+//           3413, hsync_end 252, vtotal 263, clkDiv 8 at 320 dots) and the
+//           first-dot offset measured in sim/shell/tb_dotclock.vhd.
+//           Bench: sim/shell/run_shell.sh.
 //
 // The PSX_MiSTer video timing (rtl/gpu_videoout_async.vhd) stops while the
 // core is in reset: every G-NET download (BIOS, flash images, the 40 MB card

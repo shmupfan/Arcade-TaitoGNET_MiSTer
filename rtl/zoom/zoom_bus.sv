@@ -1,3 +1,23 @@
+// zoom_bus: Taito Zoom board MN10200 bus decoder (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taito_zm.cpp:114-125 (MN10200 memory map).
+// Design: docs/zoom_board_design.md 2 and 4; "design study" is
+//         docs/zoom_zsg2_tms57002_design.md.
+// Bench: sim/zoomboard/.
+//
 // Taito Zoom board: MN10200 bus decoder (docs/zoom_board_design.md 2 and 4).
 //
 // Map (taito_zm.cpp:114-125, MAME 0.288):
@@ -9,12 +29,16 @@
 //   0xE00000-0xE000FF  M66220FP mailbox, byte addressed (zoom_mbox)
 //   anything else      reads 0, writes ignored (MAME unmapped)
 //
-// The core holds bus_rd / bus_wr until bus_ack. Program cache hits and the
-// work RAM answer in the next clock with a combinational ack (their RAMs
-// read on clk2x); everything else answers through a registered ack.
+// The core holds bus_rd / bus_wr until bus_ack. Program cache hits and work
+// RAM reads answer with a combinational ack as soon as the RAM output belongs
+// to the address on the bus (pc_hit, wr_cur; their RAMs read on clk2x): in
+// the next clock at CLK_H 2, after one wait clock at CLK_H 4 (the release,
+// zoom_pcache.sv). Work RAM writes are acknowledged at once; everything else
+// answers through a registered ack.
 // Before a ZSG-2 access the decoder asks the time base to tick any sample
 // boundary that MAME would place before the access (zoom_tbase look_*),
-// then waits a clock so the ZSG-2 has counted the tick.
+// then waits until the ZSG-2 has counted the tick (t_idle: at least a clock;
+// at CLK_H 4 also until the tick has crossed to the ZSG-2's clk_1x).
 module zoom_bus #(
     parameter int WRAM_AW = 14
 ) (

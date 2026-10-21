@@ -1,3 +1,25 @@
+// zoom_host: Taito Zoom board main-CPU side: volume port, doorbell, mailbox
+// port A (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taitogn.cpp:483-487 and taito_zm.cpp:73-79, 139-177;
+//           MB87078 data sheet (Fujitsu Edition 2.0A, pp.4 and 6).
+// Design: docs/zoom_board_design.md 3.1 and 3.3; "design study" is
+//         docs/zoom_zsg2_tms57002_design.md.
+// Bench: sim/zoomboard/ (tb_host.cpp).
+//
 // Taito Zoom board: main-CPU side (docs/zoom_board_design.md 3.1).
 //
 // Addresses are offsets from 0x1F000000, the convention of gnet_fc and the

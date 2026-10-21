@@ -1,3 +1,14 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic CPU_FILL_EXT (default 0 = upstream) and the ext_fill_req /
+-- ext_fill_done handshake: with the CPU on its own clock (psx_top
+-- CPU_CLK_SPLIT = 1, savestates off) the scratchpad and RAM zero fill at
+-- reset (types 12 and 16) is done by a CPU-side filler
+-- (rtl/gnet/cpu_split/cpu_reset_fill.vhd).
+-- G-NET commits: f0cd555 (2026-10-05) CPU group on its own 50/100 MHz clocks.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;     
@@ -8,7 +19,7 @@ entity savestates is
       FASTSIM                : std_logic;
       SAVETYPESCOUNT         : integer := 17;
       Softmap_SaveState_ADDR : integer;
-      -- 1 = CPU on its own clock (psx_top CPU_CLK_SPLIT = 1, savestates off):
+      -- G-NET: 1 = CPU on its own clock (psx_top CPU_CLK_SPLIT = 1, savestates off):
       -- types 12 and 16 (scratchpad and RAM zero fill at reset) are written by
       -- a CPU-side filler; the engine toggles ext_fill_req and waits for
       -- ext_fill_done to follow, and reads no CPU-group savestate data
@@ -88,6 +99,7 @@ entity savestates is
       SS_SPURAM_dataRead      : in  std_logic_vector(15 downto 0);
       SS_SPURAM_done          : in  std_logic;
       
+      -- G-NET: CPU-side zero fill handshake (CPU_FILL_EXT = 1)
       ext_fill_req            : out std_logic := '0';
       ext_fill_done           : in  std_logic := '0'
    );
@@ -206,6 +218,7 @@ architecture arch of savestates is
    
    signal exeMode             : std_logic := '0';
    
+   -- G-NET: CPU_FILL_EXT handshake state
    signal ext_fill_req_r      : std_logic := '0';
    signal ext_fill_wait       : std_logic := '0';
 
@@ -213,6 +226,7 @@ begin
 
    savestate_busy <= '0' when state = IDLE else '1';
    
+   -- G-NET: CPU_FILL_EXT handshake
    ext_fill_req   <= ext_fill_req_r;
 
    ddr3_BURSTCNT <= x"01";
@@ -264,6 +278,7 @@ begin
             when 16 => SS_DataRead <= ram_data;
             when others => SS_DataRead <= (others => '0');
          end case;
+         -- G-NET: no CPU-group savestate data with CPU_FILL_EXT = 1
          if (CPU_FILL_EXT = 1) then
             SS_DataRead <= (others => '0');
          end if;
@@ -324,6 +339,7 @@ begin
                savestate_pause   <= '0';
                ddr3_savestate    <= '0';
                unstallwait       <= 1023;
+               -- G-NET: CPU_FILL_EXT handshake idle
                ext_fill_wait     <= '0';
                if (reset_in_1 = '1' and reset_in = '0') then
                   state                <= WAITPAUSE;
@@ -602,6 +618,7 @@ begin
                end if;
             
             when LOADMEMORY_NEXT =>
+               -- G-NET: with CPU_FILL_EXT = 1 types 12 and 16 go to the CPU-side filler
                if (CPU_FILL_EXT = 1 and savetype_counter = 12) then
                   -- scratchpad and RAM zero fill by the CPU-side filler
                   if (ext_fill_wait = '0') then

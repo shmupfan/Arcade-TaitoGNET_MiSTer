@@ -1,6 +1,9 @@
--- ZN-2 board plus G-NET FC PCB (silent build), attached to psx_top.
+-- zn2_board: ZN-2 board plus G-NET FC PCB devices, attached to psx_top
+-- (Taito G-NET core). With ZOOM = 1 (the release build, GNET_Z1FULLR) the
+-- Taito Zoom host port goes out on zm_*; ZOOM = 0 is the silent build.
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -9,6 +12,13 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: MAME 0.288 taitogn.cpp:476-487 (main-CPU map), zn.h:39 (SIO0
+--           RXD), at28c16.cpp:89 (nvram_default); board blocks per
+--           docs/evidence_sources.md 1 and 2.
+-- Design: docs/zn2_layer_design.md 13 and 16.5, docs/zoom_board_design.md 14.
 --
 -- docs/zn2_layer_design.md 13. Contents:
 --   * bus top: memorymux's zn_* port (expansion 1 and 3, ZN2_MAP = 1) to
@@ -29,9 +39,11 @@
 --     and the Zoom board (docs/zoom_board_design.md 14); zn2_io keeps the
 --     rest of those banks. ZOOM = 0 keeps zn2_io's silent stub for all of it.
 -- Everything runs on one clock, the port named clk1x: clk1x at 33.8688 MHz,
--- or clk_cpu at 50 MHz when psx_top's CPU_CLK_SPLIT = 1 (then CLK_HZ =
--- 50,000,000 and sys_tick is the 33.8688 MHz-equivalent tick for the SIO0
--- bit timer). gnet_fc's, zn2_io's and znmcu's timers use CLK_HZ.
+-- or clk_cpu at 50 MHz when psx_top's CPU_CLK_SPLIT = 1, as in the release
+-- (then CLK_HZ = 50,000,000 and sys_tick is the 33.8688 MHz-equivalent tick
+-- for the SIO0 bit timer). gnet_fc's, zn2_io's and znmcu's timers use CLK_HZ.
+-- The port keeps its upstream-style name for now; in the release it carries
+-- clk_cpu, not psx_top's clk1x.
 
 library IEEE;
 use IEEE.std_logic_1164.all;
@@ -41,6 +53,11 @@ entity zn2_board is
    generic
    (
       CLK_HZ       : integer := 33868800;
+      -- FLASH_PRESET, PS1_SIO and SPU_STATUS: PSX.sv never sets psx_top's
+      -- ZN2_FLASH_PRESET, ZN2_PS1_SIO or ZN2_SPU_STATUS, so every build uses
+      -- the defaults; the other values are alternative readings, sim only
+      -- (FLASH_PRESET: R3, SPU_STATUS: R2, docs/PLAN.md 6; PS1_SIO: the
+      -- needs-review note in zn_sio0.vhd)
       FLASH_PRESET : integer := 1;   -- gnet_flash timing: 1 = MAME, 2 = 28F160S3 2.7 V, 3 = 28F160S5 (FC PCB part)
       PS1_SIO      : integer := 0;   -- zn_sio0 PS1_TIMING
       SPU_STATUS   : integer := 0;   -- zn2_io SPU_STATUS
@@ -49,6 +66,7 @@ entity zn2_board is
    );
    port
    (
+      -- the board clock: clk_cpu (50 MHz) in the release, clk1x without the split
       clk1x          : in  std_logic;
       ce             : in  std_logic;
       reset          : in  std_logic;
@@ -127,6 +145,12 @@ entity zn2_board is
       nv_q           : out std_logic_vector(15 downto 0);
       nv_wtog        : out std_logic;
 
+      -- card hunk journal (issue #9, gnet_card_journal.sv): toggle and hunk
+      -- for every card sector gnet_ata stores; unused without
+      -- GNET_CARD_JOURNAL (removed in synthesis)
+      cj_tog         : out std_logic;
+      cj_hunk        : out std_logic_vector(13 downto 0);
+
       -- Taito Zoom host port (ZOOM = 1): zn_* conventions, request pulse,
       -- fields valid with it, one ack pulse with the read data
       zm_req         : out std_logic;
@@ -195,6 +219,12 @@ architecture arch of zn2_board is
       );
    end component;
 
+   signal fc_dirty_set  : std_logic;
+   signal fc_dirty_hunk : std_logic_vector(13 downto 0);
+   -- card hunk journal events: crossing sources (rtl/gnet/cdc/cdc.sdc names)
+   signal cdc_tx_cjtog  : std_logic := '0';
+   signal cdc_tx_cjhunk : std_logic_vector(13 downto 0) := (others => '0');
+
    -- bus top
    signal sel_fc, sel_io     : std_logic;
    signal sel_zm             : std_logic := '0';
@@ -254,7 +284,7 @@ architecture arch of zn2_board is
       return '0';
    end function;
 
-   -- Taito Zoom ports (taitogn.cpp 483-487; rtl/zoom/zoom_host.sv decodes the same)
+   -- Taito Zoom ports (MAME 0.288 taitogn.cpp:483-487; rtl/zoom/zoom_host.sv decodes the same)
    function zoom_hit(a : unsigned(23 downto 0)) return std_logic is
    begin
       if (a(23 downto 2) = x"B8000" & "00") or (a(23 downto 2) = x"BA000" & "00") or
@@ -299,6 +329,21 @@ begin
    zm_be    <= zn_be;
    zm_wdata <= zn_wdata;
 
+   -- card hunk journal (issue #9): a toggle and the hunk, changed on the same
+   -- edge for every sector gnet_ata stores; gnet_card_journal.sv takes them
+   -- to clk_1x. Not reset: a reset must not look like an event.
+   process (clk1x)
+   begin
+      if rising_edge(clk1x) then
+         if (fc_dirty_set = '1') then
+            cdc_tx_cjtog  <= not cdc_tx_cjtog;
+            cdc_tx_cjhunk <= fc_dirty_hunk;
+         end if;
+      end if;
+   end process;
+   cj_tog  <= cdc_tx_cjtog;
+   cj_hunk <= cdc_tx_cjhunk;
+
    ifc : gnet_fc
    generic map (CLK_HZ => CLK_HZ, FLASH_PRESET => FLASH_PRESET, WD_TIMEOUT_S => WD_TIMEOUT_S)
    port map
@@ -314,7 +359,7 @@ begin
       cpu_wdata    => zn_wdata,
       cpu_ack      => fc_ack,
       cpu_rdata    => fc_rdata,
-      cpu_hit      => open,
+      cpu_hit      => open,           -- not needed: the bus top decodes with gnet_hit() above
       zoom_reset   => zoom_reset,
       wd_reset     => wd_reset,
       fmem_req     => fmem_req,
@@ -324,7 +369,7 @@ begin
       fmem_wdata   => fmem_wdata,
       fmem_ack     => fmem_ack,
       fmem_rdata   => fmem_rdata,
-      flash_busy   => open,
+      flash_busy   => open,           -- per-chip program/erase busy (gnet_flash); nothing reads it
       cmem_req     => cm_req,
       cmem_we      => cm_we,
       cmem_addr    => cm_addr,
@@ -335,20 +380,21 @@ begin
       meta_addr    => std_logic_vector(b_addr(9 downto 0)),
       meta_wdata   => b_data,
       key_valid    => key_valid,
-      dirty_set    => open,
-      dirty_hunk   => open,
+      -- card write dirty map (gnet_ata): feeds the card hunk journal (issue #9)
+      dirty_set    => fc_dirty_set,
+      dirty_hunk   => fc_dirty_hunk,
       dirty_raddr  => (others => '0'),
       dirty_rdata  => open,
       dirty_clear  => '0',
-      card_reset   => open,
-      win_mismatch => open,
+      card_reset   => open,           -- RF5C296 card reset; used inside gnet_fc (gnet_ata) only
+      win_mismatch => open,           -- RF5C296 window check, debug only; no build observes it
       dbg_wd_kick  => dbg_wd_kick,
       dbg_ctrl     => dbg_ctrl,
       dbg_sec_cmd  => dbg_sec_cmd
    );
 
    iio : entity work.zn2_io
-   generic map (CLK_HZ => CLK_HZ, SPU_STATUS => SPU_STATUS)
+   generic map (CLK_HZ => CLK_HZ, SPU_STATUS => SPU_STATUS, ZOOM_STUB => 1 - ZOOM)
    port map
    (
       clk        => clk1x,
@@ -402,7 +448,7 @@ begin
       dsr_n         => dsr_n
    );
 
-   rxd_all <= out0 and out1 and outm;   -- zn.h 39: RXD is the AND of the three outputs
+   rxd_all <= out0 and out1 and outm;   -- MAME 0.288 zn.h:39: RXD is the AND of the three outputs
 
    icat0 : entity work.zn_cat702
    port map (clk => clk1x, reset => reset, key_we => key_we(0), key_addr => b_addr(2 downto 0), key_data => b_data,
@@ -466,6 +512,9 @@ begin
       if rising_edge(clk1x) then
          fl_req   <= '0';
          fmem_ack <= '0';
+         -- reset does not abandon an access in flight (F_WAIT): the SDRAM
+         -- side still answers it with one fl_ready pulse, which a request
+         -- issued after reset would otherwise take as its own
          if (reset = '1' and fstate /= F_WAIT) then
             fstate <= F_IDLE;
          else

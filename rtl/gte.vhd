@@ -1,3 +1,18 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic NARROW_MUL (default 0 = upstream). At 3, the release
+-- setting, the MAC requests of each step are decoded one step early and
+-- their operands go to the MAC units' multipliers in the request cycle, so
+-- the GTE runs at 100 MHz with unchanged results and step counts
+-- (docs/cpu_rate_probe.md, "GTE at 100 MHz with unchanged results and
+-- counts"; bench sim/gte_equiv). Values 1 and 2 only pass through to
+-- gte_mac123 (experiment revisions, not the release).
+-- G-NET commits: 3d186b7 (2026-10-05) NARROW_MUL option; 92ae3a6
+-- (2026-10-05) NARROW_MUL = 3, GTE at 100 MHz; 83807dd (2026-10-05) early
+-- decode without an inferred divider.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -8,6 +23,11 @@ use work.pGTE.all;
 entity gte is
    generic
    (
+      -- G-NET: 0 = upstream. 1 and 2 only select narrow multiplier options in
+      -- gte_mac123 (experiment revisions GNET_B1*, GNET_Z1, GNET_F0_CPU50C4
+      -- and GNET_F0_CPU50E*, not the release). 3 = the GTE at 100 MHz with
+      -- requests decoded one step early (below); the release sets 3
+      -- (GNET_GTE_NARROW_MUL=3).
       NARROW_MUL           : integer := 0
    );
    port 
@@ -267,7 +287,7 @@ architecture arch of gte is
    signal SS_readData      : std_logic_vector(31 downto 0);
   
    --##############################################################
-   -- NARROW_MUL = 3 (G-NET, GTE at 100 MHz): the MAC requests of each step are
+   -- G-NET: NARROW_MUL = 3 (GTE at 100 MHz): the MAC requests of each step are
    -- decoded one step early into req3 (operand selects, one-hot). In the
    -- request cycle the selected operands go straight into the multipliers,
    -- whose products are registered in the MAC units, so the trigger cycle only
@@ -708,6 +728,7 @@ begin
       variable colorNewR     : unsigned(7 downto 0);
       variable colorNewG     : unsigned(7 downto 0);
       variable colorNewB     : unsigned(7 downto 0);
+      -- G-NET: NARROW_MUL = 3 step decode
       variable v3_state      : tstate;
       variable v3_step       : integer range 0 to 64;
       variable v3_first      : tReq3;
@@ -817,6 +838,7 @@ begin
             REG_ZSF4 <= (others => '0');
             REG_FLAG <= (others => '0');
 
+            -- G-NET: NARROW_MUL = 3
             if (NARROW_MUL = 3) then
                req3 <= REQ3_NONE;
             end if;
@@ -1013,6 +1035,11 @@ begin
             
             debug_firstGTE <= '0';
             
+            -- G-NET: with NARROW_MUL = 3 the MAC requests below are replaced by req3 and
+            -- this case's state, calcStep and batchCount assignments are overridden
+            -- outside IDLE by the block after the case ("steps: exits and loops"). The
+            -- sim-only check gcheck3 at the end of the file asserts that req3 equals the
+            -- requests of the current step; sim/gte_equiv compares NARROW_MUL 0 and 3.
             case (state) is
             
                when IDLE =>
@@ -1685,7 +1712,7 @@ begin
             end case;
             
             if (NARROW_MUL = 3) then
-               -- this step's requests (req3 was decoded one step early); the
+               -- G-NET: NARROW_MUL = 3, this step's requests (req3 was decoded one step early); the
                -- operands go to the MAC units through MACxmul3 (see below)
                MAC0req3.trigger <= '0';
                MAC1req3.trigger <= '0';
@@ -1871,7 +1898,7 @@ begin
       end if;
    end process;
    
-   -- NARROW_MUL = 3: operands of the request being written, straight from the
+   -- G-NET: NARROW_MUL = 3, operands of the request being written, straight from the
    -- registers selected by req3 into the MAC units' multipliers
    g3mul : if NARROW_MUL = 3 generate
    begin
@@ -1913,10 +1940,11 @@ begin
 
    -- processing units
    igte_mac0 : entity work.gte_mac0
-   generic map (NARROW_MUL => NARROW_MUL)
+   generic map (NARROW_MUL => NARROW_MUL)   -- G-NET: NARROW_MUL
    port map
    (
       clk2x          => clk2x,         
+      -- G-NET: NARROW_MUL = 3 requests and operands
       MAC0req        => MAC0req_u,
       MACmul         => MAC0mul3,       
       mac0_result    => mac0_result,   
@@ -1930,10 +1958,11 @@ begin
    );
    
    igte_mac1 : entity work.gte_mac123
-   generic map (NARROW_MUL => NARROW_MUL)
+   generic map (NARROW_MUL => NARROW_MUL)   -- G-NET: NARROW_MUL
    port map
    (
       clk2x          => clk2x,         
+      -- G-NET: NARROW_MUL = 3 requests and operands
       MACreq         => MAC1req_u,
       MACmul         => MAC1mul3,       
       mac_result     => mac1_result,   
@@ -1947,10 +1976,11 @@ begin
    );
    
    igte_mac2 : entity work.gte_mac123
-   generic map (NARROW_MUL => NARROW_MUL)
+   generic map (NARROW_MUL => NARROW_MUL)   -- G-NET: NARROW_MUL
    port map
    (
       clk2x          => clk2x,         
+      -- G-NET: NARROW_MUL = 3 requests and operands
       MACreq         => MAC2req_u,
       MACmul         => MAC2mul3,       
       mac_result     => mac2_result,   
@@ -1964,10 +1994,11 @@ begin
    );
    
    igte_mac3 : entity work.gte_mac123
-   generic map (NARROW_MUL => NARROW_MUL)
+   generic map (NARROW_MUL => NARROW_MUL)   -- G-NET: NARROW_MUL
    port map
    (
       clk2x          => clk2x,         
+      -- G-NET: NARROW_MUL = 3 requests and operands
       MACreq         => MAC3req_u,
       MACmul         => MAC3mul3,       
       mac_result     => mac3_result,   
@@ -1982,7 +2013,7 @@ begin
    );
    
    igte_UNRDivide : entity work.gte_UNRDivide
-   generic map (RETIME => divRetime(NARROW_MUL))
+   generic map (RETIME => divRetime(NARROW_MUL))   -- G-NET: RETIME 1 when NARROW_MUL = 3
    port map
    (
       clk2x          => clk2x,        
@@ -2093,7 +2124,7 @@ begin
    
    -- synthesis translate_off
 
-   -- NARROW_MUL = 3: the early decode must always equal the decode of the current step
+   -- G-NET: NARROW_MUL = 3, the early decode must always equal the decode of the current step
    gcheck3 : if NARROW_MUL = 3 generate
    begin
       process (clk2x)

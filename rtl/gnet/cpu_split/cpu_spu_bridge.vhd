@@ -1,3 +1,25 @@
+-- cpu_spu_bridge: SPU bus and DMA channel 4 across the CPU / PS1 clock
+-- boundary (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: reproduces at the boundary the bus and DMA timing of PSX_MiSTer's
+--           spu.vhd, memorymux.vhd and dma.vhd (cd17b5a); no board behaviour
+--           of its own.
+-- Design: docs/r1_cpu_domain_design.md, P2 (C8 to C11) and "Crossings as
+--         built".   Bench: sim/cpu50/ (tb_cpu_split.vhd)
+--
 -- SPU register bus and DMA channel 4 across the CPU / PS1 clock boundary
 -- (docs/r1_cpu_domain_design.md, 50.000 MHz plan, crossings C8 to C11).
 --
@@ -5,7 +27,8 @@
 -- DMA's SPU port.
 --   * register write and DMA write: posted into one ordered command FIFO
 --     (C8), one entry per ce cycle with the strobe, as spu.vhd counts them.
---   * register read (C9, Lee's decision 2: a plain stall handshake): while
+--   * register read (C9, a plain stall handshake: decision 2 of "Decisions
+--     recorded (Lee, 2026-10-05)" in docs/r1_cpu_domain_design.md): while
 --     memorymux holds bus_spu_read (state EXT_READ_NEXT) the read goes
 --     through the same FIFO; c_bus_stall (combinational: read and no answer
 --     yet) keeps memorymux in EXT_READ_NEXT (memorymux.vhd bus_spu_stall).
@@ -17,6 +40,8 @@
 --     buffered; c_dma_readReq is the DMA's ungated "wants a halfword".
 --   * spu_dmaRequest (C11): the SPU's level through two flip-flops, forced
 --     low until the FIFO has been empty for QUIET_CYCLES CPU cycles.
+-- FIFO_AW 6 (64 entries) and QUIET_CYCLES 8 are the as-built values recorded
+-- in docs/r1_cpu_domain_design.md, "Crossings as built" (C8 to C11).
 -- PS1 side (p_*, clk1x): a proxy that replays each command for one clk1x
 -- cycle with p_ce = '1' on spu.vhd's ports and returns read data (taken one
 -- cycle after the read, where spu.vhd has registered it) through a

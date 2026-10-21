@@ -1,3 +1,18 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic VRAM_Y_BITS (default 9 = upstream, 1 MB VRAM; 10 = the
+-- ZN-2 CXD8654Q GPU with 2 MB VRAM, docs/m1_gpu_zn2.md 2b) and the VRAM Y
+-- coordinate widths that follow from it.
+-- Generic RECT_FLIP (default 0 = upstream, flip bits ignored) and inputs
+-- flipX/flipY: textured rectangle X/Y flip from GP0(E1h) bits 12/13 as on
+-- the ZN-2 GPU (issue #6, docs/m1_gpu_zn2.md 6).
+-- G-NET commits: c71a991 (2026-10-04) ZN-2 2 MB VRAM GPU behind VRAM_Y_BITS;
+-- 1c8a8bd (2026-10-14) textured rectangle X/Y flip, issue #6.
+-- Every change is marked "G-NET:" below, except the width expressions in
+-- VRAM_Y_BITS that replace upstream's fixed Y widths (9 gives the upstream
+-- widths). Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -7,8 +22,8 @@ library mem;
 entity gpu_rect is
    generic
    (
-      VRAM_Y_BITS          : integer := 9;  -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
-      -- 1 = textured rectangle X/Y flip from E1 bits 12/13 (flipX/flipY):
+      VRAM_Y_BITS          : integer := 9;  -- G-NET: 9 = PS1 (1 MB VRAM, upstream), 10 = ZN-2 CXD8654Q (2 MB)
+      -- G-NET: 1 = textured rectangle X/Y flip from E1 bits 12/13 (flipX/flipY):
       -- U steps -1 per pixel, V -1 per line, left/top clipping moves U/V the
       -- other way (MAME 0.288 psxgpu.cpp type 2 SPRITESETUP; psx-spx v2 GPUs).
       -- 0 = upstream PS1 behaviour (flip bits ignored).
@@ -23,7 +38,7 @@ entity gpu_rect is
       
       REPRODUCIBLEGPUTIMING: in  std_logic;
       
-      flipX                : in  std_logic := '0';   -- E1 bit 12, used when RECT_FLIP = 1
+      flipX                : in  std_logic := '0';   -- G-NET: E1 bit 12, used when RECT_FLIP = 1
       flipY                : in  std_logic := '0';   -- E1 bit 13, used when RECT_FLIP = 1
       
       error                : out std_logic;
@@ -108,6 +123,7 @@ architecture arch of gpu_rect is
    signal rec_sizey           : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');  
    
    signal rec_u               : unsigned(7 downto 0) := (others => '0');     
+   -- G-NET: RECT_FLIP, flip bits latched per rectangle
    signal rec_flipX           : std_logic := '0';
    signal rec_flipY           : std_logic := '0';
 
@@ -205,6 +221,7 @@ begin
                      rec_transparency  <= fifo_data(25);
                      rec_rawTexture    <= fifo_data(24);
                      rec_color         <= fifo_data(23 downto 0);
+                     -- G-NET: RECT_FLIP, latch the flip bits (0 when RECT_FLIP = 0)
                      rec_flipX         <= '0';
                      rec_flipY         <= '0';
                      if (RECT_FLIP = 1) then
@@ -287,6 +304,7 @@ begin
                   end if;
                   rec_posx  <= rec_posx + xdiff;
                   xPos      <= rec_posx + xdiff;
+                  -- G-NET: RECT_FLIP, left clipping moves U the other way when flipped
                   if (rec_flipX = '1') then
                      uWork  <= uWork - unsigned(xdiff(7 downto 0));
                      rec_u  <= rec_u - unsigned(xdiff(7 downto 0));
@@ -308,6 +326,7 @@ begin
                      ysize := ysize - 1;
                   end if;
                   yPos      <= yPos + ydiff;
+                  -- G-NET: RECT_FLIP, top clipping moves V the other way when flipped
                   if (rec_flipY = '1') then
                      vWork  <= vWork - unsigned(ydiff(7 downto 0));
                   else
@@ -346,6 +365,7 @@ begin
                   
                      xCnt  <= xCnt + 1;
                      xPos  <= xPos + 1;
+                     -- G-NET: RECT_FLIP, U steps -1 per pixel when flipped
                      if (rec_flipX = '1') then
                         uWork <= uWork - 1;
                      else
@@ -359,6 +379,7 @@ begin
                         end if;
                         yCnt  <= yCnt + yAdd;
                         ypos  <= yPos + yAdd;
+                        -- G-NET: RECT_FLIP, V steps back per line when flipped
                         if (rec_flipY = '1') then
                            vWork <= vWork - yAdd;
                         else

@@ -2,6 +2,7 @@
 // the RF5C296 / ATA card, the control registers and the watchdog.
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -10,6 +11,13 @@
 // useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taitogn.cpp:490-506 (flashbank_map) and the register
+//           map in docs/hardware_inventory.md 4; behaviour checked by
+//           lossless MAME 0.288 trace replay (docs/m2_glue_findings.md).
+//           Bench: sim/gnet/ (directed tests, replay), sim/zn2/cosim/.
 //
 // CPU side: offsets from 0x1f000000 (docs/hardware_inventory.md 4).
 //   000000-7fffff flash bank window (16-bit devices), bank = control bit 2
@@ -27,11 +35,15 @@
 //   b40000        control, b60000 control2, b70000 the 0x1fb70000 register
 // A 32-bit access is split into 16-bit lane operations, low lane first, each
 // carrying its byte enables (MAME's 16-bit devices on the 32-bit bus).
-// cpu_hit says whether an address belongs to this block (for the integration
-// with memorymux); cpu_ack follows every request, data valid with it.
+// cpu_hit says whether an address belongs to this block. zn2_board leaves it
+// open and decodes the same ranges with its own gnet_hit() function (the
+// sim/zn2/cosim harness reads cpu_hit), so the two decodes must be kept
+// equal; gnet_fc's lane decode (dt below) is the third copy of the map.
+// cpu_ack follows every request, data valid with it.
 // card_present = 0 (empty slot): the RF5C296 reports no card and card
 // attribute memory and task file read FFFFh, writes ignored, as MAME's
-// empty pccard slot (pccard.cpp read_memory/read_reg return 0xffff).
+// empty pccard slot (MAME 0.288 pccard.cpp:69-88, read_memory/read_reg
+// return 0xffff).
 
 module gnet_fc #(
     parameter int unsigned CLK_HZ       = 33_868_800,
@@ -64,7 +76,7 @@ module gnet_fc #(
     output logic [15:0] fmem_wdata,
     input  logic        fmem_ack,
     input  logic [15:0] fmem_rdata,
-    output logic [4:0]  flash_busy,
+    output logic [4:0]  flash_busy,   // left open in zn2_board (status only)
 
     // card image storage
     output logic        cmem_req,
@@ -86,9 +98,10 @@ module gnet_fc #(
     input  logic        dirty_clear,
 
     output logic        card_reset,
-    output logic        win_mismatch,
+    output logic        win_mismatch, // left open in zn2_board; read by sim/zn2/cosim
 
-    // debug taps (docs/hw_debug_overlay.md)
+    // debug taps (docs/hw_debug_overlay.md): to zn_dbg_regs through zn2_board,
+    // the debug overlay built into the release (OSD, Off by default)
     output logic        dbg_wd_kick,   // pulse: watchdog CK falling edge (gnet_ctrl)
     output logic [7:0]  dbg_ctrl,      // control register 0x1fb40000
     output logic        dbg_sec_cmd    // pulse: ATA READ/WRITE SECTORS taken (gnet_ata)

@@ -1,6 +1,8 @@
--- G-NET hardware debug overlay, video side (docs/hw_debug_overlay.md).
+-- zn_dbg_overlay: G-NET hardware debug overlay, video side (Taito G-NET
+-- core; docs/hw_debug_overlay.md).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -10,13 +12,25 @@
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
 --
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). Evidence: none needed (a debug aid, not part of the
+--         board); bench and verification in docs/hw_debug_overlay.md 5.
+--
+-- In the release build: an OSD option ("Debug overlay", status[101], Off by
+-- default; README documents it), always synthesised with GNET_ZN2, the DR
+-- row included (GNET_DDR3_ARB). Cost in the alpha 3 release fit: about 122
+-- ALMs here and about 194 in zn_dbg_regs (about 316 together, 0.75% of the
+-- device) plus one M10K (the word RAM here), and its mux sits in the RGB
+-- path permanently.
+-- docs/hw_debug_overlay.md 6 gives an older estimate.
+--
 -- Draws the ten 32-bit words of rtl/gnet/zn_dbg_regs.vhd (plus, with
 -- DR_ROW = 1, the DDR3 arbiter status word) as hex text: ten (eleven)
 -- rows of 12 cells (2-letter label, space, 4 hex digits, space, 4 hex
--- digits), 8x8 cells with 5x7 glyphs, white on a black box, X0 dots right of
--- the start of the active line and Y0 lines below the first active line.
--- At 512 and 640 dots per line (hres_dbl = 1) each font pixel is two dots
--- wide. Pixel steps follow ce_pix only; no clock or pixel rate is added.
+-- digits), 8x8 cells with 5x7 glyphs, white on a black box, X0 font pixels
+-- right of the start of the active line and Y0 lines below the first active
+-- line. At 512 and 640 dots per line (hres_dbl = 1) each font pixel is two
+-- dots wide (so X0 is X0 dots, or 2 x X0 dots with hres_dbl = 1). Pixel steps follow ce_pix only; no clock or pixel rate is added.
 --
 -- Clocks and crossings (rtl/gnet/cdc naming):
 --   clk_cfg  the OSD status bit, registered into cdc_tx_en, cdc_sync into

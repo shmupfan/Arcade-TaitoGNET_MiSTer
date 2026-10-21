@@ -1,3 +1,13 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic RETIME (default 0 = upstream): 1 rebalances the pipeline
+-- stages with the same latency for the GTE at 100 MHz (gte.vhd sets it
+-- with NARROW_MUL = 3; docs/cpu_rate_probe.md, "GTE at 100 MHz with
+-- unchanged results and counts").
+-- G-NET commits: 92ae3a6 (2026-10-05) NARROW_MUL = 3, GTE at 100 MHz.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -8,7 +18,8 @@ use work.pGTE.all;
 entity gte_UNRDivide is
    generic
    (
-      -- 1 = G-NET 100 MHz option: same latency (trigger to result 7 clocks),
+      -- G-NET: 1 = 100 MHz option (gte.vhd sets it with NARROW_MUL = 3): same
+      -- latency (trigger to result 7 clocks),
       -- stages rebalanced: stages 0 and 1 (leading-zero count and shift of
       -- rhs) merged, the final multiply registered before the rounding,
       -- overflow check and result select. Needs rhs held for the clock after
@@ -102,13 +113,14 @@ architecture arch of gte_UNRDivide is
    signal calc_lhs      : unsigned(31 downto 0);
    signal calc_val_r    : unsigned(19 downto 0);
 
-   -- RETIME = 1: stage 7
+   -- G-NET: RETIME = 1, stage 7
    signal trigger_7     : std_logic := '0';
    signal divError_7    : std_logic := '0';
    signal calc_prod     : unsigned(51 downto 0);
 
 begin 
 
+   -- G-NET: the upstream process, unchanged, for RETIME = 0
    gupstream : if RETIME = 0 generate
    begin
    process (clk2x)
@@ -209,6 +221,7 @@ begin
    end process;
    end generate;
    
+   -- G-NET: RETIME = 1, the same stages rebalanced for 100 MHz
    gretime : if RETIME = 1 generate
    begin
    process (clk2x)

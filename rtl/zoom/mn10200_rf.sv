@@ -1,3 +1,24 @@
+// mn10200_rf: MN10200 register file D0-D3, A0-A3 (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MN102L Instruction Manual 12250-030E (programming model,
+//           docs/mn10200_design.md 2.1).
+// Design: docs/mn10200_design.md 5.4 ("design study" below),
+//         docs/mn10200_rtl.md 5.2.
+// Bench: sim/mn10200/.
+//
 // MN10200 register file D0-D3 (0-3), A0-A3 (4-7), 24 bits
 // (docs/mn10200_design.md 5.4). One write port, four asynchronous read
 // ports. MLAB = 1: four MLAB copies written together (the design study's

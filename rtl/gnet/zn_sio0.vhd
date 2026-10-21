@@ -1,7 +1,8 @@
--- SIO0 for the ZN-2: the PS1 serial port driving the two CAT702 and the
--- znmcu, in place of PSX_MiSTer's joypad.vhd.
+-- zn_sio0: SIO0 for the ZN-2, the PS1 serial port driving the two CAT702
+-- and the znmcu, in place of PSX_MiSTer's joypad.vhd (Taito G-NET core).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -10,6 +11,11 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation from MAME's behaviour, no
+--         code copied; see below).
+-- Evidence: MAME 0.288 sio.cpp (rank 5); replay of every SIO0 access of six
+--           games against MAME 0.288 (docs/zn2_layer_design.md 16.4).
 --
 -- docs/zn2_layer_design.md 7.2. Register behaviour from MAME 0.288
 -- src/devices/cpu/psx/sio.cpp (rank 5; no CXD8661R document), written as
@@ -28,13 +34,18 @@
 -- while a byte waits or is in progress. A tick starts a byte when none is in
 -- progress, TX is enabled and a byte waits (TX ready and TX empty set), and
 -- every tick of a byte sends and receives one bit, LSB first: bit_stb with
--- the TXD bit to the devices, RXD (the AND of the device outputs, zn.h 39)
+-- the TXD bit to the devices, RXD (the AND of the device outputs, zn.h:39)
 -- shifted in in the same clock. That is MAME's order inside sio_tick (SCK
 -- low, TXD, SCK high, sample). After 8 bits: RX ready (or overrun), RX/TX
 -- interrupts if enabled.
 -- PSX_MiSTer's joypad.vhd times a byte as baud x 8 cycles without the
 -- prescaler (PS1, from hardware tests); which rule the CXD8661R follows is
--- open (needs-review). PS1_TIMING = 1 selects the joypad.vhd rule.
+-- open (needs-review). PS1_TIMING = 1 selects the joypad.vhd rule: an
+-- alternative reading, sim only (psx_top's ZN2_PS1_SIO is never set, so
+-- every build uses 0).
+-- Clock: the port named clk1x is the board clock: clk1x (33.8688 MHz)
+-- without psx_top's CPU_CLK_SPLIT, clk_cpu (50 MHz) with it, as in the
+-- release; sys_tick keeps the bit timer at 33.8688 MHz counts.
 -- DSR: status bit 7 follows the line (low = set); a falling edge with the
 -- DSR interrupt enabled raises IRQ (sio.cpp write_dsr).
 
@@ -49,13 +60,15 @@ entity zn_sio0 is
    );
    port
    (
+      -- the board clock: clk_cpu (50 MHz) in the release, clk1x without the split
       clk1x        : in  std_logic;
       ce           : in  std_logic;
       reset        : in  std_logic;
       -- bit timer step: '1' = one count per clock (33.8688 MHz clk1x); with
       -- psx_top's CPU_CLK_SPLIT = 1 the clock is clk_cpu (50 MHz) and this is
       -- tick_accum's 33.8688 MHz-equivalent sys_tick (decision 1 in
-      -- docs/r1_cpu_domain_design.md), so a bit keeps its 33.8688 MHz length
+      -- docs/r1_cpu_domain_design.md, "Decisions recorded (Lee,
+      -- 2026-10-05)"), so a bit keeps its 33.8688 MHz length
       sys_tick     : in  std_logic := '1';
 
       bus_addr     : in  unsigned(3 downto 0);
@@ -252,7 +265,13 @@ begin
                         tx_data    <= bus_dataWrite(7 downto 0);
                         st_txrdy   <= '0';
                         st_txempty <= '0';
-                        -- the timer restarts: the next tick is one period away
+                        -- the timer restarts: the next tick is one period away.
+                        -- Loading period - 1 puts it period - 1 counted
+                        -- cycles after this edge, while a tick reloads period
+                        -- (ticks period apart); why the write's own cycle is
+                        -- counted is not recorded (to confirm). The MAME
+                        -- replay of docs/zn2_layer_design.md 16.4 matches
+                        -- with it.
                         running    <= '1';
                         tcount     <= period - 1;
                      end if;

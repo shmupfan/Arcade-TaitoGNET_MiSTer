@@ -1,8 +1,10 @@
--- Crossings between the CPU group (clk_cpu) and the Taito Zoom board, which
--- runs on the PS1 group's clk1x and clk2x (psx_top ZOOM_BOARD = 1 with
--- CPU_CLK_SPLIT = 1; docs/zoom_board_design.md 14).
+-- zoom_cdc: crossings between the CPU group (clk_cpu) and the Taito Zoom
+-- board, which runs on the PS1 group's clk1x and clk2x (Taito G-NET core;
+-- psx_top ZOOM_BOARD = 1 with CPU_CLK_SPLIT = 1, as in the release;
+-- docs/zoom_board_design.md 14).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -11,6 +13,10 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). Evidence: main-CPU Zoom ports from MAME 0.288
+--         taitogn.cpp:483-487; crossing method as rtl/gnet/zn2_cdc.vhd.
 --
 -- Signal prefixes: c_ clk_cpu, p_ clk1x. Built only from rtl/gnet/cdc
 -- (cdc_tx_* sources, cdc.sdc). The Zoom board itself has no path to
@@ -32,8 +38,10 @@
 --       (synchronous paths).
 --   The flash area reads (zoom_board's m_* line port) are not here: they
 --   leave psx_top on clk1x as zoom_m_* (docs/zoom_board_design.md 14) for
---   the DDR3 arbiter (macro GNET_DDR3_ARB) or, in the first test build, for
---   rtl/gnet/zoom_sdram_link.vhd (macro GNET_ZOOM_SDRAM).
+--   the DDR3 arbiter (macro GNET_DDR3_ARB, the release build); the archived
+--   experiment revision GNET_Z1_ZOOM sent them to
+--   rtl/gnet/zoom_sdram_link.vhd instead (macro GNET_ZOOM_SDRAM, tag
+--   experiments-archive).
 --
 -- Resets: no crossing is reset (as rtl/gnet/zn2_cdc.vhd). Each side finishes
 -- what it started. The CPU side of Z1 drops the answer to a request sent

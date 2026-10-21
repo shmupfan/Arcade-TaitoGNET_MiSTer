@@ -1,3 +1,17 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic IDCT_REG_STAGE (default 0 = upstream). At 1, a register
+-- stage (stage R) between the IDCT and scale table reads and the multiply,
+-- so the MDEC meets timing on clk_cpu2x (100 MHz), where psx_top runs it
+-- when the CPU has its own clock (psx_top sets IDCT_REG_STAGE to
+-- CPU_CLK_SPLIT). One clock more IDCT latency, same products in the same
+-- order.
+-- G-NET commits: 2d6bf48 (2026-10-14) register the IDCT table reads
+-- before the multiply (clk_cpu2x timing), then in every build; the generic
+-- came with the refactor (2026-10-20).
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -6,6 +20,13 @@ use STD.textio.all;
 library mem;
 
 entity mdec is
+   generic
+   (
+      -- G-NET: 0 = upstream (stage 0 multiplies the table reads directly);
+      -- 1 = stage R registers them first (clk_cpu2x timing, one clock more
+      -- IDCT latency). psx_top: CPU_CLK_SPLIT.
+      IDCT_REG_STAGE       : integer := 0
+   );
    port 
    (
       clk1x                : in  std_logic;
@@ -173,7 +194,7 @@ architecture arch of mdec is
    signal idct_calc0_mul21    : signed(29 downto 0);
    signal idct_calc0_mul22    : signed(15 downto 0);
    -- G-NET: register stage between the IDCT/scale table reads and the
-   -- multiply (MDEC on clk_cpu2x, 100 MHz)
+   -- multiply (MDEC on clk_cpu2x, 100 MHz), used when IDCT_REG_STAGE = 1
    signal idct_calcR_ena      : std_logic := '0';
    signal idct_calcR_stage    : std_logic := '0';
    signal idct_calcR_target1  : integer range 0 to 63;
@@ -185,6 +206,19 @@ architecture arch of mdec is
    signal idct_calcR_mul12    : signed(15 downto 0);
    signal idct_calcR_mul21    : signed(29 downto 0);
    signal idct_calcR_mul22    : signed(15 downto 0);
+   -- G-NET: what stage 0 multiplies: stage R's registers (IDCT_REG_STAGE 1)
+   -- or, as upstream, stage 0's own inputs (IDCT_REG_STAGE 0)
+   signal idct_calcS_ena      : std_logic;
+   signal idct_calcS_stage    : std_logic;
+   signal idct_calcS_target1  : integer range 0 to 63;
+   signal idct_calcS_target2  : integer range 0 to 511;
+   signal idct_calcS_first    : std_logic;
+   signal idct_calcS_last     : std_logic;
+   signal idct_calcS_swap     : std_logic;
+   signal idct_calcS_mul11    : signed(29 downto 0);
+   signal idct_calcS_mul12    : signed(15 downto 0);
+   signal idct_calcS_mul21    : signed(29 downto 0);
+   signal idct_calcS_mul22    : signed(15 downto 0);
    signal idct_calc1_ena      : std_logic := '0';
    signal idct_calc1_stage    : std_logic := '0';
    signal idct_calc1_target1  : integer range 0 to 63;
@@ -918,11 +952,12 @@ begin
             end case;
             
             -- calculation pipeline -> pipeline delay can be ignored as following stages don't read last written value early
-            -- G-NET stage R: register the table reads (M10K output and the
-            -- stage mux) so the 30x16 multiply starts from flip-flops. One
-            -- clock more latency, same products in the same order; the
-            -- stage 1 temp-table write nearest to its stage 2 read still
-            -- lands 28 clocks before that read.
+            -- G-NET: stage R (IDCT_REG_STAGE = 1), register the table reads
+            -- (M10K output and the stage mux) so the 30x16 multiply starts
+            -- from flip-flops. One clock more latency, same products in the
+            -- same order; the stage 1 temp-table write nearest to its stage 2
+            -- read still lands 28 clocks before that read. With
+            -- IDCT_REG_STAGE = 0 nothing reads these registers.
             idct_calcR_ena     <= idct_calc0_ena;
             idct_calcR_stage   <= idct_calc0_stage;
             idct_calcR_target1 <= idct_calc0_target1;
@@ -936,15 +971,17 @@ begin
             idct_calcR_swap    <= idct_done;
 
             -- stage 0 multiply
-            idct_calc1_ena     <= idct_calcR_ena;
-            idct_calc1_stage   <= idct_calcR_stage;
-            idct_calc1_target1 <= idct_calcR_target1;
-            idct_calc1_target2 <= idct_calcR_target2;
-            idct_calc1_first   <= idct_calcR_first;
-            idct_calc1_last    <= idct_calcR_last;
-            idct_calc1_mul1    <= idct_calcR_mul11 * idct_calcR_mul12;
-            idct_calc1_mul2    <= idct_calcR_mul21 * idct_calcR_mul22;
-            idct_calc1_swap    <= idct_calcR_swap;
+            -- G-NET: stage 0 multiply takes idct_calcS_* (stage R's registers,
+            -- or upstream's idct_calc0_* and idct_done with IDCT_REG_STAGE 0)
+            idct_calc1_ena     <= idct_calcS_ena;
+            idct_calc1_stage   <= idct_calcS_stage;
+            idct_calc1_target1 <= idct_calcS_target1;
+            idct_calc1_target2 <= idct_calcS_target2;
+            idct_calc1_first   <= idct_calcS_first;
+            idct_calc1_last    <= idct_calcS_last;
+            idct_calc1_mul1    <= idct_calcS_mul11 * idct_calcS_mul12;
+            idct_calc1_mul2    <= idct_calcS_mul21 * idct_calcS_mul22;
+            idct_calc1_swap    <= idct_calcS_swap;
             
             -- stage 1 add sum
             idct_calc2_ena     <= idct_calc1_ena;
@@ -989,6 +1026,20 @@ begin
       end if;
    end process;
    
+   -- G-NET: IDCT_REG_STAGE picks what stage 0 multiplies (a constant choice,
+   -- no multiplexer is built): stage R's registers, or upstream's inputs
+   idct_calcS_ena     <= idct_calcR_ena     when (IDCT_REG_STAGE = 1) else idct_calc0_ena;
+   idct_calcS_stage   <= idct_calcR_stage   when (IDCT_REG_STAGE = 1) else idct_calc0_stage;
+   idct_calcS_target1 <= idct_calcR_target1 when (IDCT_REG_STAGE = 1) else idct_calc0_target1;
+   idct_calcS_target2 <= idct_calcR_target2 when (IDCT_REG_STAGE = 1) else idct_calc0_target2;
+   idct_calcS_first   <= idct_calcR_first   when (IDCT_REG_STAGE = 1) else idct_calc0_first;
+   idct_calcS_last    <= idct_calcR_last    when (IDCT_REG_STAGE = 1) else idct_calc0_last;
+   idct_calcS_mul11   <= idct_calcR_mul11   when (IDCT_REG_STAGE = 1) else idct_calc0_mul11;
+   idct_calcS_mul12   <= idct_calcR_mul12   when (IDCT_REG_STAGE = 1) else idct_calc0_mul12;
+   idct_calcS_mul21   <= idct_calcR_mul21   when (IDCT_REG_STAGE = 1) else idct_calc0_mul21;
+   idct_calcS_mul22   <= idct_calcR_mul22   when (IDCT_REG_STAGE = 1) else idct_calc0_mul22;
+   idct_calcS_swap    <= idct_calcR_swap    when (IDCT_REG_STAGE = 1) else idct_done;
+
    iramIDCTResult: entity work.dpram
    generic map 
    ( 

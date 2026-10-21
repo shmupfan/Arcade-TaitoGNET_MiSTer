@@ -1,3 +1,24 @@
+// zoom_out: Taito Zoom board output stage (sample FIFO, real-time read,
+// volume) (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: board output rate 25 MHz / 768 (docs/zoom_zsg2_tms57002_design.md
+//           2.2); MB87078 law from zoom_host.
+// Design: docs/zoom_board_design.md 7.
+// Bench: sim/zoomboard/.
+//
 // Taito Zoom board output stage (docs/zoom_board_design.md 7).
 //
 // The TMS57002's SO1 pair arrives once per sample at the SYNC point of the

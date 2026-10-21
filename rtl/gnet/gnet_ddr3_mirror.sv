@@ -1,6 +1,7 @@
 // Mirror of SDRAM channel 3 writes to the flash area into DDR3.
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -10,12 +11,20 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
 //
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: flash area layout docs/zn2_layer_design.md 13.4; integration
+//           docs/ddr3_arbiter.md 4. Bench: sim/ddr3arb/ (tb_mirror.cpp),
+//           sim/zoomddr3/.
+//
 // The flash area stays in SDRAM (0x1000000-0x19FFFFF: U30, U27, U56, U55,
 // U29, docs/zn2_layer_design.md 13.4) for the main CPU, and the Taito Zoom
-// reads U27 and the waves from a copy in DDR3 at the same offset in the
-// core's window (byte 0x31000000 + offset, docs/ddr3_bandwidth.md 5.1 on
-// branch ddr3-bandwidth). Every channel 3 write into the area (the MRA flash
-// download and the glue's flash programming) is copied here.
+// reads U27 and the waves from a copy in DDR3: SDRAM byte address A goes to
+// DDR3 byte 0x30000000 + A (the core's DDR3 window, docs/ddr3_arbiter.md 4;
+// the map was worked out in docs/ddr3_bandwidth.md 5.1, on development
+// branch ddr3-bandwidth, not in this tree), so the area starts at byte
+// 0x31000000, gnet_ddr3_arb's ZQBASE. Every channel 3 write into the area
+// (the MRA flash download and the glue's flash programming) is copied here.
 //
 // Source side (clk_src, sdram.sv's clk_base): w_req is the one-cycle request
 // of a channel 3 write (zn2_ch3_arb ch3_req with ch3_rnw = 0), w_addr a byte
@@ -68,6 +77,10 @@ module gnet_ddr3_mirror #(
     // source side
     wire         hit   = w_req && w_addr >= LO && w_addr < HI;
     wire [AW:0]  level = wp - g2b(cdc_rx_s2_rptr);
+    // stall at four free slots or fewer. zn2_ch3_arb has one request open at
+    // a time and checks stall before starting the next, so at most one more
+    // write arrives after stall rises; level uses the synchronised (late)
+    // read pointer, so it never reads low. A margin, not a tight bound.
     assign stall = level >= (AW + 1)'(D - 4);
     always_ff @(posedge clk_src) begin
         cdc_rx_s1_rptr <= cdc_tx_rptr; cdc_rx_s2_rptr <= cdc_rx_s1_rptr;
@@ -87,6 +100,8 @@ module gnet_ddr3_mirror #(
     logic        hv = 1'b0;
     wire         pop = hv && !g_busy;
     assign g_we   = hv;
+    // 29'h6000000 = the core's DDR3 window base, byte 0x30000000; keep in
+    // step with gnet_ddr3_arb.sv ZQBASE
     assign g_addr = 29'h6000000 + {5'd0, h[60:37]};          // window base + addr[26:3]
     assign g_din  = {2{h[35:4]}};
     assign g_be   = h[36] ? {h[3:0], 4'b0000} : {4'b0000, h[3:0]};

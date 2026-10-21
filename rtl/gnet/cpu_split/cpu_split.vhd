@@ -1,3 +1,23 @@
+-- cpu_split: crossing layer between the CPU group and the PS1 group (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: reproduces at the boundary the timing of PSX_MiSTer's psx_top.vhd
+--           wiring (cd17b5a); no board behaviour of its own.
+-- Design: docs/r1_cpu_domain_design.md, P2 and "Steps 4 and 5".
+--         Bench: sim/cpu50/ (tb_cpu_split.vhd)
+--
 -- Crossing layer between the CPU group (clk_cpu, clk_cpu2x) and the PS1 group
 -- (clk1x, clk2x) for psx_top's CPU_CLK_SPLIT = 1 (docs/r1_cpu_domain_design.md,
 -- "Plan for exactly 50.000 MHz", P2 and P3, and the section on this step).
@@ -15,7 +35,11 @@
 --              the PS1 group; allowunpause and the GPU/SPU idle flags back
 --   C17        top-level reset and pause into the CPU group, reset_exe out,
 --              the engine's reset pulses in (cpu_reset_fill), the zero fill
---   C20        error flags both ways (debug overlay)
+--   errors     the error flags to the CPU group with the C16 levels, and the
+--              error display word (errorEna, errorCode, debugmodeOn) back
+--              through cdc_bus_sync, for PSX_MiSTer's error overlay (gpu.vhd
+--              errorOn; PSX.sv ties it off in GNET_LEAN builds such as the
+--              release). Not the G-NET Debug overlay (zn_dbg_overlay.vhd).
 --   P3         tick_accum: 33.8688 MHz-equivalent sys_tick on clk_cpu
 --   index      clk2xIndex and clk3xIndex for the GTE and the DMA FIFO,
 --              generated from clk_cpu / clk_cpu2x as psx_top does from
@@ -95,7 +119,7 @@ entity cpu_split is
       c_gpu_idle           : out std_logic;
       c_spu_idle           : out std_logic;
 
-      -- errors (debug overlay)
+      -- errors (PSX_MiSTer's error overlay, not the G-NET Debug overlay)
       p_err                : in  std_logic_vector(6 downto 0);  -- LINE RECT POLY GPU MASK GPUFIFO SPUTIME
       c_err                : out std_logic_vector(6 downto 0);
       c_err_disp           : in  std_logic_vector(5 downto 0);  -- errorEna, errorCode, debugmodeOn
@@ -173,7 +197,9 @@ end entity;
 
 architecture rtl of cpu_split is
 
-   -- PS1-side registers whose outputs cross (cdc_tx_*, cdc.sdc)
+   -- registers whose outputs cross, in both directions (cdc_tx_*, cdc.sdc):
+   -- cdc_tx_top and cdc_tx_p_lvl on clk1x, cdc_tx_fillreq on clk2x,
+   -- cdc_tx_c_lvl, cdc_tx_disp and cdc_tx_filldone on clk_cpu
    signal cdc_tx_top     : std_logic_vector(1 downto 0) := (others => '0');  -- reset, pause
    signal cdc_tx_p_lvl   : std_logic_vector(14 downto 0) := (others => '0');
    signal cdc_tx_c_lvl   : std_logic_vector(7 downto 0) := (others => '0');
@@ -313,6 +339,8 @@ begin
          busy         => fill_busy);
    c_reset_intern <= c_reset_intern_i;
 
+   -- savestates.vhd write enables by save type: bit 16 main RAM, bit 12 the
+   -- scratchpad (cpu_reset_fill.vhd header)
    c_SS_wren <= ss_wr_ram & "000" & ss_wr_scp & "000000000000";
 
    u_filldone : entity work.cdc_sync
@@ -344,11 +372,12 @@ begin
    c_hblank_tmr        <= p_lvl_s(9);
    c_vblank_tmr        <= p_lvl_s(8);
    c_irq_VBLANK        <= p_lvl_s(7);
-   -- error flags only light the debug overlay (off in G-NET builds); a
-   -- one-cycle error pulse can be missed. Bridge overflows count as GPUFIFO.
+   -- error flags only light PSX_MiSTer's error overlay (errorOn, tied off in
+   -- GNET_LEAN builds; not the G-NET Debug overlay); a one-cycle error pulse
+   -- can be missed. Bridge overflows count as GPUFIFO.
    c_err <= p_lvl_s(6 downto 2) & (p_lvl_s(1) or gpu_ovf or spu_ovf) & p_lvl_s(0);
 
-   -- CPU -> PS1
+   -- CPU -> PS1 (bit 0 is a constant spare; c_lvl_s(0) is not used)
    process (clk_cpu)
    begin
       if rising_edge(clk_cpu) then

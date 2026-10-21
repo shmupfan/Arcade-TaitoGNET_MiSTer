@@ -1,12 +1,19 @@
 //============================================================================
 //  G-NET core: OSD CRT H/V position (moves the sync pulses only)
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
 //  Software Foundation; either version 2 of the License, or (at your option)
 //  any later version.
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: the source raster is PSX_MiSTer's rtl/gpu_videoout_async.vhd
+//           (clkDiv per hResMode, htotal 3413, hsync 252 clocks, vtotal 263);
+//           OSD behaviour from docs/m4_shell.md 8. Bench: sim/shell/run_crt_pos.sh.
 //
 // Minimum standard: CRT H/V position moves the sync pulses, never the
 // picture, the totals or the game's timing, and the new setting is taken at
@@ -45,7 +52,8 @@ module gnet_crt_pos
 	output            vs_o
 );
 
-// clocks per dot of the current mode
+// clocks per dot of the current mode (gpu_videoout_async.vhd's clkDiv for
+// each hResMode)
 reg [3:0] dot;
 always @(*) begin
 	case (hres)
@@ -61,6 +69,9 @@ reg        hs_q = 1'b0, vs_q = 1'b0;
 wire       hs_rise = hs & ~hs_q;
 wire       vs_rise = vs & ~vs_q;
 
+// power-up values until the first measurement: the 240p NTSC raster of
+// gpu_videoout_async.vhd (htotal 3413, hsync_end 252, vtotal 263); vs_lines
+// 3 as the source's 3-line vsync (gnet_sync_keeper.sv describes the raster)
 reg [11:0] hc = 12'd0;          // clocks since the source hsync rose
 reg [11:0] line_len = 12'd3413; // measured source line
 reg [11:0] hs_len = 12'd252;    // measured source hsync width

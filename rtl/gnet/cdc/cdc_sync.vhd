@@ -1,3 +1,23 @@
+-- cdc_sync: level synchroniser (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: none needed; a clock-crossing building block that models no board
+--           behaviour.
+-- Design: docs/r1_cpu_domain_design.md, "CDC building blocks".
+--         Bench: sim/cdc/tb_cdc_sync.vhd
+--
 -- Level synchroniser: WIDTH independent bits, each through STAGES flip-flops
 -- in the destination clock (two by default). Use it for single-bit levels and
 -- for groups whose bits are independent (each bit may arrive one cycle
@@ -7,8 +27,9 @@
 -- Latency: the output changes on destination edge 2 after the source edge
 -- (edge 3 if the first stage resolves late), STAGES in general.
 --
--- STAGES = 0 bypasses the synchroniser; it exists only for the negative
--- control benches and must not be used in the design.
+-- STAGES = 0 bypasses the synchroniser; it is a negative control, bench only
+-- (sim/cdc), and no design instance sets it. STAGES = 1 is accepted but
+-- leaves no settling stage; every design instance uses the default 2.
 
 library ieee;
 use ieee.std_logic_1164.all;

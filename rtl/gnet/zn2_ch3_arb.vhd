@@ -1,8 +1,9 @@
--- SDRAM channel 3 shared by up to three requesters on clk_cpu (PSX.sv, GNET_ZN2 with
--- GNET_CPU50; docs/r1_cpu_domain_design.md, section on the ZN-2 layer in the
--- CPU group).
+-- zn2_ch3_arb: SDRAM channel 3 shared by up to three requesters on clk_cpu
+-- (Taito G-NET core; PSX.sv, GNET_ZN2 with GNET_CPU50;
+-- docs/r1_cpu_domain_design.md, section on the ZN-2 layer in the CPU group).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -12,14 +13,23 @@
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
 --
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). Evidence: sdram.sv's channel 3 protocol (PSX_MiSTer).
+--
 --   a: the downloads (BIOS, flash images), from the clk_1x side through
 --      PSX.sv's ch3 cdc_handshake (dst_valid pulse, data held until the next
 --      dst_valid, answered by a_ready)
 --   b: zn2_board's flash storage port (fl_req pulse, fields held until the
 --      next request, answered by fl_ready)
---   c: the Taito Zoom board's flash area reads (rtl/gnet/zoom_cdc.vhd, two
---      32-bit reads per 64-bit line, byte enables 1111; same protocol as b).
---      Unused (c_req = '0') in builds without the Zoom.
+--   c: the Taito Zoom board's flash area reads through
+--      rtl/gnet/zoom_sdram_link.vhd (two 32-bit reads per 64-bit line, byte
+--      enables 1111; same protocol as b). Connected only by the archived
+--      experiment revision GNET_Z1_ZOOM (PSX.sv macro GNET_ZOOM_SDRAM, tag
+--      experiments-archive) and the sim/zoomlink benches; in PSX.sv,
+--      the release build (GNET_Z1FULLR, Zoom flash reads through the DDR3
+--      arbiter) included, c is left at its defaults (c_req = '0').
+-- stall (GNET_DDR3_ARB builds, the release included) holds off new requests
+-- while gnet_ddr3_mirror's FIFO is nearly full.
 -- All are pulse requesters that wait for their answer, so each has at most
 -- one request open. One request goes to sdram.sv at a time: the fields are
 -- registered and held until ch3_ready, which sdram.sv needs (it copies

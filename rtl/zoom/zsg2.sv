@@ -1,3 +1,27 @@
+// zsg2: Zoom ZSG-2 wavetable chip (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 zsg2.cpp (behaviour; there is no ZSG-2 data sheet) and
+//           MAME commit 61c7940 for register 0xB. zsg2.cpp:N below are MAME
+//           0.288 line numbers; 61c7940 differs only in the register 0xB read
+//           (0.288 lines 477-480), so from line 481 on its numbers are one
+//           lower.
+// Design: docs/zoom_zsg2_tms57002_design.md 3 and 6.2 ("design study" below),
+//         docs/zsg2_rtl.md.
+// Bench: sim/zsg2/ (replay against MAME).
+//
 // Zoom ZSG-2 wavetable chip for the Taito Zoom sound board (G-NET core).
 // Written from docs/zoom_zsg2_tms57002_design.md (sections 3 and 6.2) and
 // the behaviour of MAME's zsg2.cpp (0.288 and commit 61c7940); status and
@@ -457,6 +481,14 @@ module zsg2 #(
             end
 
             // ---------------- apply one CPU write ----------------
+            // Word offsets below 0x300 are channel registers (channel = offset >> 4,
+            // register = offset & 0xF; 0x9, 0xB and 0xF also update the channel
+            // state RAM); from 0x300 the control registers, offset - 0x300: 0x00-0x02
+            // key on and 0x04-0x06 key off (one bit per channel of a group of 16),
+            // 0x1C / 0x1D ROM readback address low / high; the other control
+            // registers below 0x20 are only stored (MAME m_reg) and read back
+            // (MAME 0.288 zsg2.cpp:514-607, control_w and control_r;
+            // docs/zoom_zsg2_tms57002_design.md 3.1).
             S_AP: begin
                 st <= S_IDLE;
                 if (ea < 10'h300) begin
@@ -516,6 +548,9 @@ module zsg2 #(
             end
 
             // ---------------- CPU read ----------------
+            // Control reads (zsg2.cpp control_r): 0x1E / 0x1F ROM readback data,
+            // 0x14 and anything from 0x20 read 0; channel register 0x3 carries the
+            // channel's active bit in bit 15, 0xB reads the volume >> READB_SHIFT.
             S_CRD0: begin
                 if (ca >= 10'h300 && (ca[7:0] == 8'h1e || ca[7:0] == 8'h1f)) st <= S_CRD_RB;
                 else if (ca >= 10'h300 && (ca[7:0] >= 8'h20 || ca[7:0] == 8'h14)) begin

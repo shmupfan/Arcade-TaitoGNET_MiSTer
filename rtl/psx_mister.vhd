@@ -1,3 +1,18 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: passes psx_top's new generics, the CPU group clocks (clk_cpu,
+-- clk_cpu2x, clk_cpu3x) and the zn_* / zoom_* board ports through
+-- unchanged and adds no logic. Each generic's default here equals
+-- psx_top's (upstream behaviour); psx_top documents them.
+-- G-NET commits (development repository hashes): 475d621, c71a991
+-- (2026-10-04); 3d186b7, 67a3f97, 338def1, f0cd555, 41d4fb3, 34a221b,
+-- b41a76d, 72dccbc (2026-10-05); 8701d1f, 0fd0608, d965cae, c4f13c6
+-- (2026-10-06); 864cc5e (2026-10-14, issue #5); 1c8a8bd (2026-10-14,
+-- issue #6); 771b9fe (2026-10-15); db78699 (2026-10-20, area switches
+-- HAS_DCACHE and ZN2_DBG).
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;     
@@ -6,12 +21,14 @@ entity psx_mister is
    generic
    (
       is_simu               : std_logic := '0';
-      -- G-NET trim switches, passed to psx_top (1 = upstream default)
+      -- G-NET: generics passed to psx_top unchanged, defaults as psx_top's;
+      -- trim switches first (1 = upstream default)
       HAS_CD                : integer := 1;
       HAS_PADS              : integer := 1;
       HAS_SAVESTATES        : integer := 1;
       HAS_CHEATS            : integer := 1;
       HAS_MDEC              : integer := 1;
+      HAS_DCACHE            : integer := 1;    -- psx_top / cpu.vhd: 0 = no turbo data cache (TURBO_CACHE must be 0, docs/area.md)
       VRAM_Y_BITS           : integer := 9;
       RECT_FLIP             : integer := 0;    -- psx_top RECT_FLIP: textured rectangle X/Y flip (E1 bits 12/13)
       GTE_NARROW_MUL        : integer := 0;
@@ -21,17 +38,19 @@ entity psx_mister is
       TEX_MISS_DELAY        : integer := 0;
       CLK_FAST_RATIO        : integer := 3;
       CPU_CLK_SPLIT         : integer := 0;    -- psx_top: 1 = CPU group on clk_cpu/clk_cpu2x/clk_cpu3x
-      -- G-NET ZN-2 board (psx_top ZN2_BOARD), 0 = upstream
+      -- G-NET: ZN-2 board (psx_top ZN2_BOARD), 0 = upstream
       ZN2_BOARD             : integer := 0;
       ZN2_FLASH_PRESET      : integer := 1;
       ZN2_PS1_SIO           : integer := 0;
       ZN2_SPU_STATUS        : integer := 0;
       ZN2_WD_TIMEOUT_S      : integer := 8;    -- MB3773 watchdog period in seconds (gnet_ctrl.sv)
+      ZN2_DBG               : integer := 1;    -- psx_top: 0 = no debug overlay capture block (docs/area.md)
       ZOOM_BOARD            : integer := 0;    -- psx_top ZOOM_BOARD: Taito Zoom sound board
       ZOOM_INFL             : integer := 4;
       ZN2_READ_OVERLAP      : integer := 0;    -- psx_top: 1 = ZN-2 read request overlaps the read delay
       RAM_READ_NOWAIT       : integer := 0;    -- psx_top: 1 = main RAM data reads skip WAITFORRAMREAD (2:1 only)
-      RAM_LOAD_WINDOW       : integer := 7     -- psx_top: memorymux back-to-back read window (7 = upstream)
+      RAM_LOAD_WINDOW       : integer := 7;    -- psx_top: memorymux back-to-back read window (7 = upstream)
+      CARD_JOURNAL          : integer := 0     -- psx_top: 1 = card hunk journal read client (issue #9)
    );
    port 
    (
@@ -39,7 +58,7 @@ entity psx_mister is
       clk2x                 : in  std_logic;  
       clk3x                 : in  std_logic;  
       clkvid                : in  std_logic;  
-      -- CPU group clocks (psx_top CPU_CLK_SPLIT): the clk1x, clk2x and clk3x
+      -- G-NET: CPU group clocks (psx_top CPU_CLK_SPLIT): the clk1x, clk2x and clk3x
       -- signals when CPU_CLK_SPLIT = 0
       clk_cpu               : in  std_logic;
       clk_cpu2x             : in  std_logic;
@@ -313,7 +332,7 @@ entity psx_mister is
       Cheats_Bus_ena        : out    std_logic := '0';
       Cheats_BusReadData    : in     std_logic_vector(31 downto 0);
       Cheats_BusDone        : in     std_logic;
-      -- G-NET (ZN2_BOARD = 1), see psx_top
+      -- G-NET: ZN-2 board ports (ZN2_BOARD = 1), see psx_top
       zn_in_p1              : in  std_logic_vector(7 downto 0) := x"FF";
       zn_in_p2              : in  std_logic_vector(7 downto 0) := x"FF";
       zn_in_service         : in  std_logic_vector(7 downto 0) := x"FF";
@@ -351,7 +370,14 @@ entity psx_mister is
       zn_nv_addr            : in  unsigned(9 downto 0) := (others => '0');
       zn_nv_q               : out std_logic_vector(15 downto 0);
       zn_nv_wtog            : out std_logic;
-      -- Taito Zoom (ZOOM_BOARD = 1), see psx_top
+      -- G-NET: card hunk journal (issue #9, rtl/gnet/gnet_card_journal.sv)
+      zn_cj_tog             : out std_logic;
+      zn_cj_hunk            : out std_logic_vector(13 downto 0);
+      zn_cj_rd_req          : in  std_logic := '0';
+      zn_cj_rd_line         : in  std_logic_vector(22 downto 0) := (others => '0');
+      zn_cj_rd_ack          : out std_logic;
+      zn_cj_rd_data         : out std_logic_vector(63 downto 0);
+      -- G-NET: Taito Zoom (ZOOM_BOARD = 1), see psx_top
       zoom_m_req            : out std_logic;
       zoom_m_line           : out std_logic_vector(20 downto 0);
       zoom_m_ready          : in  std_logic := '0';
@@ -379,11 +405,13 @@ begin
    generic map
    (
       is_simu               => is_simu,
+      -- G-NET: generics passed through
       HAS_CD                => HAS_CD,
       HAS_PADS              => HAS_PADS,
       HAS_SAVESTATES        => HAS_SAVESTATES,
       HAS_CHEATS            => HAS_CHEATS,
       HAS_MDEC              => HAS_MDEC,
+      HAS_DCACHE            => HAS_DCACHE,
       VRAM_Y_BITS           => VRAM_Y_BITS,
       RECT_FLIP             => RECT_FLIP,
       GPU_READ_INFL         => GPU_READ_INFL,
@@ -398,11 +426,13 @@ begin
       ZN2_PS1_SIO           => ZN2_PS1_SIO,
       ZN2_SPU_STATUS        => ZN2_SPU_STATUS,
       ZN2_WD_TIMEOUT_S      => ZN2_WD_TIMEOUT_S,
+      ZN2_DBG               => ZN2_DBG,
       ZOOM_BOARD            => ZOOM_BOARD,
       ZOOM_INFL             => ZOOM_INFL,
       ZN2_READ_OVERLAP      => ZN2_READ_OVERLAP,
       RAM_READ_NOWAIT       => RAM_READ_NOWAIT,
-      RAM_LOAD_WINDOW       => RAM_LOAD_WINDOW
+      RAM_LOAD_WINDOW       => RAM_LOAD_WINDOW,
+      CARD_JOURNAL          => CARD_JOURNAL
    )
    port map
    (
@@ -410,6 +440,7 @@ begin
       clk2x                 => clk2x,          
       clk3x                 => clk3x,          
       clkvid                => clkvid,          
+      -- G-NET: CPU group clocks
       clk_cpu               => clk_cpu,
       clk_cpu2x             => clk_cpu2x,
       clk_cpu3x             => clk_cpu3x,
@@ -767,6 +798,7 @@ begin
       Cheats_Bus_ena        => Cheats_Bus_ena,
       Cheats_BusReadData    => Cheats_BusReadData,
       Cheats_BusDone        => Cheats_BusDone,
+      -- G-NET: ZN-2 board and Taito Zoom ports passed through
       zn_in_p1              => zn_in_p1,
       zn_in_p2              => zn_in_p2,
       zn_in_service         => zn_in_service,
@@ -804,6 +836,12 @@ begin
       zn_nv_addr            => zn_nv_addr,
       zn_nv_q               => zn_nv_q,
       zn_nv_wtog            => zn_nv_wtog,
+      zn_cj_tog             => zn_cj_tog,
+      zn_cj_hunk            => zn_cj_hunk,
+      zn_cj_rd_req          => zn_cj_rd_req,
+      zn_cj_rd_line         => zn_cj_rd_line,
+      zn_cj_rd_ack          => zn_cj_rd_ack,
+      zn_cj_rd_data         => zn_cj_rd_data,
       zoom_m_req            => zoom_m_req,
       zoom_m_line           => zoom_m_line,
       zoom_m_ready          => zoom_m_ready,

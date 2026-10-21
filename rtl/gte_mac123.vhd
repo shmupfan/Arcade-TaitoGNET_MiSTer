@@ -1,3 +1,16 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic NARROW_MUL (default 0 = upstream 32x32 multiply) and input
+-- MACmul. 3, the release setting, registers the product in the request cycle
+-- so the trigger cycle only selects and adds (GTE at 100 MHz,
+-- docs/cpu_rate_probe.md, "GTE at 100 MHz with unchanged results and
+-- counts"). 1 and 2 are narrow multiply options used only by experiment
+-- revisions.
+-- G-NET commits: 3d186b7 (2026-10-05) NARROW_MUL option (1); e0bed57
+-- (2026-10-05) NARROW_MUL = 2; 92ae3a6 (2026-10-05) NARROW_MUL = 3.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -8,13 +21,15 @@ use work.pGTE.all;
 entity gte_mac123 is
    generic
    (
-      -- 1 = G-NET timing option: every request gte.vhd makes is either two
+      -- G-NET: 1 = timing option: every request gte.vhd makes is either two
       -- operands that fit 18 bits signed (16-bit registers, 8-bit colours) or
       -- a wide operand times 1, 10h, 1000h or 10000h. The product is then an
       -- 18x18 multiply or a shift, equal to the 32x32 multiply for those
       -- requests, and shorter in time. 0 = upstream 32x32 multiply.
       -- 2 = as 1, with the add done for both products in parallel and the
       -- select after the adders (moves the select out of the multiply path).
+      -- 1 and 2 are used only by experiment revisions (GNET_B1*, GNET_Z1,
+      -- GNET_F0_CPU50C4, GNET_F0_CPU50E*), not by the release.
       -- 3 = G-NET 100 MHz option: gte.vhd presents the 18x18 operands (or the
       -- shifted wide operand) in MACmul in the cycle that writes the request;
       -- the product is registered then, so the trigger cycle only selects and
@@ -35,7 +50,7 @@ entity gte_mac123 is
       flagMacUF      : out std_logic;
       flagMacOF      : out std_logic;
       flagIR         : out std_logic;
-      MACmul         : in  tMAC123mul := MAC123mul_none
+      MACmul         : in  tMAC123mul := MAC123mul_none   -- G-NET: NARROW_MUL = 3 operands
    );
 end entity;
 
@@ -53,7 +68,7 @@ architecture arch of gte_mac123 is
    signal satIR_1       : std_logic; 
    signal satIRFlag_1   : std_logic; 
 
-   -- NARROW_MUL = 3
+   -- G-NET: NARROW_MUL = 3
    signal prodN3        : signed(35 downto 0);
    signal prodS3        : signed(44 downto 0);
    signal isShift3      : std_logic;
@@ -67,6 +82,7 @@ begin
       variable macResult : signed(44 downto 0);
       variable addVal    : signed(44 downto 0);
       variable IRresult  : signed(31 downto 0);
+      -- G-NET: NARROW_MUL 2 and 3
       variable prodN     : signed(44 downto 0);
       variable prodS     : signed(44 downto 0);
       variable isShift   : boolean;
@@ -90,6 +106,7 @@ begin
          ir_writeback   <= '0';
          checkOvf       <= '0';
          
+         -- G-NET: NARROW_MUL = 3, product registered in the request cycle
          if (NARROW_MUL = 3 and MACmul.ena = '1') then
             prodN3   <= MACmul.mul1 * MACmul.mul2;
             prodS3   <= MACmul.shifted;
@@ -99,6 +116,7 @@ begin
          if (MACreq.trigger = '1') then
             macLast   <= macResult_1;
          
+            -- G-NET: 0 = upstream multiply; 1 = 18x18 multiply or shift (experiment revisions only)
             if (NARROW_MUL = 0) then
                macResult := resize(MACreq.mul1 * MACreq.mul2, 45);
             elsif (NARROW_MUL = 1) then
@@ -117,7 +135,7 @@ begin
             end if;
          
             if (NARROW_MUL = 3) then
-               -- a + p, a - p = a + not p + 1, p - a = p + not a + 1: one adder
+               -- G-NET: NARROW_MUL = 3. a + p, a - p = a + not p + 1, p - a = p + not a + 1: one adder
                if (isShift3 = '1') then
                   opP := prodS3;
                else
@@ -132,6 +150,7 @@ begin
                end if;
                sum46     := (opA & '1') + (opP & MACreq.sub);
                macResult := sum46(45 downto 1);
+            -- G-NET: NARROW_MUL = 2 (experiment revisions only)
             elsif (NARROW_MUL = 2) then
                isShift := true;
                case (MACreq.mul2) is

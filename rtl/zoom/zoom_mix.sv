@@ -1,3 +1,24 @@
+// zoom_mix: G-NET audio mix of the PSX SPU and the Taito Zoom board (Taito
+// G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taitogn.cpp:441-448 (speaker routes 0.3 and 1.0),
+//           spu.cpp, tms57002.cpp:933-936.
+// Design: docs/zoom_board_design.md 7.3.
+// Bench: sim/zoommix/.
+//
 // G-NET audio mix: PSX SPU and Taito Zoom (docs/zoom_board_design.md 7.3).
 //
 // MAME routes the SPU to the speaker at 0.3 and the Zoom at 1.0
@@ -14,9 +35,17 @@
 // unsigned Q16 (65536 = 1.0). Each input is held between its own sample
 // ticks and the sum is formed every clock, saturated to 16 bits; MiSTer's
 // audio_out resamples the result.
+//
+// Output level (2026-10-21): with the MAME gains alone the core played about
+// 7 to 17 dB under the mister-core reference (-16.4 dBFS, 1 s RMS median),
+// measured in full-system simulation on six sets (intros and attract, no
+// peak above -9.9 dBFS). OUT_SHIFT = 15 (the default) doubles the whole mix
+// (+6.02 dB), which keeps every SFX level ratio and left the loudest
+// measured content (Psyvariar) peaking at -3.9 dBFS; 16 is the MAME scale.
 module zoom_mix #(
     parameter int G_SPU  = 19661,       // 0.3
-    parameter int G_ZOOM = 65536        // 1.0
+    parameter int G_ZOOM = 65536,       // 1.0
+    parameter int OUT_SHIFT = 15        // 16: MAME scale; 15: +6.02 dB (see above)
 ) (
     input  logic               clk,
     input  logic        [2:0]  spu_lvl,
@@ -46,7 +75,7 @@ module zoom_mix #(
                                                input logic signed [18:0] k);
         logic signed [39:0] t;
         t = s * k + z * K_ZOOM;
-        t = t >>> 16;
+        t = t >>> OUT_SHIFT;
         // limits as bit patterns: -16'sd32768 negates 32768, which does not fit
         // a signed 16-bit literal (Quartus 10259 constant value overflow)
         if (t > 40'sd32767) mix = 16'sh7FFF;

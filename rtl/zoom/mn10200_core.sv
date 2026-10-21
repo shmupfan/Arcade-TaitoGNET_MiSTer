@@ -1,9 +1,41 @@
+// mn10200_core: MN10200 (MN1020012A) CPU core: sequencer, register file,
+// ALU, multiply and divide, bus interface (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MN102L Instruction Manual 12250-030E and MN102H60G LSI User's
+//           Manual 22360-014E (docs/evidence_sources.md); MAME 0.288
+//           src/devices/cpu/mn10200/mn10200.cpp where the manuals are silent
+//           or the MN1020012A differs.
+// Design: docs/mn10200_design.md 5 ("design study" below),
+//         docs/mn10200_rtl.md 3.1.
+// Bench: sim/mn10200/.
+//
 // Panasonic MN10200 (MN1020012A) CPU core for the Taito Zoom sound board.
 // Own implementation from docs/mn10200_design.md (section 5); no code from
 // other MN10200 cores.
 //
-// Multi-cycle sequencer: BOUND (interrupt sample) -> FETCH -> DEC (ROM) ->
-// EXEC (+ MEM / MD steps) -> RET. Each instruction retires the manual's
+// Multi-cycle sequencer (state names as in the code): S_CLR clears the
+// register file after reset; S_FETCH fetches the instruction bytes while the
+// decode ROM looks them up (dec_cnt), then waits at the instruction boundary
+// (at_bound) until the timers have stepped the previous instruction, the
+// pacer allows (go) and hold is low, and samples interrupts there, after
+// fetch and decode. An interrupt entry pushes PC and PSW (S_MEM, S_IRQ1)
+// and loads the vector (S_IRQ2). Execution: S_EXEC, then as the instruction
+// needs S_MEM (bus access), S_PUSH, S_EXEC2, S_EXEC3 (RTI) and S_MD / S_MDF
+// (multiply and divide); S_RET retires the instruction and returns to
+// S_FETCH. Each instruction retires the manual's
 // minimum cycle count (MN102L manual pp.145-151, design study 2.4) as
 // virtual machine cycles on retire/retire_cyc; the peripheral block steps
 // its timers by them and the pacer in mn10200.sv locks them to real time.
@@ -15,7 +47,8 @@
 module mn10200_core #(
     parameter FORM_HEX = "rtl/zoom/mn10200_form.hex",
     parameter CTL_HEX  = "rtl/zoom/mn10200_ctl.hex",
-    parameter DEBUG    = 1,       // 0: no cumulative cycle counter (dbg_cycles = 0)
+    parameter DEBUG    = 1,       // 0: no cumulative cycle counter (dbg_cycles = 0); default for the benches,
+                                  // the release passes 0 (zoom_board)
     parameter RF_MLAB  = 1,       // register file in MLAB (1) or flip-flops (0)
     parameter PIPE     = 0        // 1: extra registers for a 67.7 MHz clock (docs/zoom_board_design.md 6.5):
                                   // decode fields, DIVU overflow compare and the interrupt
@@ -53,7 +86,8 @@ module mn10200_core #(
     output logic [4:0]  retire_cyc,     // its cycles (+7 after interrupt entry)
     input  logic        tmr_busy,       // peripherals still stepping cycles
     input  logic        go,             // pacer credit
-    input  logic        hold,           // testbench: stay at the boundary
+    input  logic        hold,           // stay at the boundary: the core pause in the release (mn10200 dbg_hold),
+                                        // a stop point in the benches
     output logic [4:0]  acc_cyc,        // cycles of the instruction in EXEC/MEM, with a pending
                                         // interrupt entry: MAME charges them before the access
     // debug / trace port (design study 5.8)

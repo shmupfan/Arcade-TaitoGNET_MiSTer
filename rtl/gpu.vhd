@@ -1,3 +1,24 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic VRAM_Y_BITS (default 9 = upstream, 1 MB VRAM; 10 = the
+-- ZN-2 CXD8654Q GPU with 2 MB VRAM, docs/m1_gpu_zn2.md 2b), the widths and
+-- write FIFO layout that follow from it, and GP1(10h) index 7 answering 2
+-- at VRAM_Y_BITS 10 as the CXD8654Q in MAME. Generic RECT_FLIP (default 0 =
+-- upstream) passed to gpu_rect (issue #6, docs/m1_gpu_zn2.md 6). Generics
+-- GPU_READ_INFL, TEX_FETCH_QW, TEX_FETCH_ROWS (default 1 = upstream) and
+-- TEX_MISS_DELAY (default 0 = upstream): posted pixel writes while a read
+-- waits, texture cache fills of 4 qwords and further rows, and a calibrated
+-- wait per fill, for the DDR3 VRAM latency (docs/gpu_read_infl.md 3, 9, 10).
+-- One known slip at the 480p interlace hack is noted where it is.
+-- G-NET commits: c71a991 (2026-10-04) 2 MB VRAM behind VRAM_Y_BITS;
+-- e775367 (2026-10-05) GP1(10h) index 7; 864ae50 (2026-10-06) GPU read
+-- latency on DDR3 (GPU_READ_INFL, TEX_FETCH_QW, TEX_FETCH_ROWS); 1c8a8bd
+-- (2026-10-14) rectangle flip, issue #6; 771b9fe (2026-10-15) TEX_MISS_DELAY.
+-- Every change is marked "G-NET:" below, except the width expressions in
+-- VRAM_Y_BITS that replace upstream's fixed Y widths (9 gives the upstream
+-- widths). Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -9,9 +30,9 @@ use work.pGPU.all;
 entity gpu is
    generic
    (
-      VRAM_Y_BITS          : integer := 9;  -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
-      RECT_FLIP            : integer := 0;  -- 1 = textured rectangle X/Y flip, E1 bits 12/13 (gpu_rect.vhd); 0 = upstream PS1
-      -- G-NET (docs/gpu_read_infl.md): 1 = upstream, one VRAM transaction at a
+      VRAM_Y_BITS          : integer := 9;  -- G-NET: 9 = PS1 (1 MB VRAM, upstream), 10 = ZN-2 CXD8654Q (2 MB)
+      RECT_FLIP            : integer := 0;  -- G-NET: 1 = textured rectangle X/Y flip, E1 bits 12/13 (gpu_rect.vhd); 0 = upstream PS1
+      -- G-NET: docs/gpu_read_infl.md. 1 = upstream, one VRAM transaction at a
       -- time. 2 or more: pixel writes waiting in the output FIFO go to VRAM
       -- while a single-burst read waits for its data (the read was accepted
       -- first and the port answers in order, so it returns the same data as
@@ -247,7 +268,7 @@ architecture arch of gpu is
    signal pixel64data               : std_logic_vector(63 downto 0) := (others => '0');
    signal pixel64data2              : std_logic_vector(63 downto 0) := (others => '0');
    signal pixel64wordEna            : std_logic_vector(3 downto 0) := (others => '0');
-   -- write FIFO layout: data 63..0, 64-bit word address (Y + X/4 bits), 4 word
+   -- G-NET: write FIFO layout: data 63..0, 64-bit word address (Y + X/4 bits), 4 word
    -- enables, source flag; the address width follows VRAM_Y_BITS
    constant PA_W      : integer := VRAM_Y_BITS + 8;
    constant F_ADDR_HI : integer := 63 + PA_W;
@@ -413,12 +434,15 @@ architecture arch of gpu is
       
    -- FIFO OUT 
    signal fifoOut_reset             : std_logic; 
+   -- G-NET: FIFO width F_SRC + 1 (86 bits at VRAM_Y_BITS 9, as upstream)
    signal fifoOut_Din               : std_logic_vector(F_SRC downto 0);
    signal fifoOut_Wr                : std_logic; 
    signal fifoOut_Wr_1              : std_logic; 
    signal fifoOut_NearFull          : std_logic;
+   -- G-NET: F_SRC + 1 bits
    signal fifoOut_Dout              : std_logic_vector(F_SRC downto 0);
    signal fifoOut_Rd                : std_logic;
+   -- G-NET: posted writes (GPU_READ_INFL) and further texture row reads (TEX_FETCH_ROWS), docs/gpu_read_infl.md
    signal postWrite              : std_logic;
    signal pipeline_reqVRAMRows   : unsigned(1 downto 0);
    signal read2pend              : std_logic := '0';   -- further texture row reads still to issue
@@ -457,6 +481,12 @@ architecture arch of gpu is
    signal reqVRAMremain2            : unsigned(7 downto 0);
    signal reqVRAMwait               : unsigned(7 downto 0);
    signal reqVRAMwrap               : unsigned(7 downto 0);
+   -- G-NET: (docs/area_timing.md 9) reqVRAMwrap is computed one clk2x after
+   -- the request from these registered operands, not from the live request
+   -- lines (which pass through the DDR3 arbiter's combinational BUSY)
+   signal reqVRAMwrapPend           : std_logic := '0';
+   signal reqVRAMwrapX              : unsigned(9 downto 0) := (others => '0');
+   signal reqVRAMwrapSize           : unsigned(10 downto 0) := (others => '0');
    signal reqVRAMnext               : unsigned(7 downto 0);
    signal reqVRAMaddr               : unsigned(7 downto 0) := (others => '0');
    signal reqVRAMaddr2              : unsigned(7 downto 0) := (others => '0');
@@ -699,9 +729,11 @@ begin
                               GPUREAD <= x"000" & std_logic_vector(textureWindow);
                            
                            when 3 => --Get Draw Area Top Left
+                              -- G-NET: resize, as Y can be 10 bits (the same word as upstream at VRAM_Y_BITS 9)
                               GPUREAD <= std_logic_vector(resize(drawingAreaTop & drawingAreaLeft, 32));
                            
                            when 4 => --Get Draw Area Bottom Right
+                              -- G-NET: resize, as above
                               GPUREAD <= std_logic_vector(resize(drawingAreaBottom & drawingAreaRight, 32));
                            
                            when 5 => --Get Drawing Offset
@@ -727,7 +759,7 @@ begin
             end if;
             
             -- 480i framebuffer logic
-            frameWriteLineY := unsigned(vram_ADDR(19 downto 11)) - videoout_out.DisplayOffsetY;   -- low 9 bits of Y (fb output only)
+            frameWriteLineY := unsigned(vram_ADDR(19 downto 11)) - videoout_out.DisplayOffsetY;   -- G-NET: low 9 bits of Y (fb output only)
             
             if (vram_we = '1' and frameVramType = '1') then
                if (unsigned(vram_ADDR(19 downto 11)) >= videoout_out.DisplayOffsetY) then
@@ -1062,7 +1094,7 @@ begin
    
    -- workers
    igpu_fillVram : entity work.gpu_fillVram
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk2x                => clk2x,     
@@ -1089,7 +1121,7 @@ begin
    );
    
    igpu_cpu2vram : entity work.gpu_cpu2vram
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk2x                => clk2x,     
@@ -1116,7 +1148,7 @@ begin
    );
    
    igpu_vram2vram : entity work.gpu_vram2vram
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk2x                => clk2x,     
@@ -1166,7 +1198,7 @@ begin
    GPUSTAT_ReadySendVRAM <= not vram2cpu_Fifo_Empty;
    
    igpu_vram2cpu : entity work.gpu_vram2cpu
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk2x                => clk2x,     
@@ -1203,7 +1235,7 @@ begin
    );
    
    igpu_line : entity work.gpu_line
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk2x                => clk2x,     
@@ -1262,7 +1294,7 @@ begin
    );
    
    igpu_rect : entity work.gpu_rect
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP)   -- G-NET: VRAM_Y_BITS, RECT_FLIP
    port map
    (
       clk2x                => clk2x,  
@@ -1272,7 +1304,7 @@ begin
       
       REPRODUCIBLEGPUTIMING=> REPRODUCIBLEGPUTIMING,
       
-      flipX                => drawMode(12),
+      flipX                => drawMode(12),   -- G-NET: RECT_FLIP, E1 bits 12/13
       flipY                => drawMode(13),
       
       error                => errorRECT,
@@ -1325,7 +1357,7 @@ begin
    );
    
    igpu_poly : entity work.gpu_poly
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk2x                => clk2x,     
@@ -1428,7 +1460,7 @@ begin
    
    igpu_pixelpipeline : entity work.gpu_pixelpipeline
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS,
-                 TEX_MISS_DELAY => TEX_MISS_DELAY)
+                 TEX_MISS_DELAY => TEX_MISS_DELAY)   -- G-NET: VRAM_Y_BITS, texture fetch generics
    port map
    (
       clk2x                => clk2x,     
@@ -1471,7 +1503,7 @@ begin
       pipeline_vAcc        => pipeline_vAcc,      
       
       requestVRAMEnable    => pipeline_reqVRAMEnable,
-      requestVRAMRows      => pipeline_reqVRAMRows,
+      requestVRAMRows      => pipeline_reqVRAMRows,   -- G-NET: TEX_FETCH_ROWS
       requestVRAMXPos      => pipeline_reqVRAMXPos,  
       requestVRAMYPos      => pipeline_reqVRAMYPos,  
       requestVRAMSize      => pipeline_reqVRAMSize,  
@@ -1532,6 +1564,7 @@ begin
    generic map
    (
       SIZE             => 256,
+      -- G-NET: PA_W address bits (86 bits in all at VRAM_Y_BITS 9, as upstream)
       DATAWIDTH        => 64 + PA_W + 4 + 1,  -- 64bit data + PA_W bit address + 4bit word enable + 1bit source=pipeline
       NEARFULLDISTANCE => 250
    )
@@ -1642,7 +1675,7 @@ begin
       end if;
    end process;
    
-   -- GPU_READ_INFL > 1: a pixel write may leave the FIFO while a read waits
+   -- G-NET: GPU_READ_INFL > 1: a pixel write may leave the FIFO while a read waits
    -- for its data (READVRAM, its command already accepted, one burst only)
    postWrite <= '1' when (GPU_READ_INFL > 1 and ce = '1' and vramState = READVRAM and vram_RD = '0' and
                           (vram_WE = '0' or vram_BUSY = '0') and fifoOut_Empty = '0' and vram_pause = '0' and
@@ -1706,10 +1739,24 @@ begin
             
             vramState   <= IDLE;
             reqVRAMDone <= '0';
-            
+            reqVRAMwrapPend <= '0'; -- G-NET: wrap stage reset (docs/area_timing.md 9)
+
          else
          
             reqVRAMDone <= '0';
+            
+            -- G-NET: second half of the wrap computation, one clk2x after the
+            -- request was taken in IDLE (same expression, registered operands).
+            -- Nothing reads reqVRAMwrap in that first READVRAM cycle: postWrite
+            -- needs vram_RD = '0' (set to '1' with the request) and the wrap
+            -- burst needs the request's last vram_DOUT_READY beat, which comes
+            -- after the read was accepted, at least one cycle later.
+            reqVRAMwrapPend <= '0';
+            if (reqVRAMwrapPend = '1') then
+               if (reqVRAMwrapX + reqVRAMwrapSize > 1024) then
+                  reqVRAMwrap <= resize(((reqVRAMwrapX + reqVRAMwrapSize) - 1024) / 4, 8);
+               end if;
+            end if;
          
             case (vramState) is
                when IDLE =>
@@ -1725,6 +1772,7 @@ begin
                         end if;
                         if (reqVRAMSizeRounded > 1024) then reqVRAMSizeRounded := to_unsigned(1024, 11); end if;
                         vramState     <= READVRAM;
+                        -- G-NET: 17 - VRAM_Y_BITS zero bits (x"00" at VRAM_Y_BITS 9, as upstream)
                         vram_ADDR     <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & std_logic_vector(reqVRAMYPos) & std_logic_vector(reqVRAMXPos(9 downto 2)) & "000";
                         if (videoout_reqVRAMEnable = '1' and videoout_reqRAMMirror = '1') then
                            vram_ADDR(27 downto 20) <= x"04";
@@ -1751,7 +1799,7 @@ begin
                            reqVRAMremain2 <= reqVRAMSizeRounded(9 downto 2) - 1;
                            reqVRAMnext    <= (others => '0');
                         end if;
-                        -- G-NET 2-row texture fill: the next row's group is
+                        -- G-NET: 2-row texture fill: the next row's group is
                         -- read right behind this one; the beats of both are
                         -- counted as one request
                         read2pend <= '0';
@@ -1763,23 +1811,29 @@ begin
                            -- beats of all rows: 4 per row
                            reqVRAMremain <= resize((resize(pipeline_reqVRAMRows, 4) + 1) & "00", 8) - 1;
                         end if;
-                        reqVRAMwrap <= (others => '0');
-                        if (vram2vram_reqVRAMEnable = '1' or vram2cpu_reqVRAMEnable = '1') then
-                           if (reqVRAMXPos + reqVRAMSizeRounded > 1024) then
-                              reqVRAMwrap <= resize(((reqVRAMXPos + reqVRAMSizeRounded) - 1024) / 4, 8);
-                           end if;
-                        end if;
+                        -- G-NET: store the wrap inputs, the wrap is computed next clk2x (docs/area_timing.md 9)
+                        reqVRAMwrap     <= (others => '0');
+                        reqVRAMwrapPend <= vram2vram_reqVRAMEnable or vram2cpu_reqVRAMEnable;
+                        reqVRAMwrapX    <= reqVRAMXPos;
+                        reqVRAMwrapSize <= reqVRAMSizeRounded;
                      elsif (fifoOut_Empty = '0') then
                         if (render24 = '1' or interlaced480pHack = '1') then
                            vramState   <= WRITESECOND;
                         end if;
                         vram_WE         <= '1';
+                        -- G-NET: FIFO fields by the layout constants; at VRAM_Y_BITS 9 they are
+                        -- upstream's bits 80..64 (address), 84..81 (enables) and 85 (source)
                         vram_ADDR       <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & fifoOut_Dout(F_ADDR_HI downto 64) & "000";
                         vram_BE         <= fifoOut_Dout(F_BE_LO + 3) & fifoOut_Dout(F_BE_LO + 3) & fifoOut_Dout(F_BE_LO + 2) & fifoOut_Dout(F_BE_LO + 2) & fifoOut_Dout(F_BE_LO + 1) & fifoOut_Dout(F_BE_LO + 1) & fifoOut_Dout(F_BE_LO) & fifoOut_Dout(F_BE_LO);
                         vram_DIN        <= fifoOut_Dout(63 downto 0);
                         vram_BURSTCNT   <= x"01";
+                        -- G-NET: source flag at F_SRC
                         frameVramType   <= fifoOut_Dout(F_SRC);
                         fifoOut2_Dout_1 <= fifoOut2_Dout;
+                        -- G-NET: known slip, not fixed yet: fifoOut_Dout(85) is the source flag only at
+                        -- VRAM_Y_BITS 9; at 10 it is the top byte enable and the flag is F_SRC (86).
+                        -- Not reachable in the release build: GNET_LEAN ties interlaced480pHack to 0
+                        -- (PSX.sv). The fix, fifoOut_Dout(F_SRC), is planned as a separate change.
                         if (interlacedDrawing = '1' and interlaced480pHack = '1' and videoout_reports.activeLineLSB = fifoOut_Dout(72) and fifoOut_Dout(85) = '1') then
                            vram_WE    <= '0';
                         end if;
@@ -1814,6 +1868,7 @@ begin
                   end if;
                   
                when READVRAM =>
+                  -- G-NET: further texture row reads (TEX_FETCH_ROWS) and posted writes (GPU_READ_INFL)
                   if (read2pend = '1' and vram_RD = '0' and (vram_WE = '0' or vram_BUSY = '0')) then
                      vram_RD   <= '1';
                      vram_ADDR <= std_logic_vector(to_unsigned(0, 17 - VRAM_Y_BITS)) & std_logic_vector(read2Y) & std_logic_vector(read2X) & "000";
@@ -1954,6 +2009,7 @@ begin
    videoout_settings.GPUSTAT_HorRes1         <= GPUSTAT_HorRes1;
    videoout_settings.GPUSTAT_ColorDepth24    <= GPUSTAT_ColorDepth24;
    videoout_settings.GPUSTAT_DisplayDisable  <= GPUSTAT_DisplayDisable;
+   -- G-NET: vramRange is VRAM_Y_BITS + 10 bits; the record field is 20 (pGPU.vhd)
    videoout_settings.vramRange               <= resize(vramRange, 20);
    videoout_settings.hDisplayRange           <= hDisplayRange;
    videoout_settings.vDisplayRange           <= vDisplayRange;
@@ -1976,7 +2032,7 @@ begin
    videoout_ss_in.GPUSTAT_DrawingOddline  <= ss_gpu_in(1)(31);
    
    igpu_videoout : entity work.gpu_videoout
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
    port map
    (
       clk1x                      => clk1x,

@@ -1,3 +1,15 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic B2B_RAM_COMP (default 1 = upstream) for the main RAM
+-- back-to-back load timing at 2:1 (issue #5); generic HAS_DCACHE (default
+-- 1 = upstream; 0 leaves out the turbo data cache, docs/area.md); output
+-- port debug_pc (the fetch PC) for the G-NET debug overlay.
+-- G-NET commits: 864cc5e (2026-10-14) RAM load timing at 2:1, issue #5;
+-- 41d4fb3 (2026-10-05) hardware debug overlay; db78699 (2026-10-20) area
+-- switch HAS_DCACHE.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;    
@@ -9,15 +21,21 @@ use work.pexport.all;
 entity cpu is
    generic
    (
-      -- G-NET R1 (docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1"):
+      -- G-NET: R1 (docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1"):
       -- 1 = upstream: a load issued right after another load's writeback gets
       -- the back-to-back compensation cycle (lateReadStall) in its special
       -- cases. 0 = not when both loads are main RAM data loads, the pair for
       -- which memorymux gives no back-to-back discount with RAM_READ_NOWAIT = 1
       -- (psx_top ties this to 1 - RAM_READ_NOWAIT); other pairs as upstream.
-      B2B_RAM_COMP          : integer := 1
+      B2B_RAM_COMP          : integer := 1;
+      -- G-NET: area (docs/area.md): 1 = upstream turbo data cache. 0 = not
+      -- built, never hits: for builds with TURBO_CACHE tied to 0, where
+      -- dcache_read_hit is only read together with TURBO_CACHE = '1' and
+      -- dcache_read_data only reaches the writeback through
+      -- spad_cache_dataread on scratchpad reads, which select the scratchpad.
+      HAS_DCACHE            : integer := 1
    );
-   port
+   port 
    (
       clk1x                 : in  std_logic;
       clk2x                 : in  std_logic;
@@ -92,7 +110,7 @@ entity cpu is
 -- synthesis translate_on
       
       debug_firstGTE        : in  std_logic;
-      -- G-NET debug overlay (docs/hw_debug_overlay.md): the fetch PC register
+      -- G-NET: debug overlay (docs/hw_debug_overlay.md): the fetch PC register
       debug_pc              : out unsigned(31 downto 0)
    );
 end entity;
@@ -769,6 +787,7 @@ begin
    end process;
    
    ss_out( 0) <= std_logic_vector(PC);
+   -- G-NET: fetch PC out to the debug overlay
    debug_pc   <= PC;
    ss_out(25)(0) <= fetchReady;
    
@@ -2093,6 +2112,9 @@ begin
    
    dcache_read_addr    <= std_logic_vector(executeReadAddress(20 downto 2));
 
+   -- G-NET: area: the upstream instance below is built only with HAS_DCACHE = 1
+   gdcache : if HAS_DCACHE = 1 generate
+   begin
    idatacache : entity work.datacache
    generic map
    (
@@ -2117,6 +2139,14 @@ begin
       write_addr        => dcache_write_addr,  
       write_data        => dcache_write_data 
    );
+   end generate;
+
+   -- G-NET: area (HAS_DCACHE = 0): no cache, every main RAM read goes to memory
+   gnodcache : if HAS_DCACHE = 0 generate
+   begin
+      dcache_read_hit  <= '0';
+      dcache_read_data <= (others => '0');
+   end generate;
    
    -- stage 4 processes ########################################
    
@@ -2330,7 +2360,8 @@ begin
 
                -- need to compensate for timing in original design on back to back reads:
                -- this is due to unclear reason why the original design is slower here than it could be
-               -- (G-NET B2B_RAM_COMP = 0: skipped when both reads go to main RAM)
+               -- G-NET: with B2B_RAM_COMP = 0 the compensation is skipped when both reads
+               -- go to main RAM (issue #5); B2B_RAM_COMP = 1 is the upstream condition
                if (lateReadBypass = '1' and (B2B_RAM_COMP /= 0 or executeReadAddress(28 downto 0) >= 16#800000# or lateReadRam = '0')) then
                   -- one additional wait cycle if target of first read is to be used after second read
                   if ((decodeReqSource1 = '1' and decodeSource1 = lateReadTarget) or (decodeReqSource2 = '1' and decodeSource2 = lateReadTarget)) then

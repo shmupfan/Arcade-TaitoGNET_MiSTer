@@ -1,6 +1,8 @@
--- G-NET hardware debug overlay, capture side (docs/hw_debug_overlay.md).
+-- zn_dbg_regs: G-NET hardware debug overlay, capture side (Taito G-NET
+-- core; docs/hw_debug_overlay.md).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -9,6 +11,16 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). Evidence: none needed (a debug aid, not part of the
+--         board); verification in docs/hw_debug_overlay.md 5.
+--
+-- In the release build: an OSD option ("Debug overlay", status[101], Off by
+-- default; README documents it), always synthesised with ZN2_BOARD = 1.
+-- Cost in the alpha 3 release fit: about 194 ALMs here and about 122 in
+-- zn_dbg_overlay (about 316 together, 0.75% of the device) plus the
+-- overlay's one M10K.
 --
 -- Runs on the clock of the CPU and zn2_board (clk1x, or clk_cpu with
 -- CPU_CLK_SPLIT = 1). Every register here has a power-up value and no reset

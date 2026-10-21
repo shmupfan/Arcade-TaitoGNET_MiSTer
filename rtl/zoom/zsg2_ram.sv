@@ -1,3 +1,23 @@
+// zsg2_ram: simple dual-port RAM for the ZSG-2 (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects); written in the single-clock simple dual-port form
+//         that Quartus 17 infers as M10K.
+// Evidence: none needed (storage only).
+// Design: docs/zsg2_rtl.md 6.
+// Bench: sim/zsg2/.
+//
 // Simple dual-port RAM (one write port, one registered read port, one
 // clock) for the ZSG-2 (docs/zsg2_rtl.md). Plain write enable: Quartus 17
 // infers M10K from this template (a byte-enable loop variant was not

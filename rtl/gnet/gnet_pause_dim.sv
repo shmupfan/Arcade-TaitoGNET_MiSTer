@@ -1,12 +1,18 @@
 //============================================================================
 //  G-NET core: dim the picture during a long pause
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
 //  Software Foundation; either version 2 of the License, or (at your option)
 //  any later version.
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: the convention of the official MiSTer arcade cores' OSD option
+//           (docs/m4_shell.md 4). Bench: sim/shell/run_pausedim.sh.
 //
 // OSD "Dim video after 10s" (docs/m4_shell.md 4), the convention of the
 // official MiSTer arcade cores: after the core has been paused for DIM_CLKS

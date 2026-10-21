@@ -1,3 +1,25 @@
+// zoom_tbase: Taito Zoom board virtual time base (sample boundaries in
+// MN10200 machine cycles) (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: board clocking 25 MHz / 768 = 192 machine cycles per sample
+//           (docs/zoom_zsg2_tms57002_design.md 2.2); MAME 0.288 zsg2.cpp:137,
+//           taitogn.cpp:519-533, mn10200.cpp access timing (cited inline).
+// Design: docs/zoom_board_design.md 6.2.
+// Bench: sim/zoomboard/.
+//
 // Taito Zoom board time base (docs/zoom_board_design.md 6).
 //
 // One virtual clock for the whole Zoom board: the MN10200 machine cycle
@@ -31,7 +53,8 @@ module zoom_tbase #(
     parameter int REM_ADD  = 0,
     parameter int REM_MOD  = 1,
     parameter int RT_ADD   = 15625,     // real-time machine cycles: 6,250,000 / 33,868,800
-    parameter int RT_SUB   = 84672
+    parameter int RT_SUB   = 84672      // (defaults for a 33.8688 MHz clk; zoom_board passes 42,336 x CLK_H,
+                                        // 169,344 for the release's 67.7376 MHz)
 ) (
     input  logic        clk,
     input  logic        rst,

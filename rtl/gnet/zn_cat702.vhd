@@ -1,6 +1,8 @@
--- ZN CAT702 security chip (serial magic latch on SIO0), bit level.
+-- zn_cat702: ZN CAT702 security chip (serial magic latch on SIO0), bit
+-- level (Taito G-NET core).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -9,6 +11,11 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation from MAME's description,
+--         no code copied; see below).
+-- Evidence: MAME 0.288 cat702.cpp (rank 5, no datasheet); bench against
+--           MAME 0.288 SIO0 traffic (docs/zn2_layer_design.md 16.1).
 --
 -- Behaviour from the algorithm description and model in MAME 0.288
 -- src/devices/machine/cat702.cpp (smf; no datasheet exists, evidence rank 5),
@@ -27,7 +34,7 @@
 -- TXD value of that bit, and samples dataout in the same clock. dataout is
 -- the bit the chip drives after the SCK falling edge of that bit (from the
 -- current state); at bit_stb the state takes both edges' updates. This is
--- MAME's order inside one SIO tick (sio.cpp 125-189: SCK low, TXD, SCK high,
+-- MAME's order inside one SIO tick (MAME 0.288 sio.cpp:125-191: SCK low, TXD, SCK high,
 -- sample) with no extra clock of latency. Deselected, dataout is 1.
 
 library IEEE;
@@ -54,6 +61,7 @@ end entity;
 architecture arch of zn_cat702 is
 
    type t_sbox is array(0 to 7) of std_logic_vector(7 downto 0);
+   -- MAME 0.288 cat702.cpp:90 initial_sbox
    constant INITIAL_SBOX : t_sbox := (x"FF", x"FE", x"FC", x"F8", x"F0", x"E0", x"C0", x"7F");
 
    signal key      : t_sbox := (others => (others => '1'));
@@ -74,7 +82,7 @@ architecture arch of zn_cat702 is
       return r;
    end function;
 
-   -- sbox[n] from sbox[n-1] (cat702.cpp compute_sbox_coef)
+   -- sbox[n] from sbox[n-1] (MAME 0.288 cat702.cpp:150-161 compute_sbox_coef)
    function advance(c : t_sbox) return t_sbox is
       variable n : t_sbox;
       variable r : std_logic_vector(7 downto 0);

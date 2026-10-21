@@ -3,6 +3,7 @@
 // the games use.
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -12,9 +13,14 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
 //
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
 // Evidence: CF+ and CompactFlash specification Rev 1.4 (task file, status,
 // attribute memory); MAME 0.288 ataflash.cpp, atahle.cpp, atastorage.cpp for
-// the Taito lock and every behaviour the specification leaves open.
+// the Taito lock and every behaviour the specification leaves open. Research
+// items (R5, R25) are listed in docs/evidence_sources.md and docs/PLAN.md.
+// Bench: sim/gnet/ (directed tests and MAME trace replay through gnet_fc),
+// sim/gnet_ata/tb_ata_t2.sv (Type 2 unlock).
 //
 // Per-game data comes in through the meta load port (byte address):
 //   000h-1FFh IDENTIFY block (CHD metadata IDNT, returned verbatim as MAME)
@@ -74,9 +80,18 @@
 // buffer in the background; data port reads stall (op_ack) until their word
 // has arrived, so DRQ timing stays as MAME's. A written sector goes to
 // storage during its busy time and sets its 4 KB hunk in the dirty map.
+// The dirty map is for a future save path of card writes (R25,
+// docs/m2_glue_findings.md 5 item 6); its only instance (gnet_fc in
+// zn2_board.vhd) ties it off (dirty_* outputs open, dirty_raddr 0,
+// dirty_clear 0), so no build reads it yet.
+// Size limit: storage addresses carry 17 bits of LBA (st_addr = LBA * 256 +
+// word), 64 MB; a card whose size word says more would wrap silently. The
+// G-NET cards are 40 MB (80,000 sectors, docs/m0_findings.md 2).
 
 module gnet_ata #(
     parameter int unsigned CLK_HZ      = 33_868_800,
+    // 80,000 sectors = the 40 MB Taito cards; 16 heads x 50 sectors is the
+    // CHD geometry tag of the same cards (docs/m0_findings.md 2)
     parameter int unsigned NUM_LBA     = 80_000,
     parameter int unsigned NUM_HEADS   = 16,     // CHS translation (unused by the games: LBA)
     parameter int unsigned NUM_SECTORS = 50,
@@ -122,7 +137,7 @@ module gnet_ata #(
     input  logic        st_ack,
     input  logic [15:0] st_rdata,
 
-    // dirty 4 KB hunks (8 sectors)
+    // dirty 4 KB hunks (8 sectors); tied off in the only instance (see above)
     output logic        dirty_set,
     output logic [13:0] dirty_hunk,
     input  logic [13:0] dirty_raddr,
@@ -303,7 +318,7 @@ module gnet_ata #(
                             bcnt   <= T_DIAG;
                         end
                         B_DIAG: begin                 // finished diagnostic, signature
-                            error     <= 8'h01;
+                            error     <= 8'h01;   // diagnostic passed (MAME atahle.h IDE_ERROR_DIAGNOSTIC_PASSED)
                             resetting <= 1'b0;
                             seccnt    <= 9'd1;
                             secnum    <= 8'h01;
@@ -319,7 +334,7 @@ module gnet_ata #(
                         B_READ: begin                 // finished_read
                             if (cur_lba >= num_lba) begin
                                 status <= (status & ~ST_BSY) | ST_ERR;
-                                error  <= 8'h80;
+                                error  <= 8'h80;   // bad sector (MAME atastorage.cpp IDE_ERROR_BAD_SECTOR)
                             end else begin
                                 se_act   <= 1'b1;
                                 se_we    <= 1'b0;
@@ -454,7 +469,7 @@ module gnet_ata #(
                         if (status[3] && r[2:0] != 3'd0 && (r[2:0] != 3'd6 || wd != devhead)) begin
                             status <= (status & ~(ST_BSY | ST_DRQ)) | ST_ERR;   // abort
                             bparam <= B_NONE;
-                            error  <= 8'h04;
+                            error  <= 8'h04;   // ABRT
                         end
                         if (!status[7] || (status[3] && r[2:0] != 3'd0 && (r[2:0] != 3'd6 || wd != devhead))) begin
                             case (r[2:0])
@@ -600,7 +615,7 @@ module gnet_ata #(
             end
             default: begin
                 status <= s0 | ST_ERR;
-                error  <= 8'h04;
+                error  <= 8'h04;   // ABRT
             end
         endcase
     endtask

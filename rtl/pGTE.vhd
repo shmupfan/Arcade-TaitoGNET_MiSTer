@@ -1,3 +1,12 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: record types tMAC0mul and tMAC123mul for gte.vhd's NARROW_MUL = 3
+-- mode (the GTE at 100 MHz with the CPU on its own clock,
+-- docs/r1_cpu_domain_design.md); unused at NARROW_MUL 0 (upstream).
+-- G-NET commits: 92ae3a6 (2026-10-05) GTE_NARROW_MUL=3, GTE at 100 MHz.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;     
@@ -33,7 +42,7 @@ package pGTE is
       trigger     : std_logic; 
    end record;
   
-   -- NARROW_MUL = 3 (G-NET): operands of the request being written, presented
+   -- G-NET: NARROW_MUL = 3, operands of the request being written, presented
    -- in the cycle that writes it; the MAC units register the product (and the
    -- shifted wide operand) when ena = '1'. mul1/mul2 of the request record are
    -- then unused.

@@ -119,3 +119,5 @@ sim/gpuinfl/queue*
 ckpt_*
 # released bitstreams are tracked on purpose (the *.rbf rule above keeps build output out)
 !releases/Arcade-TaitoGNET_*.rbf
+sim/hiscore/work/
+sim/i9/work/

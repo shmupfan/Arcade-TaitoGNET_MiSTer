@@ -1,6 +1,30 @@
+-- cdc_handshake: two-phase request/acknowledge crossing with data (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: none needed; a clock-crossing building block that models no board
+--           behaviour.
+-- Design: docs/r1_cpu_domain_design.md, "CDC building blocks".
+--         Bench: sim/cdc/tb_cdc_handshake.vhd
+--
 -- Request/acknowledge handshake with data in both directions (two-phase:
 -- one toggle per request, one per acknowledge). For register reads and
--- writes across the boundary (C2, C9, C10, C18, C19).
+-- writes across the boundary: the read and fetch answers of the cpu_split
+-- bridges (C2, C3, C9, C10), the card memory port C18 (zn2_cdc), the
+-- zoom_cdc host port and the debug overlay registers. C19, once planned
+-- here, needs no crossing as built (docs/r1_cpu_domain_design.md, "ZN-2
+-- layer in the CPU group", Crossings).
 --
 -- Source side: src_start = '1' while src_busy = '0' launches a request with
 -- src_req_data (ignored while busy). src_busy stays high until the response

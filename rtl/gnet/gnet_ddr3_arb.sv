@@ -1,6 +1,7 @@
 // G-NET DDR3 arbiter: four clients on the emu DDRAM port (docs/ddr3_arbiter.md).
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -10,18 +11,28 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
 //
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: Avalon-MM as the MiSTer framework's DDRAM_* port uses it
+//           (sys/sys_top.v); design and bench results in docs/ddr3_arbiter.md
+//           1 to 4. Bench: sim/ddr3arb/ (run.sh), sim/rotfx/, sim/zoomddr3/.
+//
 // Sits between the clients and the emu DDRAM_* port (Avalon-MM, one command
 // per cycle, BUSY = waitrequest, read data in command order), on the port
-// clock (clk_2x). Clients, highest priority first (docs/ddr3_bandwidth.md
-// 5.2 on branch ddr3-bandwidth):
+// clock (clk_2x). Clients, highest priority first (docs/ddr3_arbiter.md 1;
+// the order was worked out in docs/ddr3_bandwidth.md 5.2, a design note on
+// development branch ddr3-bandwidth, not in this tree):
 //   R  rotation: screen_rotate's DDRAM_* outputs (sys/arcade_video.v), on
 //      their own clock; a dual-clock FIFO of 2^RAW entries takes every write
 //      (screen_rotate ignores BUSY). Writes only.
-//   Z  Zoom line port (zoom_memarb's m_* side, branch zoom-board): 64-bit
-//      line reads, req held until ready, rvalid in order. m_line is the
-//      byte offset / 8 in the flash area (U27 at 0x200000, waves at
-//      0x400000, zoom_board.sv:39-40), so line L is qword ZQBASE + L.
-//   G  G-NET glue (card sector engine, flash chips in DDR3): Avalon master.
+//   Z  Zoom line port (zoom_board's m_* side through gnet_ddr3_zport):
+//      64-bit line reads, req held until ready, rvalid in order. m_line is
+//      the byte offset / 8 in the flash area (zoom_board parameters U27_BASE
+//      0x200000 and WAVE_BASE 0x400000), so line L is qword ZQBASE + L.
+//   G  glue writes: in this tree the only G client is gnet_ddr3_mirror (the
+//      channel 3 flash mirror; PSX.sv ties g_rd to 0 and g_burstcnt to 1).
+//      The port is a full Avalon master so a reader can be added (a card
+//      sector engine exists only on development branch ddr3-card).
 //   C  core (psx_mister's DDRAM side: GPU, SPU and savestates behind the
 //      core's own pause arbiter): Avalon master, every remaining slot.
 // A client command is taken into a one-entry command register when the
@@ -33,7 +44,12 @@
 module gnet_ddr3_arb #(
     parameter int          RAW    = 9,              // rotation FIFO depth 2^RAW
     parameter int          OFW    = 4,              // owner FIFO depth 2^OFW
-    parameter logic [28:0] ZQBASE = 29'h6200000     // Zoom flash area base, byte 0x31000000
+    // Zoom flash area base, qword address (byte 0x31000000). Must match
+    // gnet_ddr3_mirror.sv, which writes SDRAM channel 3 byte address A to
+    // DDR3 byte 0x30000000 + A (qword 29'h6000000 + A / 8): the flash area
+    // starts at SDRAM 0x1000000 (U30), so it lands at byte 0x31000000. The
+    // Zoom's U27_BASE / WAVE_BASE (zoom_board.sv) are offsets inside it.
+    parameter logic [28:0] ZQBASE = 29'h6200000
 ) (
     input  logic        clk,
     input  logic        rst,
@@ -86,7 +102,10 @@ module gnet_ddr3_arb #(
     output logic [63:0] rdata,
 
     // status (clk domain): rotation FIFO overflow (sticky until reset), its
-    // highest fill level, owner FIFO overflow (a protocol error)
+    // highest fill level, and own_ovf: sticky, set when a read beat arrives
+    // from DDR3 while the owner FIFO is empty (an orphan beat no client
+    // asked for, a protocol error). The owner FIFO itself cannot overflow
+    // (rd_room holds reads back); the name own_ovf is historical.
     output logic        rot_ovf,
     output logic [RAW:0] rot_hiwater,
     output logic        own_ovf
@@ -253,7 +272,7 @@ module gnet_ddr3_arb #(
                 of_wp <= of_wp + 1'd1;
             end
             if (ddr_dout_ready) begin
-                if (of_empty) own_ovf <= 1'b1;
+                if (of_empty) own_ovf <= 1'b1;     // orphan beat (see the port comment)
                 if (bc == h_len - 8'd1) begin bc <= 8'd0; of_rp <= of_rp + 1'd1; end
                 else bc <= bc + 8'd1;
             end

@@ -1,12 +1,20 @@
 //============================================================================
 //  G-NET core: Dash button (Chaos Heat, issue #7)
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
 //  Software Foundation; either version 2 of the License, or (at your option)
 //  any later version.
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 runs of chaoshea (below); design in docs/m4_shell.md 4.
+//           Bench: sim/shell/run_dash.sh.
+// This file holds two modules: gnet_dash (the tap sequence) and
+// gnet_dash_remap (the pad bit remap for the Dash button, at the end).
 //
 // Chaos Heat (chaoshea, chaosheaj) dashes on a double tap of a direction.
 // With the game configuration byte's bit 4 set (MRA rom index 7), a Dash
@@ -17,7 +25,8 @@
 // Frames are the core's VBLANKs; the sequence starts at the next VBLANK
 // (the direction held at the press is kept until then).
 //
-// Measured in MAME 0.288 (sim/oracle/dash, chaoshea in play, player X and Z
+// Measured in MAME 0.288 (oracle run output in sim/oracle/dash, a run folder
+// that is not kept in the repository; chaoshea in play, player X and Z
 // words 0x1426ec/0x1426f0 every frame, both VBLANK phases): a dash when the
 // second press starts at most 14 frames after the first press starts (15 in
 // one phase) and the release between them is at least 2 frames (1 in one

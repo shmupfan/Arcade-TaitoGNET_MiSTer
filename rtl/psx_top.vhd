@@ -1,3 +1,42 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: new generics and the hooks they control, each generic defaulting
+-- to upstream behaviour (the ZN2_* and ZOOM_* values only matter when
+-- ZN2_BOARD or ZOOM_BOARD is 1): trims that remove the CD, pads and memory
+-- cards, savestates, cheats or MDEC (HAS_*); 2 MB VRAM (VRAM_Y_BITS); GTE
+-- and GPU options; the CPU group on its own clocks (CLK_FAST_RATIO,
+-- CPU_CLK_SPLIT, crossings in rtl/gnet/cpu_split); the ZN-2 board and G-NET
+-- FC PCB on the expansion bus and SIO0 (ZN2_BOARD, rtl/gnet); the Taito Zoom
+-- sound board (ZOOM_BOARD, rtl/zoom); main RAM and ZN-2 read timing options;
+-- area switches HAS_DCACHE and ZN2_DBG (docs/area.md).
+-- Two upstream blocks get a G-NET generic set from here: mdec
+-- IDCT_REG_STAGE = CPU_CLK_SPLIT and spu MLAB_WR_NEGEDGE = ZN2_BOARD (both
+-- 0, upstream, in an upstream build).
+-- New ports: the CPU group clocks (clk_cpu, clk_cpu2x, clk_cpu3x) and the
+-- zn_* and zoom_* board ports.
+-- G-NET commits, by theme (development repository hashes):
+--   trims: 475d621 (2026-10-04), bcdec20 (2026-10-04)
+--   2 MB VRAM: c71a991 (2026-10-04)
+--   GTE: 3d186b7, 92ae3a6 (2026-10-05)
+--   CPU group clocks (R1): 67a3f97, f0cd555, 43c9570 (2026-10-05)
+--   ZN-2 layer: 338def1, 935647c (2026-10-05), 72dccbc (2026-10-05),
+--     0fd0608, d965cae (2026-10-06)
+--   Taito Zoom board: 34a221b (2026-10-05)
+--   shell (EEPROM NVRAM save): b41a76d (2026-10-05)
+--   debug overlay: 41d4fb3 (2026-10-05)
+--   GPU: 1c8a8bd (2026-10-14, rectangle flip, issue #6), c4f13c6
+--     (2026-10-06) and 771b9fe (2026-10-15, texture fetch options)
+--   memory timing: 8701d1f (2026-10-06, ZN-2 read overlap), 864cc5e
+--     (2026-10-14, main RAM load timing, issue #5)
+--   MDEC in the CPU group: aa7e055 (2026-10-14, issue #1)
+--   area switches: db78699 (2026-10-20, HAS_DCACHE, ZN2_DBG)
+-- Every change is marked "G-NET:" below, except the CPU_CLK_SPLIT renames
+-- in the port maps of upstream instances (clk1x/clk2x/clk3x to
+-- clk_cpu/clk_cpu2x/clk_cpu3x, signal names with a _c or _p suffix),
+-- explained once at the start of the architecture.
+-- Full list: PROVENANCE.md.
+
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;     
@@ -10,23 +49,28 @@ entity psx_top is
    generic
    (
       is_simu               : std_logic := '0';
-      -- G-NET trim switches: 1 = upstream block present (default), 0 = removed
+      -- G-NET: trim switches: 1 = upstream block present (default), 0 = removed
       -- and its outputs tied to idle. See docs/f0_budget.md.
       HAS_CD                : integer := 1;
       HAS_PADS              : integer := 1;
       HAS_SAVESTATES        : integer := 1;
       HAS_CHEATS            : integer := 1;
       HAS_MDEC              : integer := 1;
+      -- G-NET: area (docs/area.md): 0 = the CPU's turbo data cache
+      -- (datacache.vhd, 64 M10K) is not built and never hits. Only for builds
+      -- whose TURBO_CACHE input is tied to 0 (GNET_LEAN), where the cache is
+      -- written but its data is never used; 1 = upstream.
+      HAS_DCACHE            : integer := 1;
       VRAM_Y_BITS           : integer := 9;   -- 9 = PS1 1 MB VRAM, 10 = ZN-2 2 MB (gpu.vhd)
       RECT_FLIP             : integer := 0;   -- 1 = textured rectangle X/Y flip, E1 bits 12/13 (ZN-2 CXD8654Q, gpu_rect.vhd); 0 = upstream
       GTE_NARROW_MUL        : integer := 0;   -- 1, 2 = 18x18 GTE multipliers plus shifts (gte_mac123.vhd); 3 = GTE at 100 MHz (gte.vhd)
-      -- GPU VRAM read latency options (gpu.vhd, docs/gpu_read_infl.md), 1 = upstream
+      -- G-NET: GPU VRAM read latency options (gpu.vhd, docs/gpu_read_infl.md), 1 = upstream
       GPU_READ_INFL         : integer := 1;
       TEX_FETCH_QW          : integer := 1;
       TEX_FETCH_ROWS        : integer := 1;
       TEX_MISS_DELAY        : integer := 0;   -- clk2x cycles added to each texture cache fill, 0 = upstream
       CLK_FAST_RATIO        : integer := 3;   -- clk3x edges per clk1x cycle: 3 = upstream, 2 = CPU domain at 2:1 (clk3xIndex, sdram.sv)
-      -- R1 (docs/r1_cpu_domain_design.md): 0 = upstream clocking, every block on
+      -- G-NET: R1 (docs/r1_cpu_domain_design.md): 0 = upstream clocking, every block on
       -- clk1x/clk2x/clk3x. 1 = CPU group (cpu, gte, memorymux, memctrl, dma,
       -- irq, timer, sio, exp2) on clk_cpu/clk_cpu2x/clk_cpu3x, crossings to the
       -- GPU, SPU and reset sequencer in rtl/gnet/cpu_split (needs the G-NET
@@ -41,19 +85,26 @@ entity psx_top is
       ZN2_PS1_SIO           : integer := 0;   -- zn_sio0: 0 = MAME bit timing, 1 = joypad.vhd rule
       ZN2_SPU_STATUS        : integer := 0;   -- zn2_io 0x1FA60000: 0 = MAME toggle, 1 = bit 3 set
       ZN2_WD_TIMEOUT_S      : integer := 8;   -- MB3773 watchdog period in seconds (zn2_board, gnet_ctrl.sv)
+      ZN2_DBG               : integer := 1;   -- G-NET: 1 = debug overlay capture block rtl/gnet/zn_dbg_regs.vhd (ZN2_BOARD = 1), 0 = not built, zn_dbg_word 0 (docs/area.md)
       -- G-NET: 1 = Taito Zoom sound board (rtl/zoom/zoom_board.sv) on clk1x
       -- and clk2x, crossings in rtl/gnet/zoom_cdc.vhd; needs ZN2_BOARD = 1
       -- and CPU_CLK_SPLIT = 1. docs/zoom_board_design.md 14
       ZOOM_BOARD            : integer := 0;
       ZOOM_INFL             : integer := 4;   -- ZSG-2 wave reads outstanding: 4, or 8 behind the DDR3 arbiter
       ZN2_READ_OVERLAP      : integer := 0;   -- memorymux: 1 = a ZN-2 read step's request overlaps its read delay (docs/r1_cpu_domain_design.md)
-      -- R1 main RAM load timing, CLK_FAST_RATIO = 2 only (docs/r1_cpu_domain_design.md,
+      -- G-NET: R1 main RAM load timing, CLK_FAST_RATIO = 2 only (docs/r1_cpu_domain_design.md,
       -- "Main RAM load timing at 2:1"). RAM_READ_NOWAIT 1: memorymux skips
       -- WAITFORRAMREAD for main RAM data reads, and the CPU's back-to-back
       -- compensation cycle is skipped for RAM-RAM pairs (cpu B2B_RAM_COMP 0).
       -- RAM_LOAD_WINDOW: memorymux's back-to-back read window (7 = upstream).
+      -- PSX.sv always passes 7; the rescaled 8 or 9 at 2:1 (macro
+      -- GNET_RAM_B2B_WINDOW) is archived (docs/experiment_revisions.md) and
+      -- only tools/r1/mem_lat (mode w) sets another value.
       RAM_READ_NOWAIT       : integer := 0;
-      RAM_LOAD_WINDOW       : integer := 7
+      RAM_LOAD_WINDOW       : integer := 7;
+      -- G-NET card hunk journal (issue #9, docs/i9_nvram.md): 1 = zn2_cardmem
+      -- gets the journal read client (zn_cj_rd_*); 0 = as before
+      CARD_JOURNAL          : integer := 0
    );
    port 
    (
@@ -61,7 +112,7 @@ entity psx_top is
       clk2x                 : in  std_logic;   
       clk3x                 : in  std_logic;   
       clkvid                : in  std_logic;   
-      -- CPU group clocks: with CPU_CLK_SPLIT = 0 connect the same signals as
+      -- G-NET: CPU group clocks: with CPU_CLK_SPLIT = 0 connect the same signals as
       -- clk1x, clk2x and clk3x; with 1 the CPU PLL's 50 MHz (clk_cpu) and
       -- 100 MHz (clk_cpu2x and clk_cpu3x)
       clk_cpu               : in  std_logic;
@@ -288,7 +339,7 @@ entity psx_top is
       Cheats_BusReadData    : in     std_logic_vector(31 downto 0);
       Cheats_BusDone        : in     std_logic;
       
-      -- G-NET (ZN2_BOARD = 1 only; defaults keep the upstream instantiation)
+      -- G-NET: ZN-2 board ports (ZN2_BOARD = 1 only; the inputs have defaults)
       zn_in_p1              : in  std_logic_vector(7 downto 0) := x"FF";
       zn_in_p2              : in  std_logic_vector(7 downto 0) := x"FF";
       zn_in_service         : in  std_logic_vector(7 downto 0) := x"FF";
@@ -332,11 +383,20 @@ entity psx_top is
       zn_nv_addr            : in  unsigned(9 downto 0) := (others => '0');
       zn_nv_q               : out std_logic_vector(15 downto 0);
       zn_nv_wtog            : out std_logic;
+      -- card hunk journal (CARD_JOURNAL = 1, PSX.sv gnet_card_journal):
+      -- events from zn2_board (zn2_board's clock), line reads on clk1x
+      zn_cj_tog             : out std_logic;
+      zn_cj_hunk            : out std_logic_vector(13 downto 0);
+      zn_cj_rd_req          : in  std_logic := '0';
+      zn_cj_rd_line         : in  std_logic_vector(22 downto 0) := (others => '0');
+      zn_cj_rd_ack          : out std_logic;
+      zn_cj_rd_data         : out std_logic_vector(63 downto 0);
       -- Taito Zoom (ZOOM_BOARD = 1), all on clk1x: zoom_board's flash area
       -- line port as it is (zoom_memarb m_*: req and line held until an edge
       -- with ready, rvalid one cycle per line in order, up to 8 open; line =
       -- flash area byte offset / 8, flash byte 8L in rdata bits 7:0), for
-      -- the DDR3 arbiter or the temporary SDRAM path in PSX.sv; audio
+      -- the DDR3 arbiter (the release; the SDRAM test path of revision
+      -- GNET_Z1_ZOOM is archived, docs/experiment_revisions.md); audio
       -- (16-bit signed, volume applied, held per sample); board flags
       -- (zoom_board dbg_flags)
       zoom_m_req            : out std_logic;
@@ -424,7 +484,7 @@ architecture arch of psx_top is
    signal memDDR3card2_RD        : std_logic := '0';
    
    signal memSPU_request         : std_logic;
-   -- G-NET card image client (ZN2_BOARD = 1)
+   -- G-NET: card image client (ZN2_BOARD = 1)
    signal memZN_request          : std_logic;
    signal memZN_ack              : std_logic := '0';
    signal memZN_acknext          : std_logic := '0';
@@ -434,7 +494,7 @@ architecture arch of psx_top is
    signal memZN_BE               : std_logic_vector(7 downto 0) := (others => '0'); 
    signal memZN_WE               : std_logic := '0';
    signal memZN_RD               : std_logic := '0';
-   -- G-NET expansion bus (memorymux ZN2_MAP)
+   -- G-NET: expansion bus (memorymux ZN2_MAP)
    signal zn_req                 : std_logic;
    signal zn_we                  : std_logic;
    signal zn_addr                : unsigned(23 downto 0);
@@ -763,6 +823,8 @@ architecture arch of psx_top is
    signal SS_Adr                 : unsigned(18 downto 0);
    signal SS_wren                : std_logic_vector(16 downto 0);
    signal SS_rden                : std_logic_vector(16 downto 0);
+   -- G-NET: the savestate engine's strobes before the HAS_SAVESTATES = 0
+   -- mask (assigned to SS_wren_p and SS_rden below gstatemanager)
    signal SS_wren_eng            : std_logic_vector(16 downto 0);
    signal SS_rden_eng            : std_logic_vector(16 downto 0);
    signal SS_DataRead_CPU        : std_logic_vector(31 downto 0);
@@ -828,8 +890,21 @@ architecture arch of psx_top is
    
    signal debug_firstGTE         : std_logic;
    
-   -- CPU_CLK_SPLIT: PS1-group (_p) copies of signals that cross, CPU-group
-   -- copies (_c) of top-level inputs; with CPU_CLK_SPLIT = 0 plain copies
+   -- G-NET: naming rule for CPU_CLK_SPLIT (docs/r1_cpu_domain_design.md).
+   -- The CPU group (cpu, gte, memorymux, memctrl, dma, irq, timer, sio, exp2
+   -- and, here, the MDEC) is clocked by clk_cpu, clk_cpu2x and clk_cpu3x;
+   -- the PS1 group (GPU, SPU, savestate engine, DDR3 arbiter) stays on clk1x,
+   -- clk2x and clk3x. Where an upstream signal crosses between the groups,
+   -- the PS1 group's copy carries the suffix _p and the CPU group's copy the
+   -- suffix _c (reset, pause, loadExe, reset_in, the clock indexes); the
+   -- upstream instances' port maps were
+   -- renamed accordingly (clk1x => clk_cpu, ce => ce_p, ...), and those
+   -- renames carry no marker of their own. With CPU_CLK_SPLIT = 0 they change
+   -- nothing: gsplit0 below connects each _c and _p signal to its upstream
+   -- name as a plain wire, and PSX.sv (without GNET_CPU50) drives clk_cpu,
+   -- clk_cpu2x and clk_cpu3x with clk_1x, clk_2x and clk_3x. With
+   -- CPU_CLK_SPLIT = 1 gsplit1 puts the crossings (rtl/gnet/cpu_split)
+   -- between them.
    signal reset_c                : std_logic;
    signal pause_c                : std_logic;
    signal loadExe_c              : std_logic;
@@ -931,7 +1006,7 @@ begin
       end if;
    end process;
    
-   -- clk3xIndex: '1' on the first clk3x edge after each clk1x edge (DMA FIFO
+   -- G-NET: clk3xIndex: '1' on the first clk3x edge after each clk1x edge (DMA FIFO
    -- write strobe, dma.vhd). The compare depth depends on the clock ratio:
    -- the copy two clk3x cycles old at 3:1 (upstream), one cycle old at 2:1.
    assert CLK_FAST_RATIO = 2 or CLK_FAST_RATIO = 3 report "psx_top: CLK_FAST_RATIO must be 2 or 3" severity failure;
@@ -942,6 +1017,7 @@ begin
          clk1xToggle3x   <= clk1xToggle;
          clk1xToggle3X_1 <= clk1xToggle3X;
          clk3xIndex    <= '0';
+         -- G-NET: CLK_FAST_RATIO 2 compares the one-cycle-old copy (67a3f97)
          if (CLK_FAST_RATIO = 2) then
             if (clk1xToggle3X = clk1xToggle) then
                clk3xIndex <= '1';
@@ -1091,6 +1167,7 @@ begin
          memHPScard1_ack     <= '0';
          memHPScard2_ack     <= '0';
          memSPU_ack          <= '0';
+         -- G-NET: card image client memZN (ZN2_BOARD = 1), last in priority
          memZN_ack           <= '0';
       
          if (reset_intern_p = '1') then
@@ -1103,6 +1180,7 @@ begin
             memHPScard1_acknext   <= '0';
             memHPScard2_acknext   <= '0';
             memSPU_acknext        <= '0';
+            -- G-NET: card image client memZN (ZN2_BOARD = 1), last in priority
             memZN_acknext         <= '0';
          else
          
@@ -1114,6 +1192,7 @@ begin
                   memHPScard1_acknext   <= '0';
                   memHPScard2_acknext   <= '0';
                   memSPU_acknext        <= '0';
+                  -- G-NET: card image client memZN (ZN2_BOARD = 1), last in priority
                   memZN_acknext         <= '0';
                   if (memDDR3card1_request = '1' or memDDR3card2_request = '1' or memHPScard1_request = '1' or memHPScard2_request = '1' or memSPU_request = '1' or memZN_request = '1') then
                      vram_pause <= '1';
@@ -1164,6 +1243,7 @@ begin
                         arbiter_BE           <= memSPU_BE;      
                         arbiter_WE           <= memSPU_WE;      
                         arbiter_RD           <= memSPU_RD;
+                     -- G-NET: card image client memZN (ZN2_BOARD = 1), last in priority
                      elsif (memZN_request = '1') then
                         memZN_acknext        <= '1';
                         arbiter_BURSTCNT     <= memZN_BURSTCNT;
@@ -1185,6 +1265,7 @@ begin
                      if (memHPScard1_acknext  = '1') then memHPScard1_ack <= '1';  end if;
                      if (memHPScard2_acknext  = '1') then memHPScard2_ack <= '1';  end if;
                      if (memSPU_acknext       = '1') then memSPU_ack <= '1';       end if;
+                     -- G-NET: card image client memZN (ZN2_BOARD = 1), last in priority
                      if (memZN_acknext        = '1') then memZN_ack <= '1';        end if;
                   end if;
                
@@ -1195,6 +1276,7 @@ begin
                       (memHPScard1_request  and memHPScard1_acknext ) = '0' and 
                       (memHPScard2_request  and memHPScard2_acknext ) = '0' and
                       (memSPU_request       and memSPU_acknext      ) = '0' and
+                      -- G-NET: card image client memZN (ZN2_BOARD = 1), last in priority
                       (memZN_request        and memZN_acknext       ) = '0'
                      ) then
                      ddr3state      <= ARBITERIDLE;
@@ -1283,6 +1365,7 @@ begin
    Gun1Y_scanlines <= resize(Gun1Y, 9) - resize(Gun1Y(7 downto 4), 9); -- Gun1Y * 240 / 256
    Gun2Y_scanlines <= resize(Gun2Y, 9) - resize(Gun2Y(7 downto 4), 9); -- Gun1Y * 240 / 256
 
+   -- G-NET: HAS_PADS = 0 (trim, docs/f0_budget.md) removes the joypad
    gjoypad : if HAS_PADS = 1 generate
    begin
    ijoypad: entity work.joypad
@@ -1379,6 +1462,8 @@ begin
       SS_idle              => SS_idle_pad
    );
    end generate;
+   -- G-NET: without the joypad its outputs are tied idle; with ZN2_BOARD = 1
+   -- the SIO0 bus (bus_pad_*, irq_PAD) goes to zn2_board's zn_sio0 instead
    gnopadbus : if HAS_PADS = 0 and ZN2_BOARD = 0 generate
    begin
       irq_PAD              <= '0';
@@ -1404,6 +1489,7 @@ begin
       SS_idle_pad          <= '1';
    end generate;
    
+   -- G-NET: HAS_CHEATS = 0 (trim, docs/f0_budget.md) removes the cheat engine
    gcheats : if HAS_CHEATS = 1 generate
    begin
    icheats : entity work.cheats
@@ -1434,6 +1520,7 @@ begin
       BusDone        => Cheats_BusDone
    );
    end generate;
+   -- G-NET: without the cheat engine its bus outputs are tied idle
    gnocheats : if HAS_CHEATS = 0 generate
    begin
       Cheats_BusAddr       <= (others => '0');
@@ -1583,6 +1670,7 @@ begin
       DMA_SPU_readEna      => DMA_SPU_readEna,    
       DMA_SPU_write        => DMA_SPU_write,    
       DMA_SPU_read         => DMA_SPU_read,
+      -- G-NET: SPU DMA read handshake for the cpu_split SPU bridge ('0' in gsplit0)
       DMA_SPU_readStall    => DMA_SPU_readStall,
       DMA_SPU_readReq      => DMA_SPU_readReq,
       
@@ -1638,6 +1726,7 @@ begin
       clk1x                => clk_cpu,
       ce                   => ce,   
       reset                => reset_intern,
+      -- G-NET: 33.8688 MHz-equivalent tick on clk_cpu (cpu_split tick_accum; '1' in gsplit0)
       sys_tick             => sys_tick,
       
       error                => errorTimer,
@@ -1671,6 +1760,7 @@ begin
       SS_DataRead          => SS_DataRead_TIMER
    );
    
+   -- G-NET: HAS_CD = 0 (trim, docs/f0_budget.md) removes the CD drive
    gcd : if HAS_CD = 1 generate
    begin
    icd_top : entity work.cd_top
@@ -1735,6 +1825,7 @@ begin
       SS_Idle              => SS_Idle_cd
    );
    end generate;
+   -- G-NET: without the CD drive its outputs are tied idle
    gnocd : if HAS_CD = 0 generate
    begin
       region_out           <= region;
@@ -1758,6 +1849,7 @@ begin
    cdslowEna <= cdSlow and cdslowOn;
 
    igpu : entity work.gpu
+   -- G-NET: GPU generics (2 MB VRAM, rectangle flip, texture fetch options)
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP, GPU_READ_INFL => GPU_READ_INFL,
                 TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS, TEX_MISS_DELAY => TEX_MISS_DELAY)
    port map
@@ -1898,15 +1990,18 @@ begin
       SS_Idle              => SS_Idle_gpu_p
    );
    
-   -- MDEC in the CPU group (clk_cpu, clk_cpu2x, as the GTE): its only
+   -- G-NET: MDEC in the CPU group (clk_cpu, clk_cpu2x, as the GTE): its only
    -- partners are memorymux (bus_mdec_*) and the DMA (channels 0 and 1), both
    -- on clk_cpu, so CPU_CLK_SPLIT = 1 needs no crossing. With
    -- CPU_CLK_SPLIT = 0 these are the upstream clk1x, clk2x and clk2xIndex.
    -- sianniv plays MDEC stills and movies (libpress) from the coin onwards
-   -- (issue #1).
+   -- (issue #1). IDCT_REG_STAGE: the extra IDCT register stage that lets the
+   -- MDEC meet timing on clk_cpu2x (100 MHz), so only with CPU_CLK_SPLIT = 1;
+   -- 0 (upstream) otherwise.
    gmdec : if HAS_MDEC = 1 generate
    begin
    imdec : entity work.mdec
+   generic map (IDCT_REG_STAGE => CPU_CLK_SPLIT)   -- G-NET: stage R with the CPU clocks
    port map
    (
       clk1x                => clk_cpu,     
@@ -1937,6 +2032,7 @@ begin
       SS_Idle              => SS_Idle_mdec
    );
    end generate;
+   -- G-NET: HAS_MDEC = 0 (trim, not used by the release) ties the MDEC outputs idle
    gnomdec : if HAS_MDEC = 0 generate
    begin
       bus_mdec_dataRead    <= (others => '0');
@@ -1947,7 +2043,11 @@ begin
       SS_Idle_mdec         <= '1';
    end generate;
 
+   -- G-NET: MLAB_WR_NEGEDGE: the SPU register MLABs written on the falling
+   -- edge of clk1x, for clk_1x hold margin in the G-NET fits (2026-10-07,
+   -- GNET_Z1FULLO), so in every ZN2_BOARD = 1 build; 0 (upstream) otherwise.
    ispu : entity work.spu
+   generic map (MLAB_WR_NEGEDGE => ZN2_BOARD)   -- G-NET: falling-edge MLAB writes in G-NET builds
    port map
    (
       clk1x                => clk1x,   
@@ -2038,13 +2138,14 @@ begin
       bus_dataRead         => bus_exp2_dataRead
    );
 
-   -- R1 main RAM load timing options are calibrated for 2:1 only
+   -- G-NET: R1 main RAM load timing options are calibrated for 2:1 only
    assert RAM_READ_NOWAIT = 0 or (RAM_READ_NOWAIT = 1 and CLK_FAST_RATIO = 2)
       report "psx_top: RAM_READ_NOWAIT must be 0, or 1 with CLK_FAST_RATIO = 2" severity failure;
    assert RAM_LOAD_WINDOW = 7 or (RAM_LOAD_WINDOW >= 1 and RAM_LOAD_WINDOW <= 15 and CLK_FAST_RATIO = 2)
       report "psx_top: RAM_LOAD_WINDOW must be 7, or 1 to 15 with CLK_FAST_RATIO = 2" severity failure;
 
    imemorymux : entity work.memorymux
+   -- G-NET: ZN-2 expansion bus map, ZN-2 read overlap and main RAM load timing
    generic map
    (
       ZN2_MAP              => ZN2_BOARD,
@@ -2178,6 +2279,7 @@ begin
       bus_spu_read         => bus_spu_read,     
       bus_spu_write        => bus_spu_write,    
       bus_spu_dataRead     => bus_spu_dataRead, 
+      -- G-NET: SPU register read stall from the cpu_split SPU bridge ('0' in gsplit0)
       bus_spu_stall        => bus_spu_stall,
       
       ex2_memctrl          => ex2_memctrl,
@@ -2205,6 +2307,7 @@ begin
       SS_wren_SDRam        => SS_wren(16),
       SS_rden_SDRam        => SS_rden(16),
       
+      -- G-NET: ZN-2 expansion bus to zn2_board (ZN2_MAP = 1)
       zn_req               => zn_req,
       zn_we                => zn_we,
       zn_addr              => zn_addr,
@@ -2215,9 +2318,12 @@ begin
    );
    
    icpu : entity work.cpu
+   -- G-NET: back-to-back RAM load compensation off with RAM_READ_NOWAIT (issue #5);
+   -- turbo data cache left out with HAS_DCACHE = 0 (area, docs/area.md)
    generic map
    (
-      B2B_RAM_COMP      => 1 - RAM_READ_NOWAIT
+      B2B_RAM_COMP      => 1 - RAM_READ_NOWAIT,
+      HAS_DCACHE        => HAS_DCACHE
    )
    port map
    (
@@ -2294,10 +2400,13 @@ begin
 -- synthesis translate_on
       
       debug_firstGTE    => debug_firstGTE,
+      -- G-NET: program counter for the debug overlay (zn_dbg_regs). Built in the
+      -- release; shown only when the OSD debug overlay (status[101]) is on
       debug_pc          => cpu_debug_pc
    );
    
    igte : entity work.gte
+   -- G-NET: GTE multiplier option (3 = GTE at 100 MHz, the release)
    generic map (NARROW_MUL => GTE_NARROW_MUL)
    port map
    (
@@ -2342,6 +2451,7 @@ begin
    memcard_changed <= MemCard_changePending1 or MemCard_changePending2;
    saving_memcard  <= MemCard_saving_memcard1 or MemCard_saving_memcard2;
    
+   -- G-NET: HAS_PADS = 0 (trim, docs/f0_budget.md) also removes the memory cards
    gmemcards : if HAS_PADS = 1 generate
    begin
    imemcard1 : entity work.memcard
@@ -2424,6 +2534,7 @@ begin
       memcard_dataOut      => memcard2_dataOut
    );
    end generate;
+   -- G-NET: without the memory cards their outputs are tied idle
    gnomemcards : if HAS_PADS = 0 generate
    begin
       MemCard_changePending1  <= '0';
@@ -2445,6 +2556,8 @@ begin
    (
       FASTSIM                 => is_simu,
       Softmap_SaveState_ADDR  => 58720256,
+      -- G-NET: with CPU_CLK_SPLIT = 1 the scratchpad and RAM zero fill at reset
+      -- is done by cpu_split's filler, cpu_reset_fill (ext_fill_req / ext_fill_done)
       CPU_FILL_EXT            => CPU_CLK_SPLIT
    )
    port map
@@ -2477,6 +2590,8 @@ begin
       
       useSPUSDRAM             => SPUSDRAM,
       
+      -- G-NET: _p renames (CPU_CLK_SPLIT); the engine's strobes leave as
+      -- SS_wren_eng and SS_rden_eng for the HAS_SAVESTATES = 0 mask below
       SS_DataWrite            => SS_DataWrite_p,   
       SS_Adr                  => SS_Adr_p,         
       SS_wren                 => SS_wren_eng,       
@@ -2521,15 +2636,17 @@ begin
       SS_SPURAM_dataRead      => SS_SPURAM_dataRead, 
       SS_SPURAM_done          => SS_SPURAM_done,
 
+      -- G-NET: zero fill handshake with cpu_split (CPU_FILL_EXT = 1)
       ext_fill_req            => ext_fill_req,
       ext_fill_done           => ext_fill_done
    );  
 
-   -- HAS_SAVESTATES = 0: reset still runs through the savestate engine, but
+   -- G-NET: HAS_SAVESTATES = 0: reset still runs through the savestate engine, but
    -- only types 12-16 (scratchpad, CD, SPU RAM, VRAM, SDRAM zero fill) are
    -- written in reset mode. Forcing the other write strobes and all read
    -- strobes to 0 lets each module's saved-state registers reduce to their
-   -- SS_reset constants.
+   -- SS_reset constants. The mask "11111000000000000" keeps write strobe bits
+   -- 16 down to 12, the types listed above.
    SS_wren_p <= SS_wren_eng when HAS_SAVESTATES = 1 else SS_wren_eng and "11111000000000000";
    SS_rden <= SS_rden_eng when HAS_SAVESTATES = 1 else (others => '0');
 
@@ -2572,7 +2689,7 @@ begin
    end generate;
 
    -- ############################################################
-   -- R1 CPU_CLK_SPLIT (docs/r1_cpu_domain_design.md): wiring between the
+   -- G-NET: R1 CPU_CLK_SPLIT (docs/r1_cpu_domain_design.md): wiring between the
    -- CPU group and the PS1 group (GPU, SPU, savestates engine, DDR3 arbiter)
    -- ############################################################
    gsplit0 : if CPU_CLK_SPLIT = 0 generate
@@ -2979,6 +3096,14 @@ begin
    -- ############################################################
    -- G-NET: ZN-2 board and FC PCB (docs/zn2_layer_design.md 13)
    -- ############################################################
+   -- G-NET: rtl/gnet blocks that only some revisions compile (cpu_split
+   -- above, zn2_cdc, zoom_cdc, zoom_board, zn_dbg_regs) are declared here as
+   -- components inside their generate blocks, so a revision that leaves them
+   -- out of its file list does not need their files; zn2_board and
+   -- zn2_cardmem, which every ZN2_BOARD revision compiles, are instantiated
+   -- as entities. The upstream revision PSX.qsf compiles no rtl/gnet file at
+   -- all; its synthesis was last compared with unmodified PSX_MiSTer on
+   -- 2026-10-04 (docs/f0_budget.md 3.1), before this block was added.
    gzoomchk : if ZOOM_BOARD = 1 and (ZN2_BOARD = 0 or CPU_CLK_SPLIT = 0) generate
    begin
       assert false report "ZOOM_BOARD = 1 needs ZN2_BOARD = 1 and CPU_CLK_SPLIT = 1 (rtl/gnet/zoom_cdc.vhd)" severity failure;
@@ -2994,6 +3119,9 @@ begin
       zoom_flags   <= (others => '0');
    end generate;
 
+   -- G-NET: ZN-2 board without CPU_CLK_SPLIT, on clk1x (33.8688 MHz): an
+   -- experiment path, compiled only by revision GNET_Z1. The release
+   -- (GNET_Z1FULLR, GNET_CPU50) uses gzn2c below.
    gzn2 : if ZN2_BOARD = 1 and CPU_CLK_SPLIT = 0 generate
    begin
       assert HAS_PADS = 0 report "ZN2_BOARD = 1 needs HAS_PADS = 0 (SIO0 belongs to the ZN-2 devices)" severity failure;
@@ -3001,6 +3129,7 @@ begin
       izn2_board : entity work.zn2_board
       generic map
       (
+         -- clk1x, 33.8688 MHz
          CLK_HZ       => 33868800,
          FLASH_PRESET => ZN2_FLASH_PRESET,
          PS1_SIO      => ZN2_PS1_SIO,
@@ -3064,12 +3193,18 @@ begin
          nv_clk         => zn_nv_clk,
          nv_addr        => zn_nv_addr,
          nv_q           => zn_nv_q,
-         nv_wtog        => zn_nv_wtog
+         nv_wtog        => zn_nv_wtog,
+         cj_tog         => zn_cj_tog,
+         cj_hunk        => zn_cj_hunk
       );
 
       zn_wd_reset <= zn_dbg_wd;
 
       izn2_cardmem : entity work.zn2_cardmem
+      generic map
+      (
+         CARD_JOURNAL   => (CARD_JOURNAL = 1)
+      )
       port map
       (
          clk2x          => clk2x,
@@ -3084,6 +3219,10 @@ begin
          cm_wdata       => zn_cm_wdata,
          cm_ack         => zn_cm_ack,
          cm_rdata       => zn_cm_rdata,
+         ul_req         => zn_cj_rd_req,
+         ul_line        => zn_cj_rd_line,
+         ul_ack         => zn_cj_rd_ack,
+         ul_data        => zn_cj_rd_data,
          mem_request    => memZN_request,
          mem_BURSTCNT   => memZN_BURSTCNT,
          mem_ADDR       => memZN_ADDR,
@@ -3097,7 +3236,7 @@ begin
       );
    end generate;
 
-   -- With CPU_CLK_SPLIT = 1 (docs/r1_cpu_domain_design.md, "ZN-2 layer in
+   -- G-NET: with CPU_CLK_SPLIT = 1 (docs/r1_cpu_domain_design.md, "ZN-2 layer in
    -- the CPU group"): zn2_board joins memorymux in the CPU group (clk_cpu,
    -- CLK_HZ 50,000,000, ce, reset and sys_tick of the CPU group), so the
    -- expansion bus, SIO0 and IRQ7 stay synchronous, and its flash port is on
@@ -3270,6 +3409,8 @@ begin
          nv_addr        => zn_nv_addr,
          nv_q           => zn_nv_q,
          nv_wtog        => zn_nv_wtog,
+         cj_tog         => zn_cj_tog,
+         cj_hunk        => zn_cj_hunk,
          zm_req         => c_zm_req,
          zm_we          => c_zm_we,
          zm_addr        => c_zm_addr,
@@ -3341,6 +3482,10 @@ begin
       );
 
       izn2_cardmem : entity work.zn2_cardmem
+      generic map
+      (
+         CARD_JOURNAL   => (CARD_JOURNAL = 1)
+      )
       port map
       (
          clk2x          => clk2x,
@@ -3355,6 +3500,10 @@ begin
          cm_wdata       => zn_cm_wdata,
          cm_ack         => zn_cm_ack,
          cm_rdata       => zn_cm_rdata,
+         ul_req         => zn_cj_rd_req,
+         ul_line        => zn_cj_rd_line,
+         ul_ack         => zn_cj_rd_ack,
+         ul_data        => zn_cj_rd_data,
          mem_request    => memZN_request,
          mem_BURSTCNT   => memZN_BURSTCNT,
          mem_ADDR       => memZN_ADDR,
@@ -3561,11 +3710,15 @@ begin
       zn_ld_busy <= '0';
    end generate;
 
-   -- Debug overlay capture (docs/hw_debug_overlay.md): on the clock of the
+   -- G-NET: debug overlay capture (docs/hw_debug_overlay.md): on the clock of the
    -- CPU and zn2_board, no reset input (the counters and the watchdog
    -- snapshot survive the core reset). A component, so builds without the
-   -- ZN-2 board need no rtl/gnet/zn_dbg_regs.vhd.
-   gzndbg : if ZN2_BOARD = 1 generate
+   -- ZN-2 board need no rtl/gnet/zn_dbg_regs.vhd. Built in every ZN2_BOARD
+   -- build with ZN2_DBG = 1; PSX.sv's zn_dbg_overlay shows it only while the
+   -- OSD debug overlay option (status[101]) is on. ZN2_DBG = 0 (G-NET: area,
+   -- docs/area.md; the release from alpha 4) leaves it out with the overlay
+   -- itself (PSX.sv GNET_NO_DBG).
+   gzndbg : if ZN2_BOARD = 1 and ZN2_DBG = 1 generate
       component zn_dbg_regs is
       generic
       (
@@ -3596,6 +3749,8 @@ begin
       izn_dbg_regs : zn_dbg_regs
       generic map
       (
+         -- clk_cpu: clk1x's 33.8688 MHz, or 50 MHz from rtl/gnet/pll_cpu.v
+         -- with CPU_CLK_SPLIT = 1
          CLK_HZ     => 33868800 + CPU_CLK_SPLIT * (50000000 - 33868800)
       )
       port map
@@ -3614,11 +3769,21 @@ begin
       );
    end generate;
 
+   -- G-NET: area, ZN2_DBG = 0: no capture block, the overlay word reads 0
+   gzndbg0 : if ZN2_BOARD = 1 and ZN2_DBG = 0 generate
+   begin
+      zn_dbg_word <= (others => '0');
+   end generate;
+
    gnozn2 : if ZN2_BOARD = 0 generate
    begin
       zn_dbg_word     <= (others => '0');
       zn_nv_q         <= (others => '0');
       zn_nv_wtog      <= '0';
+      zn_cj_tog       <= '0';
+      zn_cj_hunk      <= (others => '0');
+      zn_cj_rd_ack    <= '0';
+      zn_cj_rd_data   <= (others => '0');
       zn_ack          <= '0';
       zn_rdata        <= (others => '0');
       memZN_request   <= '0';

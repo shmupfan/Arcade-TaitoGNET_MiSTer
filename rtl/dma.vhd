@@ -1,3 +1,13 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: input DMA_SPU_readStall (default '0' = upstream) and output
+-- DMA_SPU_readReq, so the SPU DMA read can wait for the halfword to cross
+-- from the PS1 clock group when the CPU runs on its own clock (psx_top
+-- CPU_CLK_SPLIT = 1, docs/r1_cpu_domain_design.md).
+-- G-NET commits: f0cd555 (2026-10-05) CPU group on its own 50/100 MHz clocks.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -73,7 +83,7 @@ entity dma is
       DMA_SPU_readEna      : out std_logic := '0';
       DMA_SPU_write        : out std_logic_vector(15 downto 0);
       DMA_SPU_read         : in  std_logic_vector(15 downto 0);
-      -- CPU on its own clock (psx_top CPU_CLK_SPLIT = 1): hold channel 4 reads
+      -- G-NET: CPU on its own clock (psx_top CPU_CLK_SPLIT = 1): hold channel 4 reads
       -- until the halfword has crossed; DMA_SPU_readReq is the ungated want
       DMA_SPU_readStall    : in  std_logic := '0';
       DMA_SPU_readReq      : out std_logic;
@@ -225,9 +235,12 @@ begin
 
    DMA_CD_readEna    <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 3 and toDevice = '0') else '0';
    
+   -- G-NET: DMA_SPU_readReq is the ungated channel 4 read request; DMA_SPU_readEna
+   -- waits for DMA_SPU_readStall = '0' (default '0' = upstream)
    DMA_SPU_readReq   <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 4 and toDevice = '0') else '0';
    DMA_SPU_readEna   <= '1' when (dmaState = WORKING and fifoOut_NearFull = '0' and activeChannel = 4 and toDevice = '0' and DMA_SPU_readStall = '0') else '0';
 
+   -- G-NET: second term, channel 4 stall from DMA_SPU_readStall (CPU_CLK_SPLIT = 1)
    readStall <= '1' when (activeChannel = 2 and toDevice = '0' and gpu_dmaRequest = '0') else
                 '1' when (activeChannel = 4 and toDevice = '0' and DMA_SPU_readStall = '1') else '0';
 

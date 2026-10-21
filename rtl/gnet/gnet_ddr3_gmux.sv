@@ -1,6 +1,7 @@
 // Two Avalon masters on gnet_ddr3_arb's glue port (docs/ddr3_arbiter.md 7).
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -10,8 +11,18 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
 //
+// Origin: written for this core (own implementation, no code copied from
+//         other projects); from development branch ddr3-card (126e964),
+//         unchanged apart from these comments.
+// Evidence: none needed (glue between two of this core's masters and its
+//           arbiter). Bench: sim/ddr3arb/ (run.sh flcopy, tb_flcopy_top.sv
+//           wires it as PSX.sv does).
+//
 // a: writes only, one beat (gnet_ddr3_mirror), first. b: reads and one-beat
-// writes (gnet_card_sector). Combinational: the arbiter takes a glue command
+// writes: in this tree gnet_ddr3_flcopy, which only reads (PSX.sv,
+// GNET_DDR3_LOAD; docs/i12_ddr3_load.md); the card sector engine it was
+// written for (gnet_card_sector, branch ddr3-card) is not in this tree.
+// Combinational: the arbiter takes a glue command
 // only in the cycle it drops g_busy, so the command offered may change before
 // that; each master keeps its own command until it sees its busy low. All
 // read beats belong to b.

@@ -1,12 +1,16 @@
--- Temporary SDRAM path for the Taito Zoom board's flash area reads (PSX.sv
--- macro GNET_ZOOM_SDRAM, first test revision GNET_Z1_ZOOM;
--- docs/zoom_board_design.md 14). The release path is the DDR3 arbiter
--- (macro GNET_DDR3_ARB, branch ddr3-arb-int), which takes the same zoom_m_*
--- wires; this block is only for builds where the flash area is in SDRAM
--- alone (MRA index 3 and gnet_fc's flash storage write SDRAM 0x1000000 to
--- 0x19FFFFF, docs/zn2_layer_design.md 13.4).
+-- zoom_sdram_link: SDRAM path for the Taito Zoom board's flash area reads
+-- (Taito G-NET core). Experiment path, in no build on the main line: only
+-- the archived revision GNET_Z1_ZOOM built it (PSX.sv macro GNET_ZOOM_SDRAM
+-- without GNET_DDR3_ARB, tag experiments-archive,
+-- docs/experiment_revisions.md; docs/zoom_board_design.md 14); the
+-- sim/zoomlink benches still test it. The release (GNET_Z1FULLR) reads the flash
+-- area through the DDR3 arbiter (macro GNET_DDR3_ARB), which takes the same
+-- zoom_m_* wires; this block is only for builds where the flash area is in
+-- SDRAM alone (MRA index 3 and gnet_fc's flash storage write SDRAM 0x1000000
+-- to 0x19FFFFF, docs/zn2_layer_design.md 13.4).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -15,6 +19,10 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). Evidence: sdram.sv's read byte masks (commit 13b6e1d,
+--         docs/zn2_layer_design.md 18.5).
 --
 -- zoom_board's 64-bit line port (clk1x; program cache misses and ZSG-2 wave
 -- fetches through zoom_memarb) to SDRAM channel 3, which runs on clk_cpu

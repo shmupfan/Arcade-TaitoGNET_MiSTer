@@ -1,6 +1,7 @@
 // G-NET FC PCB flash command machine for the five Intel-command-set chips.
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -10,12 +11,19 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
 //
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: Intel 28F160S3 datasheet 290608-005, 28F160S5 290609-004 and
+//           28F400B5 290599-004 (docs/evidence_sources.md); MAME 0.288
+//           intelfsh.cpp where the datasheets leave a mode transition open.
+//           Bench: sim/gnet/ (gnet_fc directed tests and MAME replay).
+//
 // Chips (docs/gnet_glue_design.md 3): 0 = U30 TE28F160 (2 MB, sub-BIOS and
 // game program), 1 = U27 E28F400B (512 KB, Zoom program), 2..4 = U56, U55,
 // U29 TE28F160 (wave data). 16-bit chips; addresses here are word addresses.
 //
-// Commands (Intel 28F160S3 290608-005 and 28F400B5; MAME intelfsh.cpp for the
-// mode transitions the datasheets leave open):
+// Commands (Intel 28F160S3 290608-005 and 28F400B5 290599-004; MAME 0.288
+// intelfsh.cpp for the mode transitions the datasheets leave open):
 //   FFh/F0h read array, 90h read identifier, 70h read status register,
 //   50h clear status register (enters read status, as MAME), 40h/10h word
 //   program (next write is the data), 20h block erase then D0h confirm,
@@ -33,9 +41,15 @@
 // E28F400B 0.3 s boot/parameter and 0.6 s main), PRESET 2 = 28F160S3 typical
 // at 2.7 V VPP (290608-005 p50: 20.0 us per word, 0.56 s per block), PRESET 3
 // = 28F160S5 typical at 5 V VPP (290609-004 p49: 9.24 us per word, 0.34 s per
-// block; the part on the FC PCB, TE28F160 S5100, docs/board_evidence.md P1)
-// for the TE28F160 chips; the E28F400B keeps the MAME values in all presets (the
-// 28F400B5 datasheet in the library gives maxima only: 100 us, 7 s, 14 s).
+// block; the part on the FC PCB, TE28F160 S5100 from the board photo,
+// docs/board_evidence.md P1, not in this tree, summarised in
+// docs/zn2_layer_design.md 17 item 9) for the TE28F160 chips; the E28F400B
+// keeps the MAME values in all presets (the 28F400B5 datasheet in the library
+// gives maxima only: 100 us, 7 s, 14 s).
+// The release uses PRESET 1: psx_top's ZN2_FLASH_PRESET defaults to 1 and
+// PSX.sv does not set it. PRESET 1 was kept so a first boot (flash copy) can
+// be compared with MAME; choosing PRESET 3 for a release is an open decision
+// (docs/zn2_layer_design.md 17 item 9).
 // When a program or erase completes, status returns to 80h whatever the read
 // mode (datasheet: the WSM finishes); MAME only does this in read status mode.
 // zoom_release puts U27 and the wave chips into read array mode (MAME

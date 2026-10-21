@@ -1,12 +1,43 @@
+// mn10200: Panasonic MN10200 (MN1020012A) sound CPU: core, internal
+// peripherals and real-time pacer (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MN102L Instruction Manual 12250-030E and MN102H60G LSI User's
+//           Manual 22360-014E (docs/evidence_sources.md); MAME 0.288
+//           src/devices/cpu/mn10200/mn10200.cpp where the manuals are silent
+//           or the MN1020012A differs.
+// Design: docs/mn10200_design.md 5 ("design study" below),
+//         docs/mn10200_rtl.md.
+// Bench: sim/mn10200/ (lockstep against MAME traces).
+//
 // Panasonic MN10200 (MN1020012A) for the Taito Zoom sound board: CPU core,
 // internal peripherals and the real-time pacer (docs/mn10200_design.md 5.2).
 //
-// Clock: any clock above about 25 MHz with this design (the G-NET core uses
-// clk_1x, 33.8688 MHz). The pacer keeps the virtual machine-cycle domain
-// (6.25 MHz = OSCI 12.5 MHz / 2) locked to real time: it adds
-// PACE_ADD per clock and subtracts PACE_SUB per machine cycle; the CPU
-// starts an instruction only while the credit is positive. With the
-// defaults 15,625 / 84,672 = 6,250,000 / 33,868,800 exactly.
+// Clock: any clock above about 25 MHz with this design. The G-NET release
+// runs it on clk_2x, 67.7376 MHz, with PIPE = 1 (zoom_board CLK_H 4); at
+// CLK_H 2 it runs on clk_1x, 33.8688 MHz, with PIPE = 0. The pacer keeps the
+// virtual machine-cycle domain (6.25 MHz = OSCI 12.5 MHz / 2) locked to real
+// time: it adds PACE_ADD per clock and subtracts PACE_SUB per machine cycle;
+// the CPU starts an instruction only while the credit is positive. With the
+// defaults 15,625 / 84,672 = 6,250,000 / 33,868,800 exactly; zoom_board
+// passes PACE_SUB 169,344 for 67.7376 MHz.
+//
+// The parameter defaults favour simulation and the stand-alone MN10200 work
+// (DEBUG 1 keeps the cycle counter the trace benches read); zoom_board
+// overrides them with the release values (PACE_CAP 1024, DEBUG 0,
+// TIMER_EXACT 0, RF_MLAB 0, PIPE 1).
 module mn10200 #(
     parameter FORM_HEX  = "rtl/zoom/mn10200_form.hex",
     parameter CTL_HEX   = "rtl/zoom/mn10200_ctl.hex",
@@ -21,7 +52,8 @@ module mn10200 #(
     input  logic        clk,
     input  logic        rst,
     input  logic        pace_en,        // 0: run as fast as the bus allows (simulation)
-    input  logic        ext_go,         // 0: start no instruction (Zoom board: TMS57002 slots behind; tie 1)
+    input  logic        ext_go,         // 0: start no instruction; zoom_board drives !feed_sp && !ev_hold (a
+                                        // TMS57002 SYNC waiting behind slots, or the host event queue nearly full)
     // external bus
     output logic [23:0] bus_addr,
     output logic        bus_rd,
@@ -48,7 +80,8 @@ module mn10200 #(
     output logic [4:0]  io_cyc,         // acc_cyc of the last internal register write (held): a port
                                         // write lands at the end of its instruction too
     // debug / trace port
-    input  logic        dbg_hold,
+    input  logic        dbg_hold,       // 1: wait at the next instruction boundary; in the release the core
+                                        // pause (zoom_board dbg_hold), in the benches a stop at a boundary
     output logic        dbg_bound,
     output logic        dbg_insn,
     output logic [23:0] dbg_pc,

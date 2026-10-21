@@ -17,10 +17,27 @@
 //
 // You should have received a copy of the GNU General Public License 
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+// PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+// keeps its own licence (GPL-3.0-or-later, header above).
+// Changes: parameters CLK_FAST_RATIO (default 3 = upstream) and EARLY_READY
+// (default 0 = upstream) for the CPU group at 2:1 (docs/r1_cpu_domain_design.md):
+// request strobes and request index for a 2:1 clock pair, a cache line fill
+// that signals ready only after its last word at 2:1, the row address and
+// bank of the CPU strobes selected in the last mux levels, and EARLY_READY's
+// one clk_base cycle shorter plain channel 1 read. ch1_dout32 is now a wire
+// selecting between upstream's register (renamed) and the EARLY_READY one;
+// its power-up value is 0.
+// G-NET commits: 67a3f97 (2026-10-05) CLK_FAST_RATIO; 6cb9b78 (2026-10-05)
+// cache line fill ready after its last word at 2:1; 96f5475 (2026-10-06)
+// EARLY_READY; 87d11e7 (2026-10-06) CPU strobes in the last mux level;
+// 6fe551b (2026-10-15) ch1_dout32 as a clk_cpu2x register with EARLY_READY.
+// Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
 
 module sdram
 #(
-	// clk edges per clk_base cycle, both from one PLL with aligned edges:
+	// G-NET: clk edges per clk_base cycle, both from one PLL with aligned edges:
 	// 3 = upstream (101.6064 / 33.8688 MHz), 2 = CPU domain at 2:1
 	// (docs/r1_cpu_domain_design.md, "Step: fast-clock ratio generic")
 	parameter CLK_FAST_RATIO = 3,
@@ -56,6 +73,7 @@ module sdram
 
 	input      [26:0]  ch1_addr,    // 25 bit address for 8bit mode. addr[0] = 0 for 16bit mode for correct operations.
 	output reg [127:0] ch1_dout,    // data output to cpu
+	// G-NET: a wire now, driven by the select after the declarations
 	output     [31:0]  ch1_dout32,  // data output to cpu
 	input      [15:0]  ch1_din,     // data input from cpu
 	input              ch1_req,     // request
@@ -151,6 +169,9 @@ reg clk3xIndex      = 0;
 
 reg ram_idleNext    = 0;
 
+// G-NET: ch1_dout32 comes from the clk_base register as upstream (ch1_dout32_b)
+// or, with EARLY_READY at 2:1, from a clk register (ch1_dout32_f). Power-up
+// value 0 (upstream's output reg had no initial value).
 reg [31:0] ch1_dout32_b = 0;
 reg [31:0] ch1_dout32_f = 0;
 assign ch1_dout32 = (CLK_FAST_RATIO == 2 && EARLY_READY != 0) ? ch1_dout32_f : ch1_dout32_b;
@@ -182,6 +203,7 @@ always @(posedge clk_base) begin
       end
    end
    
+   // G-NET: upstream's ch1_dout32 register, renamed ch1_dout32_b
    if (ch1_ready_ramclock) ch1_dout32_b <= ch1_dout[31:0];
    
    dma_wr  <= 0;
@@ -244,7 +266,7 @@ reg [15:0] dq_reg;
 
 reg [1:0] ch;
 
-// Row address and bank of an ACTIVE command, per source, as the IDLE state
+// G-NET: row address and bank of an ACTIVE command, per source, as the IDLE state
 // splits them: {cas_addr[12:9], SDRAM_BA, SDRAM_A, cas_addr[8:0]}
 wire [27:0] dma_rowv, ch1_rowv, ch2_rowv, ch3_rowv;
 assign dma_rowv = {2'b00, 1'b0, dmafifo_adr[25:1]};
@@ -252,7 +274,7 @@ assign ch1_rowv = {2'b00, 1'b1, ch1_addr[25:1]};
 assign ch2_rowv = {~ch2_be[1:0], ch2_rnw, ch2_addr[25:1]};
 assign ch3_rowv = {~ch3buf_be[1:0], ch3buf_rnw, ch3buf_addr[25:1]};
 
-// R1 at CLK_FAST_RATIO 2 (docs/r1_cpu_domain_design.md, SDRAM address
+// G-NET: R1 at CLK_FAST_RATIO 2 (docs/r1_cpu_domain_design.md, SDRAM address
 // timing): ch1_req and ch2_req (the core's RAM read and write strobes) and
 // their addresses come from the CPU clock domain, 10 ns before the edge
 // that loads the SDRAM_A / SDRAM_BA I/O registers. The IDLE state's
@@ -278,7 +300,7 @@ always @(posedge clk) begin
   
    clk1xToggle3X   <= clk1xToggle;
    clk1xToggle3X_1 <= clk1xToggle3X;
-   // request index: 1 on the first clk edge after each clk_base edge
+   // G-NET: request index, 1 on the first clk edge after each clk_base edge
    if (CLK_FAST_RATIO == 2) clk3xIndex <= clk1xToggle3X   == clk1xToggle;
    else                     clk3xIndex <= clk1xToggle3X_1 == clk1xToggle;
 	
@@ -312,7 +334,7 @@ always @(posedge clk) begin
 
 	dq_reg <= SDRAM_DQ;
 
-   // EARLY_READY at 2:1: ch1_dout32 is a clk register loaded only on the
+   // G-NET: EARLY_READY at 2:1: ch1_dout32 is a clk register loaded only on the
    // clk edges that coincide with a clk_base edge (clk3xIndex = 0 there),
    // from the same values the clk_base register used to sample, so the CPU
    // sees the same word on the same clk_base edge. The dq_reg (I/O input
@@ -344,7 +366,7 @@ always @(posedge clk) begin
    if(data_ready_delay1[0]) ch1_dout[127:112]  <= dq_reg;
    if(!(CLK_FAST_RATIO == 2 && EARLY_READY != 0) && data_ready_delay1[6] && ~dma_buffer && ~cache_buffer_next) ch1_ready_ramclock <= 1;
    if( (CLK_FAST_RATIO == 2 && EARLY_READY != 0) && data_ready_delay1[7] && ~dma_buffer && ~cache_buffer)      ch1_ready_ramclock <= 1;
-   // cache line fill: at 3:1 (upstream) ready after the second word; the
+   // G-NET: cache line fill: at 3:1 (upstream) ready after the second word; the
    // last two words reach the I-cache 2 and 4 edges later, before the CPU
    // can fetch them. At 2:1 a fetch two instructions after the miss (a
    // taken branch to word 3) hit the line before word 3 was written and
@@ -485,7 +507,7 @@ always @(posedge clk) begin
    
          STATE_IDLE: begin
             saved_128read <= 0;
-            // 2:1: address and bank from idle_ab_rest here, ch1_req / ch2_req after the case
+            // G-NET: 2:1, address and bank from idle_ab_rest here, ch1_req / ch2_req after the case
             if (CLK_FAST_RATIO == 2 && !refresh_due) {SDRAM_BA, SDRAM_A} <= idle_ab_rest;
             if (refreshForce_req || refresh_count > cycles_per_refresh) begin
                state            <= STATE_RFSH;
@@ -498,6 +520,7 @@ always @(posedge clk) begin
                   refresh_count <= 14'd0;
                
             end else if(~dmafifo_empty) begin
+               // G-NET: at 2:1 the bank and row address come from idle_ab_rest and the strobes
                if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {2'b00, 1'b0, dmafifo_adr[25:1]};
                else                     {cas_addr[12:9],cas_addr[8:0]} <= {dma_rowv[27:24], dma_rowv[8:0]};
                chip         <= dmafifo_adr[26];
@@ -510,6 +533,7 @@ always @(posedge clk) begin
                dmafifo_read <= 1'b1;
                lastbank     <= dmafifo_adr[20:10];
             end else if(ch1_req | ch1_rq) begin
+               // G-NET: at 2:1 the bank and row address come from idle_ab_rest and the strobes
                if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {2'b00, 1'b1, ch1_addr[25:1]};
                else                     {cas_addr[12:9],cas_addr[8:0]} <= {ch1_rowv[27:24], ch1_rowv[8:0]};
                chip         <= ch1_addr[26];
@@ -534,6 +558,7 @@ always @(posedge clk) begin
                saved_128read <= ch1_dma | ch1_cache;
                
             end else if(ch2_req | ch2_rq) begin
+               // G-NET: at 2:1 the bank and row address come from idle_ab_rest and the strobes
                if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {~ch2_be[1:0], ch2_rnw, ch2_addr[25:1]};
                else                     {cas_addr[12:9],cas_addr[8:0]} <= {ch2_rowv[27:24], ch2_rowv[8:0]};
                chip       <= ch2_addr[26];
@@ -546,6 +571,7 @@ always @(posedge clk) begin
                state      <= STATE_WAIT;
                ch2_ready_ramclock <= 1;
             end else if(ch3_rq) begin
+               // G-NET: at 2:1 the bank and row address come from idle_ab_rest and the strobes
                if (CLK_FAST_RATIO != 2) {cas_addr[12:9],SDRAM_BA,SDRAM_A,cas_addr[8:0]} <= {~ch3buf_be[1:0], ch3buf_rnw, ch3buf_addr[25:1]};
                else                     {cas_addr[12:9],cas_addr[8:0]} <= {ch3_rowv[27:24], ch3_rowv[8:0]};
                chip       <= ch3buf_addr[26];
@@ -610,7 +636,7 @@ always @(posedge clk) begin
          end
       endcase
    
-      // 2:1: ch1_req / ch2_req (CPU clock domain) select the row address and
+      // G-NET: 2:1, ch1_req / ch2_req (CPU clock domain) select the row address and
       // bank in the last mux levels before the I/O registers
       if (CLK_FAST_RATIO == 2 && ch1_take_req)      {SDRAM_BA, SDRAM_A} <= ch1_rowv[23:9];
       else if (CLK_FAST_RATIO == 2 && ch2_take_req) {SDRAM_BA, SDRAM_A} <= ch2_rowv[23:9];

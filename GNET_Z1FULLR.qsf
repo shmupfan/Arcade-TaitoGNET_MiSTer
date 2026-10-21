@@ -1,4 +1,4 @@
-# G-NET Z1 FULLR: GNET_Z1FULLO plus the R1 main RAM load timing at 2:1 (issue #5; docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1"): GNET_EARLY_READY (sdram.sv EARLY_READY) and GNET_RAM_READ_NOWAIT (memorymux RAM_READ_NOWAIT, cpu B2B_RAM_COMP 0), a main RAM data load 5 CPU cycles from request to done as in the 3:1 core, for timing Ray Crisis's loading bar against the PCB's 14.69 s.
+# G-NET Z1 FULLR: the release revision (alpha 3 RBF 20261015, fitter seed 8; alpha 4 adds the fitter-only HDMI over-constraint F1, the MRA DDR3 load path of issue #12 and the area switches; the beta candidate adds the card journal of issue #9 and the high score save, end of this file). GNET_Z1FULLO plus the R1 main RAM load timing at 2:1 (issue #5; docs/r1_cpu_domain_design.md, "Main RAM load timing at 2:1"): GNET_EARLY_READY (sdram.sv EARLY_READY) and GNET_RAM_READ_NOWAIT (memorymux RAM_READ_NOWAIT, cpu B2B_RAM_COMP 0), a main RAM data load 5 CPU cycles from request to done as in the 3:1 core, for timing Ray Crisis's loading bar against the PCB's 14.69 s; plus the GPU texture prefetch and its calibration to the board (end of this file, docs/gpu_read_infl.md 9 and 10).
 # --------------------------------------------------------------------------
 #
 # MiSTer project
@@ -86,7 +86,8 @@ set_global_assignment -name VERILOG_FILE rtl/gnet/pll_vid_fixed.v
 set_global_assignment -name SDC_FILE GNET_LEAN.sdc
 set_global_assignment -name VERILOG_MACRO "GNET_VRAM_2MB=1"
 set_global_assignment -name VERILOG_MACRO "GNET_GTE_NARROW_MUL=3"
-# G-NET ZN-2 board and FC PCB glue, silent (docs/zn2_layer_design.md 13 and 15)
+# G-NET ZN-2 board and FC PCB glue (docs/zn2_layer_design.md 13 and 15); sound
+# comes from the Taito Zoom board (GNET_ZOOM below), not the silent stub
 set_global_assignment -name VERILOG_MACRO "GNET_ZN2=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ctrl.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_flash.sv
@@ -156,7 +157,8 @@ set_global_assignment -name VHDL_FILE rtl/gnet/zoom_cdc.vhd
 # ZN-2 read overlap (memorymux ZN2_READ_OVERLAP)
 set_global_assignment -name VERILOG_MACRO "GNET_READ_OVERLAP=1"
 
-# Fitter seed (2026-10-07: seed 1 left spu RamVoice_addrA -> VOICEREGS MLAB hold at -0.060 ns)
+# Fitter seed history, each line saying why that seed replaced the one before:
+# seed 2 (2026-10-07): seed 1 left spu RamVoice_addrA -> VOICEREGS MLAB hold at -0.060 ns
 # seed 3 (2026-10-15): seed 2 with the MDEC left memorymux ram_rnw -> SDRAM_A[7]
 # (clk_cpu -> clk_cpu2x) at -0.028 ns setup; seed 3 met every clock
 # seed 5 (2026-10-15): seed 3 with TEX_MISS_DELAY failed to route (congestion
@@ -176,23 +178,33 @@ set_location_assignment PLLOUTPUTCOUNTER_X0_Y5_N1 -to "pll_hdmi|pll_hdmi_inst|al
 # R1 main RAM load timing at 2:1 (issue #5, docs/r1_cpu_domain_design.md)
 set_global_assignment -name VERILOG_MACRO "GNET_EARLY_READY=1"
 set_global_assignment -name VERILOG_MACRO "GNET_RAM_READ_NOWAIT=1"
-# Alternative (isolated 6, back-to-back 5): GNET_RAM_B2B_WINDOW=1 in place of
-# GNET_RAM_READ_NOWAIT; with GNET_RAM_READ_NOWAIT on it has no effect.
-# The fitter seed is kept at Z1FULLO's 2; the logic differs, so a timing
-# miss on this revision is a seed question first (tools/sta/cpu2x_worst.tcl).
+# Alternative (isolated 6, back-to-back 5): the memorymux back-to-back window
+# rescaled in place of GNET_RAM_READ_NOWAIT (PSX.sv macro GNET_RAM_B2B_WINDOW,
+# archived under the tag experiments-archive; tools/r1/mem_lat mode w).
+# The fitter seed is set above (SEED 8, with its history); a timing miss
+# after a logic change here is a seed question first (tools/sta/cpu2x_worst.tcl).
 
-# GPU texture prefetch test (branch a3-prefetch, docs/gpu_read_infl.md 4):
+# GPU texture prefetch, part of the release (docs/gpu_read_infl.md 4 and 9):
 # 4-qword cache fill per miss, the next texture row's group as well, two
 # VRAM reads in flight. Hides most of the DDR3 read latency (about 12
-# clk_2x per read, ddr3_latency_probe.md 6). Test core only.
+# clk_2x per read at idle, docs/gpu_read_infl.md 10; the probe behind it,
+# docs/ddr3_latency_probe.md 6, is not in this tree).
 set_global_assignment -name VERILOG_MACRO "GNET_TEX_FETCH_QW=4"
 set_global_assignment -name VERILOG_MACRO "GNET_TEX_FETCH_ROWS=2"
 set_global_assignment -name VERILOG_MACRO "GNET_GPU_READ_INFL=2"
-# Calibration (branch a3-calib, docs/gpu_read_infl.md 10): 8 clk_2x added to
-# each texture cache fill so the slowdown matches the board (Ray Crisis demo
-# 1: board 1.078, prefetch alone 1.045). Bracket if the build misses: 5 / 10.
+# Calibration (docs/gpu_read_infl.md 10): each texture cache fill waits
+# GNET_TEX_MISS_DELAY = 13 clk_2x after its last beat, so the slowdown
+# matches the board. Ray Crisis attract demo 1, core time over MAME time:
+# board 1.078, prefetch alone 1.045, delay 9 gave 1.061, delay 13 gave 1.0748
+# on this revision's seed 8 build.
 set_global_assignment -name VERILOG_MACRO "GNET_TEX_MISS_DELAY=13"
+# F1, alpha 4 (docs/hdmi_timing.md): 0.25 ns more HDMI setup uncertainty
+# seen by quartus_fit only, so the HDMI scaler paths keep margin; sign-off
+# STA times the real clock.
 set_global_assignment -name SDC_FILE GNET_HDMI_FITOC.sdc
+# Hold-only false path on the savestate SPU RAM capture, unreachable with
+# GNET_NO_SAVESTATES (GNET_SPURAM_HOLD.sdc, docs/area_timing.md 2)
+set_global_assignment -name SDC_FILE GNET_SPURAM_HOLD.sdc
 
 # Issue #12, faster loading (docs/i12_ddr3_load.md): MRA DDR3 loads, in the
 # release from alpha 4. A card image with address="0x34000000" needs nothing
@@ -202,3 +214,27 @@ set_global_assignment -name SDC_FILE GNET_HDMI_FITOC.sdc
 set_global_assignment -name VERILOG_MACRO "GNET_DDR3_LOAD=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_gmux.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_flcopy.sv
+
+# Area (docs/area.md): free ALMs and M10K so timing closure (HDMI setup in
+# sys/ascal.vhd at 87% full) depends less on the seed. Nothing a game can see
+# changes. GNET_NO_DBG: no debug overlay (OSD Advanced, Debug overlay) and no
+# capture block, about 300 ALMs and 1 M10K. GNET_NO_DCACHE: no CPU turbo data
+# cache (TURBO_CACHE is 0 under GNET_LEAN, so its data is never used), 64 M10K.
+# The unreachable zn2_io mailbox stub goes with ZOOM = 1 by itself (2 M10K).
+set_global_assignment -name VERILOG_MACRO "GNET_NO_DBG=1"
+set_global_assignment -name VERILOG_MACRO "GNET_NO_DCACHE=1"
+
+# Saves, beta candidate. Issue #9 (docs/i9_nvram.md): the card hunk journal
+# keeps the game's card sector writes in the index 6 NVRAM file after the
+# EEPROM; MRAs need <nvram index="6" size="268288"/> (2 KB MRAs keep saving
+# the EEPROM only).
+set_global_assignment -name VERILOG_MACRO "GNET_CARD_JOURNAL=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_card_journal.sv
+# High score save (docs/hiscore.md): MAME hiscore.dat entries in the MRA
+# (<rom index="8">), the dump in the journal file's padding at 0xA00, game
+# RAM read and written on SDRAM channel 3 by rtl/gnet/gnet_hiscore.sv around
+# rtl/gnet/hiscore.v. Super Puzzle Bobble (spuzbobl) is the only G-NET set in
+# hiscore.dat; MRAs without the block behave as before.
+set_global_assignment -name VERILOG_MACRO "GNET_HISCORE=1"
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_hiscore.sv
+set_global_assignment -name VERILOG_FILE rtl/gnet/hiscore.v

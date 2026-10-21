@@ -1,3 +1,25 @@
+-- cdc_pkg: shared functions, register attributes and simulation model of
+-- the rtl/gnet/cdc crossing blocks (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). The synchroniser register assignments
+--         are the ones Intel's altera_std_synchronizer uses (CDC_ATTR_SYNC).
+-- Evidence: none needed; a clock-crossing building block that models no board
+--           behaviour.
+-- Design: docs/r1_cpu_domain_design.md, "CDC building blocks".
+--         Bench: sim/cdc/ (every bench)
+--
 -- CDC building blocks for the R1 CPU clock domain (docs/r1_cpu_domain_design.md,
 -- "Plan for exactly 50.000 MHz", P2, and "CDC building blocks").
 --
@@ -13,9 +35,13 @@
 -- cdc_rx_* register samples an input bit that changed less than
 -- SIM_META_WINDOW before the clock edge, the bit resolves at random to its
 -- old or its new value, independently per bit. That is the "synchroniser
--- that randomly adds a cycle" of step 3, and it makes multi-bit skew visible
+-- that randomly adds a cycle" of the step 3 gate (docs/r1_cpu_domain_design.md,
+-- P4), and it makes multi-bit skew visible
 -- (a binary pointer or unsynchronised data then reads as a mix of old and new
 -- bits). Benches set the window below the shorter clock period.
+-- SIM_SEED (every block, simulation only): the base of the instance's random
+-- sequence; values only need to differ between instances and carry no
+-- other meaning.
 
 library ieee;
 use ieee.std_logic_1164.all;

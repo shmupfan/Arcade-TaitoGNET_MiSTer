@@ -1,3 +1,21 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic VRAM_Y_BITS (default 9 = upstream, 1 MB VRAM; 10 = the
+-- ZN-2 CXD8654Q GPU with 2 MB VRAM, docs/m1_gpu_zn2.md 2b), the widths
+-- that follow from it and the texture page Y base (tpage bits 11 and 4
+-- at VRAM_Y_BITS 10, MAME 0.288 decode_tpage for GPU type 2). Generics
+-- TEX_FETCH_QW, TEX_FETCH_ROWS (default 1 = upstream) and TEX_MISS_DELAY
+-- (default 0 = upstream): texture cache fills of 4 qwords and further rows
+-- and a calibrated wait per fill, for the DDR3 VRAM latency
+-- (docs/gpu_read_infl.md 3, 9, 10). Signal texReqActive for a bench.
+-- G-NET commits: c71a991 (2026-10-04) 2 MB VRAM behind VRAM_Y_BITS;
+-- 864ae50 (2026-10-06) texture cache group and row fills; 771b9fe
+-- (2026-10-15) TEX_MISS_DELAY.
+-- Every change is marked "G-NET:" below, except the width expressions in
+-- VRAM_Y_BITS that replace upstream's fixed Y widths (9 gives the upstream
+-- widths). Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -7,8 +25,8 @@ library mem;
 entity gpu_pixelpipeline is
    generic
    (
-      VRAM_Y_BITS          : integer := 9;  -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
-      -- G-NET (docs/gpu_read_infl.md): texture cache fill per miss. 1 =
+      VRAM_Y_BITS          : integer := 9;  -- G-NET: 9 = PS1 (1 MB VRAM, upstream), 10 = ZN-2 CXD8654Q (2 MB)
+      -- G-NET: (docs/gpu_read_infl.md) texture cache fill per miss. 1 =
       -- upstream, one qword. 4 = the aligned group of four qwords holding the
       -- missed one (one 4-beat burst; the four cache entries of one index
       -- row, same tag), for unfiltered texturing; filtered pixels keep one
@@ -19,7 +37,7 @@ entity gpu_pixelpipeline is
       -- flight when the GPU has GPU_READ_INFL >= TEX_FETCH_ROWS), unless those
       -- rows carry into the next cache block (different tag): then one row
       TEX_FETCH_ROWS       : integer := 1;
-      -- G-NET (docs/gpu_read_infl.md 10): clk2x cycles every texture cache
+      -- G-NET: (docs/gpu_read_infl.md 10) clk2x cycles every texture cache
       -- fill waits after its last beat before the pipeline goes on (models the
       -- real GPU's VRAM cost per miss); 0 = upstream timing
       TEX_MISS_DELAY       : integer := 0
@@ -66,7 +84,7 @@ entity gpu_pixelpipeline is
       pipeline_vAcc        : in  unsigned(7 downto 0);
       
       requestVRAMEnable    : out std_logic;
-      requestVRAMRows      : out unsigned(1 downto 0) := "00";   -- extra texture rows (0 to 3)
+      requestVRAMRows      : out unsigned(1 downto 0) := "00";   -- G-NET: extra texture rows (0 to 3), TEX_FETCH_ROWS
       requestVRAMXPos      : out unsigned(9 downto 0);
       requestVRAMYPos      : out unsigned(VRAM_Y_BITS - 1 downto 0);
       requestVRAMSize      : out unsigned(10 downto 0);
@@ -104,7 +122,7 @@ architecture arch of gpu_pixelpipeline is
    type t_filterarray_u2  is array(0 to 3) of unsigned(1 downto 0);
    type t_filterarray_u8  is array(0 to 3) of unsigned(7 downto 0);
    type t_filterarray_u9  is array(0 to 3) of unsigned(8 downto 0);
-   type t_filterarray_u10 is array(0 to 3) of unsigned(VRAM_Y_BITS downto 0);   -- texture cache tag
+   type t_filterarray_u10 is array(0 to 3) of unsigned(VRAM_Y_BITS downto 0);   -- G-NET: texture cache tag
    type t_filterarray_u20 is array(0 to 3) of unsigned(VRAM_Y_BITS + 10 downto 0);   -- texture address
    type t_filterarray_b8  is array(0 to 3) of std_logic_vector(7 downto 0);
    type t_filterarray_b10 is array(0 to 3) of std_logic_vector(VRAM_Y_BITS downto 0);
@@ -121,13 +139,16 @@ architecture arch of gpu_pixelpipeline is
    signal tag_data_1          : t_filterarray_u10;
       
    signal tag_address_a       : unsigned(7 downto 0) := (others => '0');
+   -- G-NET: texture page Y base bits (1 at VRAM_Y_BITS 9, 2 at 10)
    signal texPageY            : unsigned(VRAM_Y_BITS - 9 downto 0);
    signal tag_data_a          : std_logic_vector(VRAM_Y_BITS downto 0) := (others => '0');
    signal tag_wren_a          : std_logic := '0';
    signal tag_q_b             : t_filterarray_b10;
       
    signal tagValid            : std_logic_vector(0 to 255) := (others => '0');
-   -- a texture (not palette) VRAM request is open; for simulation monitors
+   -- G-NET: a texture (not palette) VRAM request is open. Only the bench
+   -- sim/gpuinfl/tb_gpu_infl.vhd reads it; nothing in the design does.
+   -- G-NET: TEX_FETCH_QW, TEX_FETCH_ROWS and TEX_MISS_DELAY state below
    signal texReqActive        : std_logic;
    signal reqRows             : unsigned(1 downto 0) := "00";
    signal fillBase            : unsigned(7 downto 0) := (others => '0');
@@ -359,6 +380,7 @@ begin
    pipeline_stall <= '1' when (pixelStall = '1' or state /= IDLE or slowdown = '1') else '0';
 
    requestVRAMEnable <= '1'         when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else '0';
+   -- G-NET: TEX_FETCH_ROWS
    requestVRAMRows   <= reqRows     when (requestVRAMIdle = '1' and state = REQUESTTEXTURE) else "00";
    requestVRAMXPos   <= reqVRAMXPos when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else (others => '0');
    requestVRAMYPos   <= reqVRAMYPos when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else (others => '0');
@@ -374,7 +396,7 @@ begin
    stage0_v_array(2) <= stage0_v;
    stage0_v_array(3) <= stage0_v11;
 
-   -- texture page Y base: PS1 = tpage bit 4 (0 or 256); ZN-2 CXD8654Q = tpage bits
+   -- G-NET: texture page Y base: PS1 = tpage bit 4 (0 or 256); ZN-2 CXD8654Q = tpage bits
    -- 11 and 4 (0, 256, 512, 768), as MAME 0.288 decode_tpage for GPU type 2
    gtexpage9 : if VRAM_Y_BITS = 9 generate
       texPageY <= drawMode(4 downto 4);
@@ -409,6 +431,7 @@ begin
       tag_data(i) <= drawMode(8) & stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 17) & stage0_textaddr(i)(10 downto 5) when drawMode(8) = '0' else
                      drawMode(8) & stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 16) & stage0_textaddr(i)(10 downto 6);
       
+      -- G-NET: page Y base from texPageY (drawMode(4) at VRAM_Y_BITS 9, as upstream)
       stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 11) <= texPageY & stage0_v_array(i);
       stage0_textaddr(i)(0)            <= '0';
       stage0_textaddr(i)(10 downto 1)  <= (drawMode(3 downto 0) & "000000") + stage0_u_array(i)(7 downto 2) when drawMode(8 downto 7) = "00" else
@@ -484,6 +507,7 @@ begin
           
    end generate;
    
+   -- G-NET: no cache write during the TEX_MISS_DELAY wait; texReqActive for the bench
    cache_wren_a      <= '1' when (vram_DOUT_READY = '1' and state = WAITTEXTURE and texMissWait = 0) else '0';
    texReqActive      <= '1' when (state = REQUESTTEXTURE or state = WAITTEXTURE or state = REQUESTMORETEXTURE) else '0';
                      
@@ -528,6 +552,7 @@ begin
          
          -- must be done here, so it also is effected when ce is off = paused
          if (state = WAITTEXTURE) then
+            -- G-NET: with TEX_MISS_DELAY > 0 the fill ends when the wait runs out
             if ((TEX_MISS_DELAY = 0 and requestVRAMDone = '1') or (TEX_MISS_DELAY > 0 and texMissWait = 1)) then 
                if (cacherequest = "0000") then
                   state <= IDLE;
@@ -535,6 +560,7 @@ begin
                   state <= REQUESTMORETEXTURE;
                end if;
             end if;
+            -- G-NET: TEX_MISS_DELAY wait after the last beat
             if (TEX_MISS_DELAY > 0) then
                if (requestVRAMDone = '1') then
                   texMissWait <= TEX_MISS_DELAY;
@@ -542,12 +568,12 @@ begin
                   texMissWait <= texMissWait - 1;
                end if;
             end if;
-            -- during the TEX_MISS_DELAY wait the fill is complete: beats of
+            -- G-NET: during the TEX_MISS_DELAY wait the fill is complete: beats of
             -- other reads (video) must not reach the cache
             if (vram_DOUT_READY = '1' and texMissWait = 0) then
                tag_wren_a    <= '1';
                if (TEX_FETCH_QW = 4) then
-                  -- one entry per beat: the cache word is written in this
+                  -- G-NET: TEX_FETCH_QW = 4, one entry per beat: the cache word is written in this
                   -- cycle at cache_address_a, the tag one cycle later
                   -- (tag_wren_a registered) at tag_address_a, which follows.
                   -- Beats 4 to 7 (second row) go one cache row further: 4
@@ -589,6 +615,7 @@ begin
          if (reset = '1') then
          
             state          <= IDLE;
+            -- G-NET: TEX_MISS_DELAY
             texMissWait    <= 0;
             stage0_valid   <= '0';
             stage1_valid   <= '0';
@@ -651,7 +678,7 @@ begin
                      reqVRAMSize <= to_unsigned(1, 11);
                      reqRows         <= "00";
                      if (TEX_FETCH_QW = 4) then
-                        -- the aligned group of four qwords (16 halfwords):
+                        -- G-NET: TEX_FETCH_QW = 4, the aligned group of four qwords (16 halfwords):
                         -- cache index low bits = texture address bits 4:3
                         tag_address_a   <= tag_addr(0)(7 downto 2) & "00";
                         cache_address_a <= tag_addr(0)(7 downto 2) & "00";

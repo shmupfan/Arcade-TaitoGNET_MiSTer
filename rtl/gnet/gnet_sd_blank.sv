@@ -2,6 +2,7 @@
 //
 //  G-NET core: horizontal blanking on every line for the scandoubler
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -18,6 +19,14 @@
 //  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 //
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: the framework's sys/scandoubler.v (as in PSX_MiSTer cd17b5a,
+//           read, not changed) and the PSX video out
+//           rtl/gpu_videoout_async.vhd, traced in simulation
+//           (docs/i11_scandoubler.md 3 to 5). Bench: sim/shell/
+//           run_sd_trace.sh (tb_sd_trace.sv, trace from run_vtrace.sh).
 //
 // Issue #11 (Scandoubler Fx loses the picture), docs/i11_scandoubler.md.
 //

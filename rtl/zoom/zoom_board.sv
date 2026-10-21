@@ -1,3 +1,24 @@
+// zoom_board: Taito Zoom sound board (FC PCB) top level (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taito_zm.cpp and taitogn.cpp (cited inline); board
+//           parts as listed in docs/evidence_sources.md.
+// Design: docs/zoom_board_design.md (section numbers in parentheses below
+//         refer to it); "design study" is docs/zoom_zsg2_tms57002_design.md.
+// Bench: sim/zoomboard/ (board against MAME).
+//
 // Taito Zoom sound board (FC PCB) for the G-NET core: MN10200 sound CPU,
 // ZSG-2 wavetable chip, TMS57002 effects DSP, M66220FP mailbox, MB87078
 // volume, program cache for flash U27, work RAM, wave memory port, time
@@ -16,8 +37,13 @@
 //     side are held over such a cycle, and clk-side pulses are taken in one.
 //   The pacer and the time base's real-time source scale with CLK_H;
 //   behaviour in virtual time is the same for both.
-// hclk is the main-CPU side of the mailbox and the host registers (clk_1x in
-// the first integration, the CPU clock under R1).
+// hclk is the main-CPU side of the mailbox and the host registers. In the
+// release (psx_top.vhd, ZOOM_BOARD = 1) hclk is clk_1x, the same clock as
+// clk; rtl/gnet/zoom_cdc.vhd carries the host port and control bit 4 over
+// from the CPU clock (clk_cpu, 50 MHz, CPU_CLK_SPLIT = 1).
+// Release instance (psx_top.vhd): CLK_H 4, PACE_CAP 1024, ZSG_INFL 8 (DDR3
+// arbiter, PSX.sv GNET_ZOOM_INFL), TIMER_EXACT 0, DEBUG 0; clk = clk_1x,
+// clk2x = clk_2x, hclk = clk_1x; dbg_hold is the core pause.
 //
 // Reset sequencing (taitogn.cpp:513-533, taito_zm.cpp:73-79):
 //   - zoom_reset is control bit 4 (gnet_fc). While it is 1 the MN10200 is
@@ -71,14 +97,18 @@ module zoom_board #(
     input  logic        m_ready,
     input  logic        m_rvalid,
     input  logic [63:0] m_rdata,
-    input  logic        prog_inval,     // U27 written while the Zoom runs (glue; none seen)
+    input  logic        prog_inval,     // U27 written while the Zoom runs (glue; none seen); tied 0 in the release
     // audio (clk): Zoom output with the volume applied, held per sample
-    output logic        aud_tick,
+    output logic        aud_tick,       // one clock per output sample; open in the release
     output logic signed [15:0] aud_l,
     output logic signed [15:0] aud_r,
     // pacer and debug
-    input  logic        pace_en,
-    input  logic        dbg_hold,
+    input  logic        pace_en,        // 0: no pacing (simulation); the release ties it to 1
+    input  logic        dbg_hold,       // 1: MN10200 waits at its next instruction boundary, so the time base,
+                                        // ZSG-2 and TMS57002 stop and the output repeats its last sample; the
+                                        // release drives it with the core pause (psx_top zoom_hold, PSX.sv
+                                        // paused), the benches to stop at a boundary
+    // dbg_bound to dbg_regs: trace port for the benches; open in the release (psx_top.vhd)
     output logic        dbg_bound,
     output logic        dbg_insn,
     output logic [23:0] dbg_pc,
@@ -91,7 +121,8 @@ module zoom_board #(
     input  logic        tb_ld,          // testbench: time base phase
     input  logic [8:0]  tb_ld_left,
     input  logic [15:0] tb_ld_rem,
-    output logic [7:0]  dbg_flags
+    output logic [7:0]  dbg_flags       // sticky error flags (bit list at the end); in the release they reach
+                                        // PSX.sv's zoom_flags, which nothing reads
 );
     // ================================================================== clocks
     // fclk: the MN10200 side. A constant select, so a plain clock net.
@@ -179,6 +210,10 @@ module zoom_board #(
         if (rst) p1_lat <= 8'h00;
         else if (p_wr[1]) p1_lat <= p1_out;
 
+    // PACE_SUB: PACE_ADD (15,625, the default) / PACE_SUB must be the machine
+    // cycle rate over the fclk rate, 6,250,000 / (16,934,400 x CLK_H) =
+    // 15,625 / (42,336 x CLK_H): fclk is 33.8688 MHz at CLK_H 2, 67.7376 MHz
+    // at CLK_H 4. The time base's RT_SUB below uses the same ratio.
     mn10200 #(.PACE_CAP(PACE_CAP), .PACE_SUB(42336 * CLK_H), .DEBUG(DEBUG), .TIMER_EXACT(TIMER_EXACT),
              .PIPE(CLK_H == 4),
              // register file in flip-flops: the MLAB's write-address register
@@ -292,7 +327,10 @@ module zoom_board #(
 
     // queue (clk): 16 entries of {kind, data, slot}
     localparam int EQ_AW = 4;
-    localparam logic [EQ_AW:0] K_EQ_FULL = 5'd16;   // 1 << EQ_AW (no casts: Quartus 17 audit Zs3)
+    // K_EQ_FULL is 1 << EQ_AW as a sized constant: an expression-width cast
+    // may fail in Quartus 17 (item Zs3 of docs/quartus17_audit.md, on the
+    // development branch quartus-audit, not in this tree)
+    localparam logic [EQ_AW:0] K_EQ_FULL = 5'd16;   // 1 << EQ_AW
     localparam logic [EQ_AW:0] K_EQ_HOLD = 5'd12;   // at most one event per instruction plus the crossing
     logic [25:0]     evq [0:(1<<EQ_AW)-1];
     logic [EQ_AW:0]  eq_wp, eq_rp;
@@ -358,7 +396,7 @@ module zoom_board #(
 
     // ================================================================== ZSG-2 to TMS57002
     // One ZSG-2 output per pass, consumed at each SYNC; the SYNC for sample
-    // k takes pass k - 1 (the serial link on the PCB, design study 6.1).
+    // k takes pass k - 1 (the serial link on the PCB, docs/zoom_zsg2_tms57002_design.md 6.1).
     // Primed with one zero entry at each chip reset.
     logic [63:0] sq [0:3];
     logic [2:0]  sq_n;
@@ -408,7 +446,7 @@ module zoom_board #(
     // ================================================================== output
     logic sync_q, f_under, f_over;
     // FIFO depth and lead follow the pacer cap: the virtual time may lag real
-    // time by up to PACE_CAP cycles, PACE_CAP / 192 samples (6.4)
+    // time by up to PACE_CAP cycles, PACE_CAP / 192 samples (docs/zoom_board_design.md 6.4)
     localparam int OUT_LEAD = PACE_CAP / 192 + 2;
     localparam int OUT_AW   = (OUT_LEAD + 2 <= 8) ? 3 : (OUT_LEAD + 2 <= 16) ? 4 : (OUT_LEAD + 2 <= 32) ? 5 : 6;
     logic [OUT_AW:0] out_level;
@@ -419,6 +457,12 @@ module zoom_board #(
         .tick(aud_tick), .out_l(aud_l), .out_r(aud_r),
         .dbg_under(f_under), .dbg_over(f_over), .dbg_level(out_level));
 
-    // bit 6: a SYNC merged, or the host event queue overflowed (15)
+    // dbg_flags, sticky until reset: 7 memory arbiter response with nothing
+    // outstanding (zoom_memarb dbg_ovf), 6 a SYNC merged or the host event
+    // queue overflowed (docs/zoom_board_design.md 15), 5 a ZSG-2 pass waited
+    // for a block (dbg_late), 4 the ZSG-2 dropped a tick with 3 pending
+    // (dbg_overrun), 3 work RAM access above the RAM size, 2 unmapped MN10200
+    // access, 1 TMS57002 data port read, 0 output FIFO underrun. Nothing reads
+    // them in the release (see the port).
     assign dbg_flags = {f_arb_ovf, f_sync_ovf | f_ev_ovf, f_late, f_overrun, f_wram_hi, f_unmapped, f_tms_rd, f_under};
 endmodule

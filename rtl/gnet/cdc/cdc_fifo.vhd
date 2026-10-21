@@ -1,3 +1,23 @@
+-- cdc_fifo: dual-clock FIFO with Gray-coded pointers (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: none needed; a clock-crossing building block that models no board
+--           behaviour.
+-- Design: docs/r1_cpu_domain_design.md, "CDC building blocks".
+--         Bench: sim/cdc/tb_cdc_fifo.vhd
+--
 -- Dual-clock FIFO, 2**ADDR_W words of DATA_W bits, Gray-coded pointers
 -- (ADDR_W + 1 bits) through cdc_sync. The memory is an inferred simple
 -- dual-port RAM (write port on wr_clk, read address registered on rd_clk), so
@@ -34,9 +54,9 @@
 -- Both resets must be applied together, long enough to cover a cycle of the
 -- slower clock, with neither side writing or reading.
 --
--- Negative controls only: STAGES = 0 (no pointer synchroniser), NEG_BINARY
--- (binary pointers), NEG_EARLY_FREE (normal mode releases the slot on the
--- pop edge).
+-- Negative controls only, bench only (sim/cdc; no design instance sets them):
+-- STAGES = 0 (no pointer synchroniser), NEG_BINARY (binary pointers),
+-- NEG_EARLY_FREE (normal mode releases the slot on the pop edge).
 
 library ieee;
 use ieee.std_logic_1164.all;

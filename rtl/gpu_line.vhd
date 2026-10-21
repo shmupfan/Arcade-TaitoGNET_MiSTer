@@ -1,3 +1,14 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic VRAM_Y_BITS (default 9 = upstream, 1 MB VRAM; 10 = the
+-- ZN-2 CXD8654Q GPU with 2 MB VRAM, docs/m1_gpu_zn2.md 2b) and the VRAM Y
+-- coordinate widths that follow from it.
+-- G-NET commits: c71a991 (2026-10-04) ZN-2 2 MB VRAM GPU behind VRAM_Y_BITS.
+-- Every change is marked "G-NET:" below, except the width expressions in
+-- VRAM_Y_BITS that replace upstream's fixed Y widths (9 gives the upstream
+-- widths). Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -8,7 +19,7 @@ use work.pGPU.all;
 entity gpu_line is
    generic
    (
-      VRAM_Y_BITS          : integer := 9   -- 9 = PS1 (1 MB VRAM), 10 = ZN-2 CXD8654Q (2 MB)
+      VRAM_Y_BITS          : integer := 9   -- G-NET: 9 = PS1 (1 MB VRAM, upstream), 10 = ZN-2 CXD8654Q (2 MB)
    );
    port 
    (

@@ -1,3 +1,20 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes, each behind a generic or input whose default is upstream:
+-- ZN2_MAP (0) maps expansion 1 and 3 to the ZN-2 expansion bus on the new
+-- zn_* port (docs/zn2_layer_design.md 13.1); ZN2_READ_OVERLAP (0) issues a
+-- ZN-2 read step's request as its delay starts; RAM_READ_NOWAIT (0) and
+-- RAM_LOAD_WINDOW (7) set the main RAM load timing at 2:1 (issue #5,
+-- docs/r1_cpu_domain_design.md); bus_spu_stall ('0') holds an SPU read
+-- until it has crossed from the PS1 clock group (CPU_CLK_SPLIT = 1).
+-- A few upstream lines differ in whitespace only; those are not marked.
+-- G-NET commits: fbba55b (2026-10-05) ZN2_MAP; f0cd555 (2026-10-05) CPU
+-- group on its own clocks; 8701d1f (2026-10-06) ZN2_READ_OVERLAP; 62c7cce
+-- (2026-10-06) posted-write address fix; 864cc5e (2026-10-14)
+-- RAM_READ_NOWAIT and RAM_LOAD_WINDOW, issue #5.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -7,7 +24,7 @@ library mem;
 entity memorymux is
    generic
    (
-      -- G-NET (docs/zn2_layer_design.md 13.1): 0 = PS1 (upstream, default).
+      -- G-NET: (docs/zn2_layer_design.md 13.1) 0 = PS1 (upstream, default).
       -- 1 = ZN-2: expansion 3 decodes 0x1FA00000-0x1FBFFFFF and expansion 1
       -- and 3 accesses go out on the zn_* port, one request per bus step of
       -- the PS1 expansion bus model below (width, delays and auto-increment
@@ -18,7 +35,7 @@ entity memorymux is
       -- request (today). 1 = the step issues its zn request when the read
       -- delay starts and ends at the later of the delay's end and zn_ack.
       ZN2_READ_OVERLAP     : integer := 0;
-      -- R1 main RAM load timing at CLK_FAST_RATIO = 2 (docs/r1_cpu_domain_design.md,
+      -- G-NET: R1 main RAM load timing at CLK_FAST_RATIO = 2 (docs/r1_cpu_domain_design.md,
       -- "Main RAM load timing at 2:1"; psx_top allows both only at 2:1).
       -- RAM_READ_NOWAIT: 0 = upstream: a main RAM data read outside the
       -- back-to-back window waits one cycle in WAITFORRAMREAD. 1 = every main
@@ -30,7 +47,7 @@ entity memorymux is
       -- (sized for the 3:1 read length).
       RAM_LOAD_WINDOW      : integer := 7
    );
-   port
+   port 
    (
       clk1x                : in  std_logic;
       clk2x                : in  std_logic;
@@ -156,7 +173,7 @@ entity memorymux is
       bus_spu_read         : out std_logic;
       bus_spu_write        : out std_logic;
       bus_spu_dataRead     : in  std_logic_vector(15 downto 0);
-      bus_spu_stall        : in  std_logic := '0';  -- CPU on its own clock: holds EXT_READ_NEXT until the SPU read has crossed
+      bus_spu_stall        : in  std_logic := '0';  -- G-NET: CPU on its own clock: holds EXT_READ_NEXT until the SPU read has crossed
       
       ex2_memctrl          : in  unsigned(13 downto 0);
       bus_exp2_addr        : out unsigned(12 downto 0); 
@@ -183,7 +200,7 @@ entity memorymux is
       SS_wren_SDRam        : in  std_logic;
       SS_rden_SDRam        : in  std_logic;
 
-      -- ZN-2 expansion bus (ZN2_MAP = 1 only; unused and unconnected otherwise).
+      -- G-NET: ZN-2 expansion bus (ZN2_MAP = 1 only; unused and unconnected otherwise).
       -- zn_addr: word address as an offset from 0x1F000000; zn_be and the
       -- lanes of zn_wdata/zn_rdata follow the byte address of the step.
       zn_req               : out std_logic := '0';
@@ -252,6 +269,7 @@ architecture arch of memorymux is
    signal bios_page_open         : std_logic;
    signal ram_page_open          : std_logic;
    signal ram_page_addr          : unsigned(10 downto 0);
+   -- G-NET: RAM_LOAD_WINDOW (7 = upstream)
    signal ram_load_last          : integer range 0 to RAM_LOAD_WINDOW := 0;
    
    signal waitcnt                : integer range 0 to 127;
@@ -342,8 +360,8 @@ architecture arch of memorymux is
    signal stallcountIntBus       : integer;
          
    signal addressDataF           : std_logic := '0';
-
-   -- ZN-2 expansion bus (ZN2_MAP = 1)
+   
+   -- G-NET: ZN-2 expansion bus (ZN2_MAP = 1)
    signal zn_sel_saved           : std_logic := '0';
    signal zn_wait                : std_logic := '0';
    signal zn_stall               : std_logic;
@@ -676,6 +694,7 @@ begin
                            ram_Adr         <= "00" & std_logic_vector(mem_addressData(22 downto 2)) & "00";
                            ram_rotate_bits <= std_logic_vector(mem_addressData(1 downto 0));
                            if (mem_rnw = '1') then
+                              -- G-NET: RAM_LOAD_WINDOW and RAM_READ_NOWAIT (issue #5; upstream: 7 and 0)
                               ram_load_last <= RAM_LOAD_WINDOW;
                               if (TURBO = '1' or ram_load_last > 0 or RAM_READ_NOWAIT /= 0) then
                                  state   <= IDLE;
@@ -750,6 +769,7 @@ begin
                               else
                                  state    <= BUSWRITEEXTERNAL;
                               end if;                           
+                           -- G-NET: with ZN2_MAP = 1, 0x1FA00000-0x1FBFFFFF is expansion 3
                            elsif (mem_addressData(28 downto 0) = 16#1FA00000# or
                                   (ZN2_MAP = 1 and mem_addressData(28 downto 0) >= 16#1FA00000# and mem_addressData(28 downto 0) < 16#1FC00000#)) then
                               ext_select_ex3 <= '1';
@@ -1005,12 +1025,12 @@ begin
    bus_exp1_read     <= '1' when (ext_state = EXT_READ_NEXT and ext_select_ex1_saved = '1') else '0';
    bus_exp3_read     <= '1' when (ext_state = EXT_READ_NEXT and ext_select_ex3_saved = '1') else '0';
    
-   ext_done          <= '1' when (ext_state = EXT_READ and ext_finished = '1' and zn_stall = '0') else '0';
-
-   -- ZN-2 expansion bus: a step waits for zn_ack (constant '0' when ZN2_MAP = 0)
+   ext_done          <= '1' when (ext_state = EXT_READ and ext_finished = '1' and zn_stall = '0') else '0';  -- G-NET: zn_stall
+   
+   -- G-NET: ZN-2 expansion bus: a step waits for zn_ack (constant '0' when ZN2_MAP = 0)
    zn_stall          <= '1' when (ZN2_MAP = 1 and zn_sel_saved = '1' and zn_wait = '1') else '0';
-
-   -- value on the 16-bit (or, in 8-bit width, 8-bit) bus for the current
+   
+   -- G-NET: value on the 16-bit (or, in 8-bit width, 8-bit) bus for the current
    -- step: the lane of zn_rdata the step address selects
    zn_busval         <= zn_rdata_l(31 downto 16)        when (ext_memctrl_width = '1' and ext_bus_addr(1) = '1') else
                         zn_rdata_l(15 downto  0)        when (ext_memctrl_width = '1') else
@@ -1025,6 +1045,7 @@ begin
 
    process (ext_select_spu_saved, ext_select_cd_saved, ext_select_ex1_saved, ext_select_ex2_saved, ext_select_ex3_saved,
             bus_spu_dataRead, bus_cd_dataRead, bus_exp1_dataRead, bus_exp2_dataRead, bus_exp3_dataRead,
+            -- G-NET: ZN-2 bus signals added to the sensitivity list
             ext_byteStep, addressData_buf, ext_data,
             zn_sel_saved, zn_busval, ext_memctrl_width)
    begin
@@ -1088,8 +1109,8 @@ begin
             when others => null;
          end case;
       end if;
-
-      -- ZN-2 expansion bus: same assembly as above, by the programmed width
+ 
+      -- G-NET: ZN-2 expansion bus: same assembly as above, by the programmed width
       if (ZN2_MAP = 1 and zn_sel_saved = '1') then
          ext_data_new <= ext_data;
          if (ext_memctrl_width = '1') then
@@ -1120,10 +1141,11 @@ begin
       end if;
 
    end process;
-
-
+   
+   
    process (clk1x)
       variable newWait : integer range 0 to 63;
+      -- G-NET: ZN-2 bus (ZN2_MAP = 1): next step address and the read request procedure
       variable zn_next : unsigned(1 downto 0);
 
       -- ZN-2 bus read request of one step (lane from the step's byte address)
@@ -1142,12 +1164,12 @@ begin
       end procedure;
    begin
       if rising_edge(clk1x) then
-
+      
          ext_write_ena        <= '0';
          ext_recovered        <= '0';
-         zn_req               <= '0';
-
-         -- ZN-2 expansion bus: completion of the outstanding step (not gated
+         zn_req               <= '0';  -- G-NET: ZN-2 bus request strobe
+         
+         -- G-NET: ZN-2 expansion bus: completion of the outstanding step (not gated
          -- by ce, the device runs on)
          if (ZN2_MAP = 1 and zn_wait = '1' and zn_ack = '1') then
             zn_wait    <= '0';
@@ -1158,6 +1180,7 @@ begin
 
             ext_state     <= EXT_IDLE;
             ext_reccount  <= 0;
+            -- G-NET: ZN-2 bus reset
             zn_wait       <= '0';
             zn_rd_issued  <= '0';
 
@@ -1177,6 +1200,7 @@ begin
                   ext_byteStep         <= (others => '0');
                   ext_data             <= (others => '0');
                   ext_bus_addr         <= addressData_buf(12 downto 0);
+                  -- G-NET: ZN-2 write address, latched with the access
                   zn_waddr             <= addressData_buf(23 downto 2);
                   
                   ext_select_spu_saved <= ext_select_spu;
@@ -1184,6 +1208,7 @@ begin
                   ext_select_ex1_saved <= ext_select_ex1;
                   ext_select_ex2_saved <= ext_select_ex2;
                   ext_select_ex3_saved <= ext_select_ex3;
+                  -- G-NET: this access goes out on the ZN-2 bus
                   if (ZN2_MAP = 1 and (ext_select_ex1 = '1' or ext_select_ex3 = '1')) then
                      zn_sel_saved      <= '1';
                   else
@@ -1238,7 +1263,7 @@ begin
                         ext_state    <= EXT_READ_NEXT;
                      end if;
                      
-                     -- ZN2_READ_OVERLAP: the first step's request goes out as its read delay starts
+                     -- G-NET: ZN2_READ_OVERLAP, the first step's request goes out as its read delay starts
                      if (ZN2_MAP = 1 and ZN2_READ_OVERLAP /= 0 and (ext_select_ex1 = '1' or ext_select_ex3 = '1')) then
                         zn_read_issue(addressData_buf(1 downto 0), ext_memctrl(12));
                         zn_rd_issued <= '1';
@@ -1264,7 +1289,7 @@ begin
                   end case;
                   ext_state   <= EXT_WRITE_WAIT;
                   
-                  -- ZN-2 bus: one write request per step, at the step's byte address
+                  -- G-NET: ZN-2 bus, one write request per step, at the step's byte address
                   if (ZN2_MAP = 1 and zn_sel_saved = '1') then
                      zn_we    <= '1';
                      -- the address latched with the access in EXT_IDLE: a write
@@ -1322,7 +1347,7 @@ begin
                when EXT_WRITE_WAIT =>
                   if (ext_waitcnt > 0) then
                      ext_waitcnt    <= ext_waitcnt - 1;
-                  elsif (zn_stall = '1') then -- ZN-2 bus: step not acknowledged yet
+                  elsif (zn_stall = '1') then -- G-NET: ZN-2 bus, step not acknowledged yet
                      null;
                   elsif (ext_finished = '1') then
                      ext_state      <= EXT_IDLE;
@@ -1352,7 +1377,7 @@ begin
                when EXT_READ_NEXT =>
                   ext_state <= EXT_READ;
                   
-                  -- ZN-2 bus: one read request per step, at the step's byte address
+                  -- G-NET: ZN-2 bus, one read request per step, at the step's byte address
                   -- (ZN2_READ_OVERLAP: already issued when the step's delay started)
                   zn_rd_issued <= '0';
                   if (ZN2_MAP = 1 and zn_sel_saved = '1' and zn_rd_issued = '0') then
@@ -1388,7 +1413,7 @@ begin
                   ext_reccount <= newWait;
                   
                when EXT_READ =>
-                  if (zn_stall = '0') then -- ZN-2 bus: wait for the step's data
+                  if (zn_stall = '0') then -- G-NET: ZN-2 bus, wait for the step's data
                
                   ext_data <= ext_data_new;
                
@@ -1433,7 +1458,7 @@ begin
                         end if;
                      end if;
                      
-                     -- ZN2_READ_OVERLAP: the next step's request goes out as its read delay starts
+                     -- G-NET: ZN2_READ_OVERLAP, the next step's request goes out as its read delay starts
                      if (ZN2_MAP = 1 and ZN2_READ_OVERLAP /= 0 and zn_sel_saved = '1') then
                         zn_next := ext_bus_addr(1 downto 0);
                         if (ext_memctrl_autoinc = '1') then
@@ -1444,7 +1469,7 @@ begin
                      end if;
                   end if;
                   
-                  end if; -- zn_stall
+                  end if; -- G-NET: zn_stall
                   
                when EXT_READ_WAIT =>
                   if (ext_waitcnt > 1) then
@@ -1455,7 +1480,7 @@ begin
             
             end case;
             
-            -- SPU read across the clock boundary: stay in EXT_READ_NEXT (bus_spu_read held) until the data is there
+            -- G-NET: SPU read across the clock boundary: stay in EXT_READ_NEXT (bus_spu_read held) until the data is there
             if (ext_state = EXT_READ_NEXT and bus_spu_stall = '1') then
                ext_state <= EXT_READ_NEXT;
             end if;

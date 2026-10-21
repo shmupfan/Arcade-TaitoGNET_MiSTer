@@ -1,3 +1,12 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: input sys_tick (default '1' = upstream): with the CPU on its own
+-- 50 MHz clock, the timers' system clock sources count 33.8688 MHz-equivalent
+-- ticks (docs/r1_cpu_domain_design.md P3).
+-- G-NET commits: f0cd555 (2026-10-05) CPU group on its own 50/100 MHz clocks.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -8,7 +17,7 @@ entity timer is
       clk1x                : in  std_logic;
       ce                   : in  std_logic;
       reset                : in  std_logic;
-      -- '1' every cycle (upstream). With the CPU on its own clock: 33.8688 MHz-
+      -- G-NET: '1' every cycle (upstream). With the CPU on its own clock: 33.8688 MHz-
       -- equivalent ticks for the system clock sources (docs/r1_cpu_domain_design.md P3)
       sys_tick             : in  std_logic := '1';
       
@@ -150,6 +159,7 @@ begin
 
          elsif (ce = '1') then
          
+            -- G-NET: count the system clock divider only on sys_tick
             if (sys_tick = '1') then
                timer2_subcount <= timer2_subcount + 1;
             end if;
@@ -168,6 +178,7 @@ begin
             if (timerArray(0).T_MODE(8) = '1') then
                newTick(0) := dotclock and (not dotclock_1);
             else
+               -- G-NET: system clock source ticks on sys_tick (upstream '1')
                newTick(0) := sys_tick;
             end if;
             
@@ -176,14 +187,17 @@ begin
                   newTick(1) := '1';
                end if;
             else
+               -- G-NET: system clock source ticks on sys_tick (upstream '1')
                newTick(1) := sys_tick;
             end if;
             
             if (timerArray(2).T_MODE(9) = '1') then
+               -- G-NET: and sys_tick
                if (timer2_subcount = "111" and sys_tick = '1') then
                   newTick(2) := '1';
                end if;
             else
+               -- G-NET: system clock source ticks on sys_tick (upstream '1')
                newTick(2) := sys_tick;
             end if;
             

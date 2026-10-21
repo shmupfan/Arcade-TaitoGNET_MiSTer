@@ -1,23 +1,53 @@
+// zoom_pcache: Taito Zoom board MN10200 program cache for flash U27 (Taito
+// G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taito_zm.cpp:116-117 (U27 at 0x080000-0x0FFFFF); MAME
+//           0.288 oracle traces for the U27 write pattern
+//           (docs/zoom_board_design.md 3.4).
+// Design: docs/zoom_board_design.md 4.3 and 6.1.
+// Bench: sim/zoomboard/.
+//
 // Taito Zoom board: MN10200 program cache for flash U27 (512 KB at
 // 0x080000-0x0FFFFF, taito_zm.cpp:116-117), docs/zoom_board_design.md 4.
 //
 // Direct mapped, 2^IDX_W lines of 2^LN_W 64-bit beats. The tag and data RAMs
-// are read on clk2x, so a hit is answered in the clock after the MN10200
-// puts the address on its bus (the next-clock bus the core needs to keep
-// real time, docs/mn10200_rtl.md 7 item 2):
-//   - clk2x is clk x 2, phase aligned (the PSX core's scratchpad scheme,
-//     docs/r1_cpu_domain_design.md table 2.1). At the clk2x edge in the
-//     middle of a clk cycle the RAMs sample the address the core registered
-//     at the clk edge; data and tag are valid before the next clk edge.
+// are read on clk2x. zoom_board connects the two clocks one of two ways
+// (CLK_H, docs/zoom_board_design.md 6.1):
+//   - CLK_H 4 (the release): clk and clk2x are the same clk_2x net
+//     (67.7376 MHz). The RAMs sample the address one edge after the core
+//     registered it, so a hit reaches the core at the second edge (one wait
+//     clock): 29.5 ns, the same time as the next-clock answer at CLK_H 2.
+//   - CLK_H 2: clk is clk_1x and clk2x is clk_2x, phase aligned (the PSX
+//     core's scratchpad scheme, docs/r1_cpu_domain_design.md 1.3, CPU row). At
+//     the clk2x edge in the middle of a clk cycle the RAMs sample the address
+//     the core registered at the clk edge; data and tag are valid before the
+//     next clk edge, so a hit is answered in the clock after the MN10200 puts
+//     the address on its bus (the next-clock bus docs/mn10200_rtl.md 7 item
+//     2 asks for at 33.8688 MHz).
 //   - Each RAM output carries the index it was read at; hit requires that
 //     index to equal the current address, so a stale output never hits.
+// The fill side runs on clk; the memory port (zoom_memarb) is on clk_1x, and
+// men marks the clk cycles that end on a clk_1x edge (always 1 at CLK_H 2).
 // A miss fills the whole line from the memory port (in-order 64-bit beats)
 // and writes the tag last; the held bus request then hits.
 //
 // Invalidation: inval starts a sweep that clears every tag (one per clock);
 // hit stays low meanwhile. The board sweeps while the Zoom is held in reset,
 // which is the only time the main CPU writes U27 (MAME traces, all six
-// games, docs/zoom_board_design.md 3.3).
+// games, docs/zoom_board_design.md 3.4).
 module zoom_pcache #(
     parameter int IDX_W = 9,                    // 2^IDX_W lines
     parameter int LN_W  = 1,                    // 2^LN_W beats of 8 bytes per line

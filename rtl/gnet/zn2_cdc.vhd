@@ -1,8 +1,9 @@
--- Crossings of the ZN-2 board when it runs in the CPU group (psx_top
--- ZN2_BOARD = 1 with CPU_CLK_SPLIT = 1; docs/r1_cpu_domain_design.md,
--- section "ZN-2 layer in the CPU group").
+-- zn2_cdc: crossings of the ZN-2 board when it runs in the CPU group, as in
+-- the release (Taito G-NET core; psx_top ZN2_BOARD = 1 with CPU_CLK_SPLIT =
+-- 1; docs/r1_cpu_domain_design.md, section "ZN-2 layer in the CPU group").
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -12,10 +13,19 @@
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
 --
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects). Evidence: the crossing list C18, C19 in
+--         docs/r1_cpu_domain_design.md "Plan for exactly 50.000 MHz" P2 and
+--         "ZN-2 layer in the CPU group" (Crossings).
+--
 -- zn2_board (gnet_fc, zn2_io, zn_sio0, CAT702, znmcu, EEPROM) runs on clk_cpu
 -- with memorymux; zn2_cardmem stays on clk2x with the DDR3 arbiter; hps_io and
--- PSX.sv's loader stay on clk1x. Signal prefixes: c_ clk_cpu, p_ clk1x,
--- p2_ clk2x. Built only from rtl/gnet/cdc (cdc_tx_* sources, cdc.sdc).
+-- PSX.sv's loader stay on clk1x. Port prefixes: c_ clk_cpu, p_ clk1x,
+-- p2_ clk2x. Inside the architecture the clk2x side of C18 (ps, p_have,
+-- p_valid, p_req_data, p_req_r, p_we_r, p_addr_r, p_wdata_r, p_ack_r,
+-- p_rsp_r) also uses p_, although those registers are on clk2x; the input
+-- and loader registers on clk1x have no prefix (cdc_tx_*, ld_busy_r). Built
+-- only from rtl/gnet/cdc (cdc_tx_* sources, cdc.sdc).
 --
 --   inputs   P1, P2, SERVICE, SYSTEM, DSW, mahjong rows, JP1, card present,
 --            key valid, mahjong enable: registered on clk1x, cdc_sync into
@@ -46,8 +56,9 @@
 -- Resets: none of the crossings is reset. The loader is written while the
 -- downloads hold the core in reset, so its FIFO must not be; the card port
 -- handshake would lose its toggle agreement if one side were reset alone.
--- Instead each side finishes what it started: the clk2x side always
--- completes a zn2_cardmem access, and the CPU side waits for the answer of a
+-- Instead each side finishes what it started: the clk2x side here always
+-- completes a zn2_cardmem access (zn2_cardmem's own reset can still abandon
+-- one; see the needs-review note there), and the CPU side waits for the answer of a
 -- request it has sent even when zn2_board's reset (c_board_rst) comes in
 -- between, and then drops that answer instead of acknowledging it. All
 -- registers start from their declared values at configuration.
@@ -61,7 +72,11 @@ entity zn2_cdc is
    generic
    (
       SIM_META_WINDOW : time := 0 ns;
-      LD_BUSY_AT      : natural := 12     -- loader FIFO words that raise p_ld_busy (of 16)
+      -- loader FIFO words that raise p_ld_busy (of 16): 4 words of margin
+      -- for the words that arrive while ioctl_wait takes effect; the bench
+      -- (a word every clk1x cycle, busy seen 2 cycles late) never overflows
+      -- (docs/r1_cpu_domain_design.md, "Follow-up: loader back-pressure")
+      LD_BUSY_AT      : natural := 12
    );
    port
    (

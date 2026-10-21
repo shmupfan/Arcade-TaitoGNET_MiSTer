@@ -1,6 +1,7 @@
 // Zoom line port (clk_1x) to the DDR3 arbiter's Z port (clk_2x).
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -9,6 +10,12 @@
 // useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: design and checks in docs/ddr3_arbiter.md 9 (the skid register)
+//           and 4; the clk_2x phase index as psx_top.vhd's clk2xIndex.
+//           Bench: sim/ddr3arb/ (tb_zport.cpp), sim/zoomddr3/.
 //
 // zoom_board's m_* port (zoom_memarb, clk_1x) on one side, gnet_ddr3_arb's
 // z_* port (clk_2x) on the other. clk_1x and clk_2x come from one PLL and
@@ -63,8 +70,9 @@ module gnet_ddr3_zport #(
     // edge whenever the register is free, and the arbiter sees only the
     // register. m_ready depends on registered state alone, so no path runs
     // from zoom_memarb's request through the arbiter's priority select into
-    // the core's BUSY and the GPU's request logic (GNET_Z1FULL STA, clk_2x
-    // -0.020 ns, builds/z1full_clk2x). One clk_2x more latency per line.
+    // the core's BUSY and the GPU's request logic (GNET_Z1FULL STA missed
+    // clk_2x setup by 0.020 ns on that path; docs/ddr3_arbiter.md 9, build
+    // report not in this tree). One clk_2x more latency per line.
     logic        hv = 1'b0;
     logic [20:0] hline;
     assign m_ready = s_end && !hv && !zrst;

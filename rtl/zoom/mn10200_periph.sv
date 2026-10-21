@@ -1,3 +1,27 @@
+// mn10200_periph: MN10200 (MN1020012A) internal peripherals: interrupt
+// controller, timers, ports (Taito G-NET core)
+//
+// Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of the GNU General Public License as published by the Free
+// Software Foundation; either version 2 of the License, or (at your option)
+// any later version. This program is distributed in the hope that it will be
+// useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+// Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 src/devices/cpu/mn10200/mn10200.cpp
+//           (io_control_r/io_control_w, refresh_timer) for the register map
+//           the firmware uses; MN102H60G LSI User's Manual 22360-014E, timer
+//           chapter, for the shared prescalers (TIMER_EXACT = 0).
+// Design: docs/mn10200_design.md 4 and 5.7 ("design study" below),
+//         docs/mn10200_rtl.md 3.2 and 4.5.
+// Bench: sim/mn10200/.
+//
 // MN10200 (MN1020012A) internal peripherals at 0x00FC00-0x00FFFF, at the
 // level the Taito Zoom firmware uses them (docs/mn10200_design.md 4 and
 // 5.7): interrupt controller (groups 1-10, NMICR, IAGR, EXTMD with P4 pin
@@ -25,7 +49,7 @@ module mn10200_periph #(
     //    prescaler p counts machine cycles continuously and every armed
     //    timer on it counts its underflows. Same periods, the phase of the
     //    first period after arming differs by up to the prescaler base.
-    parameter TIMER_EXACT = 1
+    parameter TIMER_EXACT = 1   // default for the trace benches; mn10200 passes its own (0 in the release)
 ) (
     input  logic        clk,
     input  logic        rst,

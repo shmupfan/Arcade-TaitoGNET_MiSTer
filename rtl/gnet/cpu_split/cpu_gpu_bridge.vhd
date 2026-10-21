@@ -1,3 +1,25 @@
+-- cpu_gpu_bridge: GPU bus and DMA channel 2 across the CPU / PS1 clock
+-- boundary (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: reproduces at the boundary the bus and DMA timing of PSX_MiSTer's
+--           gpu.vhd, memorymux.vhd and dma.vhd (cd17b5a); no board behaviour
+--           of its own.
+-- Design: docs/r1_cpu_domain_design.md, P2 (C1 to C5) and "Crossings as
+--         built".   Bench: sim/cpu50/ (tb_cpu_split.vhd)
+--
 -- GPU register bus and DMA channel 2 across the CPU / PS1 clock boundary
 -- (docs/r1_cpu_domain_design.md, 50.000 MHz plan, crossings C1 to C5).
 --
@@ -18,6 +40,8 @@
 --     forced low until the command FIFO has been empty for QUIET_CYCLES CPU
 --     cycles, so a block does not start on a request computed before the
 --     previous block's words reached the GPU.
+-- FIFO_AW 5 (32 entries) and QUIET_CYCLES 8 are the as-built values recorded
+-- in docs/r1_cpu_domain_design.md, "Crossings as built" (C1 to C4).
 -- PS1 side (p_*, clk1x): a proxy that replays each command for exactly one
 -- clk1x cycle with p_ce = '1' on gpu.vhd's own bus and DMA ports, in the
 -- form memorymux and dma.vhd drive them today, and returns read data
@@ -97,7 +121,7 @@ architecture rtl of cpu_gpu_bridge is
    signal c_cmd       : std_logic_vector(CMD_W - 1 downto 0);
    signal c_full      : std_logic;
    signal c_count     : std_logic_vector(FIFO_AW downto 0);
-   signal c_ovf       : std_logic;
+   signal c_ovf       : std_logic;   -- u_cmd wr_overflow, not read: c_ovf_r flags the same push while full
    signal rd_busy     : std_logic := '0';
    signal rd_pushed   : std_logic := '0';
    signal rd_ready    : std_logic := '0';

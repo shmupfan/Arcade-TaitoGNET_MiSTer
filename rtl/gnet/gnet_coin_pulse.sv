@@ -1,12 +1,18 @@
 //============================================================================
 //  G-NET core: coin input pulse
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
 //  Software Foundation; either version 2 of the License, or (at your option)
 //  any later version.
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 runs of sianniv (coin held 0.5 s gives COIN ERROR,
+//           below); issue #1. Bench: sim/shell/run_shell.sh.
 //
 // One coin button (pad or keyboard, pressed = 1) to the coin switch the game
 // reads: each press gives one pulse of PULSE clocks, however long the button

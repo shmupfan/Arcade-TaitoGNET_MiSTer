@@ -1,6 +1,27 @@
+-- cpu_reset_fill: CPU-side reset ordering and RAM / scratchpad zero fill (Taito G-NET core)
+--
+-- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
+--
+-- This program is free software; you can redistribute it and/or modify it
+-- under the terms of the GNU General Public License as published by the Free
+-- Software Foundation; either version 2 of the License, or (at your option)
+-- any later version. This program is distributed in the hope that it will be
+-- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+-- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: reproduces the reset sequence of PSX_MiSTer's savestates.vhd
+--           (cd17b5a) on the CPU clock; no board behaviour of its own.
+-- Design: docs/r1_cpu_domain_design.md, P2 (C17) and "Crossings as built".
+--         Bench: sim/cpu50/ (tb_cpu_split.vhd)
+--
 -- CPU-side part of the reset sequence when the CPU group has its own clock
--- (docs/r1_cpu_domain_design.md, 50.000 MHz plan, crossing C17; Lee's
--- decision 3: the reset zero fill of RAM and scratchpad is kept).
+-- (docs/r1_cpu_domain_design.md, 50.000 MHz plan, crossing C17; decision 3
+-- of "Decisions recorded (Lee, 2026-10-05)" there: the reset zero fill of RAM
+-- and scratchpad is kept).
 --
 -- 1. Reset pulses. savestates.vhd (on clk1x/clk2x) issues SS_reset and then,
 --    one clk1x cycle later, reset_out (each one clk1x cycle). Each arrives

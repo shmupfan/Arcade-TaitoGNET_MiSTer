@@ -1,12 +1,19 @@
 //============================================================================
 //  G-NET core: OSD volume at the final mix
 //  Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
 //  Software Foundation; either version 2 of the License, or (at your option)
 //  any later version.
 //============================================================================
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: none needed beyond the arithmetic: x2 = +6.02 dB, /2 = -6.02 dB,
+//           /4 = -12.04 dB; the option set is the minimum standard's
+//           (docs/m4_shell.md 4). Bench: sim/shell/run_shell.sh.
 //
 // OSD Volume (minimum standard): 0 Normal, 1 +6 dB, 2 -6 dB, 3 -12 dB, on
 // the signed 16-bit stereo output that goes to AUDIO_L/AUDIO_R. +6 dB

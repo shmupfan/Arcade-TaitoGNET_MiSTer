@@ -1,3 +1,18 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic MLAB_WR_NEGEDGE (default 0 = upstream). At 1, the write
+-- ports of the voice register, voice volume, voice record and envelope
+-- counter MLABs are clocked on the falling edge of clk1x from rising-edge
+-- copies of their write signals, for hold margin on the MLAB write-address
+-- registers (2026-10-07 GNET_Z1FULLO fits; psx_top sets it to ZN2_BOARD).
+-- The SPU sees the same contents every clock.
+-- G-NET commits: dd1ea06 (2026-10-07) voice register MLABs on the falling
+-- edge; e1fac28 (2026-10-07) the same for VOICEVOLUMES, VOICERECORDS and
+-- the envelope counter, both then in every build; the generic came with
+-- the refactor (2026-10-20).
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -6,6 +21,13 @@ use STD.textio.all;
 library mem;
 
 entity spu is
+   generic
+   (
+      -- G-NET: 0 = upstream (register MLABs written on the rising edge of
+      -- clk1x); 1 = written on the falling edge from rising-edge copies
+      -- (clk_1x hold margin in the G-NET fits). psx_top: ZN2_BOARD.
+      MLAB_WR_NEGEDGE      : integer := 0
+   );
    port 
    (
       clk1x                : in  std_logic;
@@ -110,6 +132,7 @@ architecture arch of spu is
    -- in the 2026-10-07 GNET_Z1FULLO fit). The word is written half a clock
    -- later than the rising-edge write it replaces and is first sampled at
    -- the same rising edge, so the SPU sees the same contents every clock.
+   -- Used when MLAB_WR_NEGEDGE = 1.
    signal clk1x_n             : std_logic;
    signal RamVoice_write_d    : std_logic := '0';
    signal RamVoice_dataA_d    : std_logic_vector(15 downto 0) := (others => '0');
@@ -125,6 +148,22 @@ architecture arch of spu is
    signal EnvCounterRam_write_d   : std_logic := '0';
    signal EnvCounterRam_dataA_d   : std_logic_vector(24 downto 0) := (others => '0');
    signal EnvCounterRam_addrA_d   : unsigned(5 downto 0) := (others => '0');
+   -- what the four MLAB write ports get: clk1x_n and the copies above
+   -- (MLAB_WR_NEGEDGE 1), or, as upstream, clk1x and the write signals
+   -- themselves (MLAB_WR_NEGEDGE 0)
+   signal mlab_wrclk              : std_logic;
+   signal RamVoice_write_w        : std_logic;
+   signal RamVoice_dataA_w        : std_logic_vector(15 downto 0);
+   signal RamVoice_addrA_w        : unsigned(7 downto 0);
+   signal RamVoiceVolumes_write_w : std_logic;
+   signal RamVoiceVolumes_dataA_w : std_logic_vector(15 downto 0);
+   signal RamVoiceVolumes_addrA_w : unsigned(5 downto 0);
+   signal RamVoiceRecord_write_w  : std_logic;
+   signal RamVoiceRecord_dataA_w  : std_logic_vector(102 downto 0);
+   signal RamVoiceRecord_addrA_w  : unsigned(4 downto 0);
+   signal EnvCounterRam_write_w   : std_logic;
+   signal EnvCounterRam_dataA_w   : std_logic_vector(24 downto 0);
+   signal EnvCounterRam_addrA_w   : unsigned(5 downto 0);
    signal RamVoice_write      : std_logic := '0';     
    
    type tvoiceregs_addrB is array(0 to 1) of unsigned(7 downto 0);
@@ -625,15 +664,17 @@ begin
          width_byteena => 1
       )
       PORT MAP (
-         inclock    => clk1x_n,
-         wren       => RamVoice_write_d,
-         data       => RamVoice_dataA_d,
-         wraddress  => std_logic_vector(RamVoice_addrA_d),
+         -- G-NET: write port per MLAB_WR_NEGEDGE (mlab_wrclk and the _w signals)
+         inclock    => mlab_wrclk,
+         wren       => RamVoice_write_w,
+         data       => RamVoice_dataA_w,
+         wraddress  => std_logic_vector(RamVoice_addrA_w),
          rdaddress  => std_logic_vector(RamVoice_addrB(i)),
          q          => RamVoice_dataB(i)
       );
    end generate;
    
+   -- G-NET: inverted clock and rising-edge copies of the MLAB write signals
    clk1x_n <= not clk1x;
    process (clk1x)
    begin
@@ -652,6 +693,22 @@ begin
          EnvCounterRam_addrA_d   <= EnvCounterRam_addrA;
       end if;
    end process;
+   -- G-NET: MLAB_WR_NEGEDGE picks the MLAB write ports' clock and signals (a
+   -- constant choice, no multiplexer is built); with 0 nothing reads the
+   -- copies above and clk1x_n
+   mlab_wrclk              <= clk1x_n                 when (MLAB_WR_NEGEDGE = 1) else clk1x;
+   RamVoice_write_w        <= RamVoice_write_d        when (MLAB_WR_NEGEDGE = 1) else RamVoice_write;
+   RamVoice_dataA_w        <= RamVoice_dataA_d        when (MLAB_WR_NEGEDGE = 1) else RamVoice_dataA;
+   RamVoice_addrA_w        <= RamVoice_addrA_d        when (MLAB_WR_NEGEDGE = 1) else RamVoice_addrA;
+   RamVoiceVolumes_write_w <= RamVoiceVolumes_write_d when (MLAB_WR_NEGEDGE = 1) else RamVoiceVolumes_write;
+   RamVoiceVolumes_dataA_w <= RamVoiceVolumes_dataA_d when (MLAB_WR_NEGEDGE = 1) else RamVoiceVolumes_dataA;
+   RamVoiceVolumes_addrA_w <= RamVoiceVolumes_addrA_d when (MLAB_WR_NEGEDGE = 1) else RamVoiceVolumes_addrA;
+   RamVoiceRecord_write_w  <= RamVoiceRecord_write_d  when (MLAB_WR_NEGEDGE = 1) else RamVoiceRecord_write;
+   RamVoiceRecord_dataA_w  <= RamVoiceRecord_dataA_d  when (MLAB_WR_NEGEDGE = 1) else RamVoiceRecord_dataA;
+   RamVoiceRecord_addrA_w  <= RamVoiceRecord_addrA_d  when (MLAB_WR_NEGEDGE = 1) else RamVoiceRecord_addrA;
+   EnvCounterRam_write_w   <= EnvCounterRam_write_d   when (MLAB_WR_NEGEDGE = 1) else EnvCounterRam_write;
+   EnvCounterRam_dataA_w   <= EnvCounterRam_dataA_d   when (MLAB_WR_NEGEDGE = 1) else EnvCounterRam_dataA;
+   EnvCounterRam_addrA_w   <= EnvCounterRam_addrA_d   when (MLAB_WR_NEGEDGE = 1) else EnvCounterRam_addrA;
    
    RamVoice_addrB(0) <= bus_addr(8 downto 1);
    
@@ -678,10 +735,11 @@ begin
          width_byteena => 1
       )
       PORT MAP (
-         inclock    => clk1x_n,
-         wren       => RamVoiceVolumes_write_d,
-         data       => RamVoiceVolumes_dataA_d,
-         wraddress  => std_logic_vector(RamVoiceVolumes_addrA_d),
+         -- G-NET: write port per MLAB_WR_NEGEDGE (mlab_wrclk and the _w signals)
+         inclock    => mlab_wrclk,
+         wren       => RamVoiceVolumes_write_w,
+         data       => RamVoiceVolumes_dataA_w,
+         wraddress  => std_logic_vector(RamVoiceVolumes_addrA_w),
          rdaddress  => std_logic_vector(RamVoiceVolumes_addrB(i)),
          q          => RamVoiceVolumes_dataB(i)
       );
@@ -705,10 +763,11 @@ begin
          width_byteena => 1
       )
       PORT MAP (
-         inclock    => clk1x_n,
-         wren       => RamVoiceRecord_write_d,
-         data       => RamVoiceRecord_dataA_d,
-         wraddress  => std_logic_vector(RamVoiceRecord_addrA_d),
+         -- G-NET: write port per MLAB_WR_NEGEDGE (mlab_wrclk and the _w signals)
+         inclock    => mlab_wrclk,
+         wren       => RamVoiceRecord_write_w,
+         data       => RamVoiceRecord_dataA_w,
+         wraddress  => std_logic_vector(RamVoiceRecord_addrA_w),
          rdaddress  => std_logic_vector(RamVoiceRecord_addrB(i)),
          q          => RamVoiceRecord_dataB(i)
       );
@@ -748,10 +807,11 @@ begin
       width_byteena => 1
    )
    PORT MAP (
-      inclock    => clk1x_n,
-      wren       => EnvCounterRam_write_d,
-      data       => EnvCounterRam_dataA_d,
-      wraddress  => std_logic_vector(EnvCounterRam_addrA_d),
+      -- G-NET: write port per MLAB_WR_NEGEDGE (mlab_wrclk and the _w signals)
+      inclock    => mlab_wrclk,
+      wren       => EnvCounterRam_write_w,
+      data       => EnvCounterRam_dataA_w,
+      wraddress  => std_logic_vector(EnvCounterRam_addrA_w),
       rdaddress  => std_logic_vector(EnvCounterRam_addrB),
       q          => EnvCounterRam_dataB
    );

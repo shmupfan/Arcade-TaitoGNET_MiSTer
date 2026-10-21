@@ -3,6 +3,7 @@
 //  G-NET core: arcade_video with the 480i field offset kept
 //  Copyright (C) 2017-2020 Sorgelig (sys/arcade_video.v)
 //  Changes for the G-NET core: Copyright (C) 2026 Lee Foot
+//  SPDX-License-Identifier: GPL-2.0-or-later
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -19,6 +20,15 @@
 //  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 //
 //============================================================================
+//
+// Origin: derived from sys/arcade_video.v (MiSTer framework, Sorgelig) as
+//         shipped in PSX_MiSTer cd17b5a, this core's upstream base (sys/ is
+//         unchanged from that commit). Changes: module renamed
+//         gnet_arcade_video; the `wire scandoubler` declaration moved above
+//         the sync latch, which now uses it; the VSync latch below (marked
+//         G-NET:). Licence as the original (GPL-2.0-or-later).
+// Evidence: rtl/gpu_videoout_async.vhd (the half-line vsync); docs/m4_shell.md 2.
+//           Bench: sim/shell/run_arcade_video.sh.
 //
 // A copy of the framework's arcade_video module (sys/arcade_video.v, which
 // stays as upstream) with one change, issue #3 (480i on direct video):

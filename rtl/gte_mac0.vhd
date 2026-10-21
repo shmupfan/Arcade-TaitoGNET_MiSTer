@@ -1,3 +1,13 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: generic NARROW_MUL (default 0 = upstream) and input MACmul: at 3
+-- the product is registered in the cycle that writes the request, so the
+-- trigger cycle only adds (GTE at 100 MHz, docs/cpu_rate_probe.md, "GTE at
+-- 100 MHz with unchanged results and counts").
+-- G-NET commits: 92ae3a6 (2026-10-05) NARROW_MUL = 3, GTE at 100 MHz.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all; 
@@ -8,7 +18,7 @@ use work.pGTE.all;
 entity gte_mac0 is
    generic
    (
-      -- 3 = G-NET 100 MHz option: the product is registered from MACmul in the
+      -- G-NET: 3 = 100 MHz option: the product is registered from MACmul in the
       -- cycle that writes the request (mul1/mul2 of MAC0req unused), so the
       -- trigger cycle only adds. 0 = upstream.
       NARROW_MUL     : integer := 0
@@ -17,7 +27,7 @@ entity gte_mac0 is
    (
       clk2x          : in  std_logic;
       MAC0req        : in  tMAC0req;
-      MACmul         : in  tMAC0mul := MAC0mul_none;
+      MACmul         : in  tMAC0mul := MAC0mul_none;   -- G-NET: NARROW_MUL = 3 operands
       mac0_result    : out signed(34 downto 0);
       mac0_writeback : out std_logic := '0';
       mac0Last       : out signed(34 downto 0);
@@ -40,7 +50,7 @@ architecture arch of gte_mac0 is
    
    signal IRshift_1     : std_logic;
 
-   signal prod0         : signed(34 downto 0);  -- NARROW_MUL = 3
+   signal prod0         : signed(34 downto 0);  -- G-NET: NARROW_MUL = 3
 
 begin 
 
@@ -57,6 +67,7 @@ begin
          ir_writeback   <= '0';
          checkOvf       <= '0';
          
+         -- G-NET: NARROW_MUL = 3, product registered in the request cycle
          if (NARROW_MUL = 3 and MACmul.ena = '1') then
             prod0 <= MACmul.mul1 * MACmul.mul2;
          end if;
@@ -65,6 +76,7 @@ begin
             mac0Last   <= mac0Result_1;
          
             mac0Result := resize(MAC0req.mul1 * MAC0req.mul2, 35);
+            -- G-NET: NARROW_MUL = 3 takes the registered product
             if (NARROW_MUL = 3) then
                mac0Result := prod0;
             end if;

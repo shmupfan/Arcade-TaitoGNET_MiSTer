@@ -1,6 +1,13 @@
-# Timing constraints for the crossings built from rtl/gnet/cdc (helper for
-# step 5 of docs/r1_cpu_domain_design.md; not yet run through Quartus, see
-# "CDC building blocks" in that file).
+# cdc.sdc: timing constraints for the rtl/gnet/cdc crossings (Taito G-NET core)
+#
+# Copyright (C) 2026 Lee Foot
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Timing constraints for the crossings built from rtl/gnet/cdc (step 5 of
+# docs/r1_cpu_domain_design.md, "CDC building blocks"). GNET_CPU50_B1.sdc
+# sources this file, and the release revision GNET_Z1FULLR uses that SDC;
+# the bounds below were set from the GNET_Z1_CPU50 and GNET_CPU50_B1 fits
+# (items 1 and 1b).
 #
 # Use: source this file from the revision's SDC after derive_pll_clocks:
 #   source rtl/gnet/cdc/cdc.sdc

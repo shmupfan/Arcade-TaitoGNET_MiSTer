@@ -1,6 +1,7 @@
 // G-NET FC PCB control registers and MB3773 watchdog.
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -9,6 +10,13 @@
 // useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: MAME 0.288 taitogn.cpp (control registers, R15), Fujitsu MB3773
+//           datasheet DS04-27401-7E (watchdog, R17); R-items are defined in
+//           docs/PLAN.md (research items) and docs/evidence_sources.md.
+//           Bench: sim/gnet/ (gnet_fc directed tests), sim/shell/run_pausewd.sh.
 //
 // Registers (main CPU, MAME 0.288 taitogn.cpp, docs/hardware_inventory.md 4):
 //   0x1fb40000 control  8-bit R/W, reset 0x10: bit 5 MB3773 CK, bit 4 Zoom
@@ -23,9 +31,13 @@
 // watchdog; if no edge arrives within the timeout the reset output pulses.
 // The timeout on the FC PCB depends on an unknown capacitor (R17), so it is a
 // parameter. MAME uses 5 s, a guess. The default here is 8 s: Taito's own Zoom
-// init (Night Raid, Ray Crisis, Shikigami) runs about 3 s without a kick on a
-// real board, about 4.3 s for Night Raid at 33.8688 MHz, so 5 s leaves too
-// little margin (docs/gnet_watchdog_mb3773.md on branch gnet-games).
+// init delay loop (Night Raid, Ray Crisis, Shikigami) runs without a kick for
+// 2.4 to 2.9 s in MAME, about 3 s or more on a real board (the loop is
+// CPU-bound), and 5.081 s for Night Raid in this core's full-system
+// simulation at 33.8688 MHz, where a 5 s watchdog reset the game; 8 s leaves
+// 2.9 s of margin (docs/gnet_watchdog_mb3773.md, on development branch
+// gnet-games, not in this tree). The release uses 8 (PSX.sv localparam
+// GNET_WD_TIMEOUT_S, psx_top generic ZN2_WD_TIMEOUT_S; both default to 8).
 
 module gnet_ctrl #(
     parameter int unsigned CLK_HZ       = 33_868_800,
@@ -49,7 +61,9 @@ module gnet_ctrl #(
     output logic        bank_sel,     // control bit 2
     output logic        wd_reset,     // pulse: watchdog expired
 
-    // debug taps (docs/hw_debug_overlay.md): unused outputs cost nothing
+    // debug taps (docs/hw_debug_overlay.md): through gnet_fc and zn2_board to
+    // zn_dbg_regs, the debug overlay built into the release (OSD, Off by
+    // default)
     output logic        wd_kick,      // pulse: CK falling edge restarted the watchdog
     output logic [7:0]  ctrl_q        // control register (reset value 10h)
 );

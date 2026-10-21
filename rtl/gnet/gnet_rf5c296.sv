@@ -1,6 +1,7 @@
 // Ricoh RF5C296 PC card controller, ExCA register file (G-NET subset).
 //
 // Copyright (C) 2026 Lee Foot
+// SPDX-License-Identifier: GPL-2.0-or-later
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License as published by the Free
@@ -9,6 +10,12 @@
 // useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 // Public License for more details.
+//
+// Origin: written for this core (own implementation, no code copied from
+//         other projects).
+// Evidence: Ricoh RF5C296/RF5C396L Application Manual EA-028-9804 ("the
+//           datasheet" below, pages as cited); MAME 0.288 rf5c296.cpp for
+//           the differences noted. Bench: sim/gnet/ (through gnet_fc).
 //
 // Indexed access (RF5C296/RF5C396L datasheet p26): byte 0x3E0 of the
 // controller I/O space is the index, 0x3E1 the data. The G-NET maps the
@@ -35,7 +42,9 @@
 // Windows: the BIOS programs I/O window 0 for card I/O 0-15 and memory
 // window 0 for attribute memory (docs/gnet_glue_design.md 4), which is the
 // fixed mapping gnet_fc decodes. win_mismatch flags a programmed window that
-// differs from that mapping once both windows are enabled (debug only).
+// differs from that mapping once either window is enabled. No build
+// connects it (zn2_board leaves gnet_fc's win_mismatch open); only the
+// sim/zn2/cosim harness reads it.
 
 module gnet_rf5c296 (
     input  logic        clk,

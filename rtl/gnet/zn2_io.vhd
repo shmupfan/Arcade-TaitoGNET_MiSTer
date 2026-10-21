@@ -1,6 +1,8 @@
--- ZN-2 board registers on expansion 3 (and the silent Taito Zoom stub).
+-- zn2_io: ZN-2 board registers on expansion 3, the AT28C16 EEPROM and the
+-- Taito Zoom stub used when zn2_board's ZOOM = 0 (Taito G-NET core).
 --
 -- Copyright (C) 2026 Lee Foot
+-- SPDX-License-Identifier: GPL-2.0-or-later
 --
 -- This program is free software; you can redistribute it and/or modify it
 -- under the terms of the GNU General Public License as published by the Free
@@ -9,6 +11,13 @@
 -- useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
 -- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
 -- Public License for more details.
+--
+-- Origin: written for this core (own implementation, no code copied from other
+--         projects).
+-- Evidence: AT28C16 datasheet (Atmel doc0540); MAME 0.288 zn.cpp,
+--           taitogn.cpp, at28c16.cpp as cited below (line numbers at tag
+--           mame0288, reference/mame0288).
+-- Design: docs/zn2_layer_design.md 5, 7, 8, 12 and 16.3.
 --
 -- docs/zn2_layer_design.md 5, 7, 8 and 12. Port: the zn_* bus of memorymux
 -- (ZN2_MAP = 1), word address as an offset from 0x1F000000, byte enables per
@@ -31,7 +40,7 @@
 --          znmcu selected while (value and 8Ch) = 8Ch
 --   A20000 coin (R/W): counters and lockouts, out to the shell. Bit 1
 --          clear locks out coin 1, bit 5 clear coin 2 (zn.cpp coin_w
---          233-241, coin_lockout_w(0, !BIT(m_coin, 1)) and (1, !BIT(m_coin,
+--          223-231, coin_lockout_w(0, !BIT(m_coin, 1)) and (1, !BIT(m_coin,
 --          5))); a locked-out coin reads as not inserted at A00300, as
 --          MAME's ioport.cpp 1312-1327 drops a coin input while its lockout
 --          is set (coin_lockout option, on by default, emuopts.cpp 151).
@@ -41,26 +50,34 @@
 --          pressed in this core; ttgncl0_state (the 2011 conversions,
 --          taitogn.cpp 619-632) has no lockout and is not supported
 --   A40000 reads 0; A51C00-A51DFF reads 0; A60000 bit 3 (MAME's "work
---          around for mismatched CPU and SPU clock", R2: the real register is
---          unknown). The games' SPU register read routine does a dummy read
+--          around for mismatched CPU and SPU clock", R2 in docs/PLAN.md 6:
+--          the real register is unknown). The games' SPU register read routine does a dummy read
 --          at A51C00 + register offset, polls A60000 until bit 3 is set (up to
 --          100 tries, then "SPU:T/O [ReadStatusFlag Error]"), then reads the
 --          SPU register itself (MAME trace, main docs/r1_cpu_domain_design.md
 --          Measurement 1). SPU_STATUS = 0: bit 3 toggles on every read of the
 --          low half, starting at 1 (MAME); 1: bit 3 always 1 (enough for
---          raycris and psyvaria per that trace, one poll per SPU read)
+--          raycris and psyvaria per that trace, one poll per SPU read; an
+--          alternative reading, sim only: PSX.sv never sets it)
 --   AF0000-AF07FF AT28C16 EEPROM, byte per address: a write starts a
 --          self-timed byte write (WRITE_US); reads during it return the last
 --          written byte with bit 7 inverted (DATA polling, AT28C16 datasheet
---          doc0540 p2; MAME at28c16.cpp 184-190 inverts the same bit); writes
+--          doc0540 p2; MAME at28c16.cpp 187-191 inverts the same bit); writes
 --          during it are ignored. MAME skips writes of the value already
---          stored (at28c16.cpp 172); the datasheet does not, nor does this
+--          stored (at28c16.cpp 175); the datasheet does not, nor does this
 --          model.
 --   B20000-B20007 reads FFFFh (zn.cpp unknown_r)
---   Taito Zoom stub (no Zoom in the silent build): B80000-B80003 register
---          writes ignored, BA0000 write ignored, BC0000 reads 0 (as
+--   Taito Zoom stub (zn2_board ZOOM = 0, the silent build): B80000-B80003
+--          register writes ignored, BA0000 write ignored, BC0000 reads 0 (as
 --          taito_zm.cpp sound_irq_r), BE0000-BE01FF M66220FP mailbox, 256 x 8
 --          on lanes 0 and 2 (taitogn.cpp 487, umask 00FF00FFh), read/write.
+--          With ZOOM = 1 (the release) zn2_board sends exactly these
+--          addresses to the Zoom host port first, so the stub is unreachable.
+--          Its mailbox (mbox_lo, mbox_hi) took 2 M10K in the alpha 3 release
+--          fit; from alpha 4 zn2_board passes ZOOM_STUB = 1 - ZOOM, so with
+--          ZOOM = 1 the mailbox is not built and BE0000-BE01FF would read 0
+--          here (docs/area.md). The rest of banks B8, BA, BC and BE stays here
+--          in both builds (reads 0).
 -- Other addresses: writes ignored, reads 0. hit tells the bus top which
 -- addresses this block answers.
 
@@ -72,9 +89,17 @@ entity zn2_io is
    generic
    (
       CLK_HZ     : integer := 33868800;
+      -- AT28C16 self-timed byte write: 200 us, the datasheet's E option and
+      -- MAME at28c16.cpp:179 (the standard part takes 1 ms; which one the
+      -- ZN-2 carries is needs-review, docs/zn2_layer_design.md 8)
       WRITE_US   : integer := 200;
       BOARDCFG   : std_logic_vector(7 downto 0) := x"69";
-      SPU_STATUS : integer := 0
+      SPU_STATUS : integer := 0;
+      -- 1 = the M66220FP mailbox stub at BE0000-BE01FF (2 M10K). 0 = not
+      -- built, those reads return 0: for ZOOM = 1, where zn2_board sends
+      -- BE0000-BE01FF to the Zoom port and never raises req for them, so
+      -- the stub is unreachable (zn2_board passes 1 - ZOOM; docs/area.md)
+      ZOOM_STUB  : integer := 1
    );
    port
    (
@@ -124,12 +149,6 @@ end entity;
 architecture arch of zn2_io is
 
    constant WRITE_CYCLES : integer := CLK_HZ / 1000000 * WRITE_US + (CLK_HZ mod 1000000) * WRITE_US / 1000000;
-
-   -- mailbox as 128 x 16: low byte = lane 0, high byte = lane 2 of a word
-   -- two byte arrays (one per lane) so Quartus 17 infers RAM, not registers
-   type t_mbox is array(0 to 127) of std_logic_vector(7 downto 0);
-   signal mbox_lo   : t_mbox := (others => x"00");
-   signal mbox_hi   : t_mbox := (others => x"00");
 
    signal ee_q      : std_logic_vector(7 downto 0);
    signal mb_q      : std_logic_vector(15 downto 0);
@@ -250,17 +269,32 @@ begin
 
    nv_wtog <= cdc_tx_nvtog;
 
-   -- mailbox: one port with byte enables
-   process (clk)
+   -- mailbox: one port with byte enables (ZOOM_STUB = 1 only)
+   gmbox : if ZOOM_STUB = 1 generate
+      -- mailbox as 128 x 16: low byte = lane 0, high byte = lane 2 of a word
+      -- (stub for zn2_board ZOOM = 0; with ZOOM = 1 zn2_board passes
+      -- ZOOM_STUB = 0 and this block is not built, see the header)
+      -- two byte arrays (one per lane) so Quartus 17 infers RAM, not registers
+      type t_mbox is array(0 to 127) of std_logic_vector(7 downto 0);
+      signal mbox_lo   : t_mbox := (others => x"00");
+      signal mbox_hi   : t_mbox := (others => x"00");
    begin
-      if rising_edge(clk) then
-         if (mb_wr = '1') then
-            if (p_be(0) = '1') then mbox_lo(a_mb) <= p_wdata( 7 downto  0); end if;
-            if (p_be(2) = '1') then mbox_hi(a_mb) <= p_wdata(23 downto 16); end if;
+      process (clk)
+      begin
+         if rising_edge(clk) then
+            if (mb_wr = '1') then
+               if (p_be(0) = '1') then mbox_lo(a_mb) <= p_wdata( 7 downto  0); end if;
+               if (p_be(2) = '1') then mbox_hi(a_mb) <= p_wdata(23 downto 16); end if;
+            end if;
+            mb_q <= mbox_hi(a_mb) & mbox_lo(a_mb);
          end if;
-         mb_q <= mbox_hi(a_mb) & mbox_lo(a_mb);
-      end if;
-   end process;
+      end process;
+   end generate;
+
+   gnombox : if ZOOM_STUB = 0 generate
+   begin
+      mb_q <= (others => '0');
+   end generate;
 
    ee_busy <= '1' when ee_timer /= 0 else '0';
 
