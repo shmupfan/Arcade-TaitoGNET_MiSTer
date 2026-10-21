@@ -23,7 +23,7 @@
         <part name="tt10.ic652" crc="235510b1" />
         <part name="tt16.u17" crc="6bb167b3" />
     </rom>
-    <rom index="3" zip="gnet_shikigama.zip" md5="none">
+    <rom index="3" zip="gnet_shikigama.zip" md5="none" address="0x31000000">
         <part name="shikigama.flash" />
     </rom>
     <rom index="4" zip="gnet_shikigama.zip" md5="none">

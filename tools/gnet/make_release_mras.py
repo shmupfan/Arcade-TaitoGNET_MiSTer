@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write the release MRAs for every G-NET set the converter knows into releases/.
 
-  tools/gnet/make_release_mras.py [--rbf TaitoGNET] [--out releases] [--ddr3 none|card|all]
+  tools/gnet/make_release_mras.py [--rbf TaitoGNET] [--out releases] [--ddr3 all|card|none]
 
 The release layout (releases/README.md), the MiSTer arcade convention:
   releases/<Game>.mra
@@ -60,16 +60,18 @@ DDR3 loads (issue #12, docs/i12_ddr3_load.md): with
 address="0x..." on a <rom>, Main_MiSTer copies the data straight into DDR3
 and the core only gets the length, instead of one 16-bit word per handshake
 (about 1.6 to 1.8 MB/s on my MiSTer, 2026-10-16).
-  --ddr3 card: the card image (index 5) to 0x34000000, where every
-      core version keeps it (zn2_cardmem, DDR3 window 0x30000000 + 64 MB).
-      These MRAs work with every RBF released so far.
-  --ddr3 all: also the flash area (index 3) to 0x31000000; the core copies
-      it to SDRAM after the download. Needs an RBF built with GNET_DDR3_LOAD
-      (alpha 4 on); with an older RBF the flash stays unloaded and the game
-      does not start. Not for release: on hardware the alpha 4 test
-      build stops with ERROR C094 when the flash comes this way, so the
-      alpha 4 release MRAs are made with --ddr3 card.
-  --ddr3 none (default): every ROM through the word handshake, as alpha 1 to 3.
+  --ddr3 all (default, the release MRAs): the card image (index 5) to
+      0x34000000 and the flash area (index 3) to 0x31000000, quick start
+      and first boot MRAs alike; the core copies the flash area to SDRAM
+      after the download (rtl/gnet/gnet_ddr3_flcopy.sv). Needs an RBF built
+      with GNET_DDR3_LOAD and the copier fix of 2026-10-21
+      (docs/i12_ddr3_load.md 13.7: the first copier stopped with ERROR
+      C094 on hardware); with an RBF without it the flash stays unloaded
+      and the game does not start.
+  --ddr3 card: only the card image to 0x34000000, where every core version
+      keeps it (zn2_cardmem, DDR3 window 0x30000000 + 64 MB). These MRAs
+      work with the alpha 1 to 3 RBFs as well.
+  --ddr3 none: every ROM through the word handshake, as alpha 1 to 3.
 Needs Main_MiSTer from 2021-03-01 or later (commit 1844709a sends the
 length of a DDR3 load to the core).
 """
@@ -169,6 +171,19 @@ CONTROLS = {
 }
 DASH_BUTTONS = ("Button 1,Button 2,Button 3,Dash,Start,Coin,Service,Test,Pause", "B,A,Y,X,Start,Select")
 
+# Joystick sets whose buttons 1 to 3 have a name from a source; they replace
+# "Button 1,Button 2,Button 3" only, so the bits, the default pad buttons and
+# Start to Pause stay as in CONTROLS[0]. MAME gives no button names and the
+# game manuals are not found (docs/board_evidence.md D3); docs/m4_shell.md 9:
+# XII Stag button 1 "Shot", its how-to screen ("A (shot)",
+# docs/gnet_games_test_matrix.md); Night Raid "Shoot, Wave, Bomb",
+# arcade-history's Night Raid page (secondary). The other sets keep Button 1
+# to 3.
+BUTTON_NAMES = {
+    "xiistag": "Shot,Button 2,Button 3",
+    "nightrai": "Shoot,Wave,Bomb",
+}
+
 FLASH_WARM = """    <rom index="3" zip="gnet_{set}.zip" md5="none"{flash_addr}>
         <part name="{set}.flash" />
     </rom>
@@ -233,7 +248,7 @@ def config_byte(s):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--rbf", default="TaitoGNET")
-    ap.add_argument("--ddr3", choices=("none", "card", "all"), default="none",
+    ap.add_argument("--ddr3", choices=("none", "card", "all"), default="all",
                     help="which ROMs Main loads straight into DDR3 (see above)")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__)))), "releases"))
@@ -253,7 +268,12 @@ def main():
             if ctl != 0:
                 sys.exit(f"error: {s}: Dash is only for joystick sets")
             buttons, bdefault = DASH_BUTTONS
-        alt = os.path.join(a.out, "_alternatives", "_" + game_of(s))
+        if s in BUTTON_NAMES:
+            generic = "Button 1,Button 2,Button 3,"
+            if ctl != 0 or s in DASH or not buttons.startswith(generic):
+                sys.exit(f"error: {s}: BUTTON_NAMES is only for joystick sets without Dash")
+            buttons = BUTTON_NAMES[s] + "," + buttons[len(generic):]
+        alt =os.path.join(a.out, "_alternatives", "_" + game_of(s))
         # CompactFlash cards need the v2 sub-BIOS in U30, which the BIOS installs from
         # its EPROM in flash-initialise mode; the core has no EPROM, so only quick start
         boots = (("warm", ""),) if CONVERTER_SETS[s][3] == 3 else (("warm", ""), ("cold", " (first boot)"))

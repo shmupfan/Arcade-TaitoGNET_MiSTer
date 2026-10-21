@@ -15,7 +15,7 @@
         <dip name="Unknown (S551:3)" bits="2" ids="On,Off" />
         <dip name="Test Mode (S551:4)" bits="3" ids="On,Off" />
     </switches>
-    <buttons names="Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause" default="B,A,Y,Start,Select" />
+    <buttons names="Shoot,Wave,Bomb,Start,Coin,Service,Test,Pause" default="B,A,Y,Start,Select" />
     <rom index="0" zip="coh3002t.zip" md5="none">
         <part name="m534002c-60.ic353" crc="03967fa7" />
     </rom>
@@ -23,7 +23,7 @@
         <part name="tt10.ic652" crc="235510b1" />
         <part name="tt16.u17" crc="6bb167b3" />
     </rom>
-    <rom index="3" zip="coh3002t.zip" md5="none">
+    <rom index="3" zip="coh3002t.zip" md5="none" address="0x31000000">
         <part name="flash.u30" crc="c48c8236" />
         <part repeat="0x800000">FF</part>
     </rom>
