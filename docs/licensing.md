@@ -60,3 +60,13 @@ GPL-3.0-or-later. `LICENSE` keeps PSX_MiSTer's GPLv2 text and
 `LICENSE-GPL3` holds the GPLv3 text. Files I wrote carry
 GPL-2.0-or-later headers; files from other projects keep their own
 headers.
+
+## Third-party GPL-3 code (2026-10-21)
+
+The high score save (GNET_HISCORE, docs/hiscore.md) uses rtl/gnet/hiscore.v
+from Hiscores_MiSTer (Alan Steremberg, Jim Gregory), GPL-3.0-or-later. It is
+the first third-party file outside the MiSTer framework under GPL-3. It
+keeps its header, PROVENANCE.md lists it with its changes and the README
+credits it. GPL-3.0-or-later is compatible with the release statement
+above: the combined core and its RBF stay GPL-3.0-or-later. Only the
+revisions that set GNET_HISCORE build the file.

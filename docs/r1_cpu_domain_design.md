@@ -1133,7 +1133,7 @@ tick_accum.vhd, cdc.qip, cdc.sdc, cdc_syn_top.vhd); benches in sim/cdc/
 | cdc_pulse | C6, C12, C15, C19 | One destination pulse per source pulse. The source keeps a Gray event counter (CNT_W bits); the destination emits one pulse per cycle while its own count differs. CNT_W = 1 is the toggle synchroniser (source pulses at least one destination period plus the aperture apart); CNT_W > 1 queues bursts |
 | cdc_handshake | C2, C9, C10, C18 | Two-phase request/acknowledge with REQ_W bits of request and RSP_W bits of response, both held by the sending side and captured by the receiving side only after the toggle has been synchronised |
 | cdc_fifo | C1, C3, C8 | Dual-clock FIFO, 2**ADDR_W x DATA_W, Gray pointers through cdc_sync, inferred RAM with a RAM_STYLE generic (ramstyle "M10K, no_rw_check", "MLAB, no_rw_check", ...), FWFT or normal read, counts on both sides, overflow and underflow flags |
-| tick_accum | P3 | Phase accumulator, MODULUS 15625, INCREMENT 10584 by default, tick registered, '0' while ce = '0' |
+| tick_accum | P3 | Phase accumulator, MODULUS 15625, INCREMENT 10584 by default; the accumulator holds while ce = '0'. tick is registered: '1' in the cycle after a ce = '1' cycle that wrapped, even if ce is '0' in that cycle, so a consumer that also gates on ce drops that tick |
 
 Conventions: every register whose output crosses is named cdc_tx_*, every
 register that samples a crossing signal is cdc_rx_s1 (first synchroniser
@@ -1275,20 +1275,28 @@ CPU cycles (the plan said 4 to 7).
 ### SDC and synthesis check
 
 rtl/gnet/cdc/cdc.sdc is sourced after derive_pll_clocks: set_max_delay
-8.0 ns and set_min_delay -100 ns on every cdc_tx_* to cdc_rx_* path, and
-per instance set_max_skew 5.0 ns plus set_net_delay -max 5.0 ns on the
-Gray buses (cdc_tx_wptr, cdc_tx_rptr, cdc_tx_cnt to their cdc_rx_s1). This
+and set_min_delay -100 ns from every cdc_tx_* register to every cdc_rx_s1
+(first synchroniser stage) and cdc_rx_hold (handshake capture) register,
+and per instance set_max_skew 5.0 ns plus set_net_delay -max 5.0 ns on
+the Gray buses (cdc_tx_wptr, cdc_tx_rptr, cdc_tx_cnt to their cdc_rx_s1).
+The max delay was 8.0 ns as first written; it is 14.0 ns since 38f6bd0
+(cdc_rx_hold) and 048cf9e (cdc_rx_s1), section "Fit 1 of GNET_Z1_CPU50
+(e775367) and the SDC" below. Later synchroniser stages (cdc_rx_sn) are
+same-clock paths and get no constraint from the file. This
 differs from P2 in two points: Quartus has no -datapath_only (that is a
 Vivado option), so the 8 ns includes the clock tree difference; and I put
 first synchroniser stages under the same max delay instead of a false path,
 because in Quartus a false path overrides set_max_delay on the Gray buses.
-The file has not been run through Quartus (needs-review).
+When this section was written the file had not been run through Quartus;
+the GNET_CPU50_B1 fits (below) were the first to read it, and the release
+GNET_Z1FULLR applies it through GNET_CPU50_B1.sdc.
 
 GNET_CDC_FIT (top cdc_syn_top: FIFOs 16 x 34 and 8 x 27 in MLAB, 1024 x 32
 in M10K, a 32/32 handshake, an 8-bit bus sync, a 4-bit level group, pulse
 synchronisers with CNT_W 1 and 4, tick_accum; ports virtual, clocks 20 ns
-and 29.525 ns, sources cdc.sdc) is ready as target cdcfit in
-tools/pc_build.sh, not run. It answers: whether Quartus 17 infers the
+and 29.525 ns, sources cdc.sdc) was target cdcfit in tools/pc_build.sh and
+never ran; it is archived under the tag experiments-archive
+(docs/experiment_revisions.md). It was to answer: whether Quartus 17 infers the
 two-clock MLAB and M10K FIFOs as intended, whether cdc.sdc parses and
 applies, the ALM count, and the synchroniser MTBF report.
 
@@ -1363,8 +1371,9 @@ hold of EXT_READ_NEXT) do not touch the same statement.
 
 ### SDC (GNET_CPU50_B1.sdc)
 
-It sources rtl/gnet/cdc/cdc.sdc (8 ns on cdc_tx_* to cdc_rx_* paths, Gray
-skew), cuts clk_vid and the framework clocks from the two CPU clocks, and
+It sources rtl/gnet/cdc/cdc.sdc (cdc_tx_* to cdc_rx_s1 and cdc_rx_hold
+bounded at 8 ns then, 14 ns since 38f6bd0 and 048cf9e; Gray-bus skew),
+cuts clk_vid and the framework clocks from the two CPU clocks, and
 false-paths the quasi-static emu-level registers (status bits, EXE header,
 TURBO flags, BIOS region) into the CPU clocks, excluding the SDRAM
 controller and the channel 3 handshake. Every crossing in rtl/gnet/cpu_split

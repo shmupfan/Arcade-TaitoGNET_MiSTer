@@ -4,6 +4,11 @@ Branch i12-ddr3load (from de4d29b, the alpha 3 release source, revision
 GNET_Z1FULLR). New revision GNET_Z1FULLD = GNET_Z1FULLR + macro
 GNET_DDR3_LOAD, pc_build target z1fulld. GNET_Z1FULLR is unchanged.
 
+Later (2026-10-20): alpha 4 (59d57d1) sets GNET_DDR3_LOAD in GNET_Z1FULLR
+itself, and alpha 5 archives GNET_Z1FULLD and its target
+(docs/experiment_revisions.md). Revision and target names below are as
+they were on this branch.
+
 ## 1. Summary
 
 - Card image (index 5, 41 MB, 23 s today): `address="0x34000000"` on the
@@ -425,3 +430,198 @@ and keep the alpha 3 RBF in place.
    argument that every GNET_DDR3_LOAD path is idle with an old MRA.
 7. gnet-release's make_release_mras.py is behind its committed MRAs for
    Chaos Heat, Mahjong Oh and Usagi (section 9).
+
+## 13. Hardware result (2026-10-20) and diagnosis
+
+Build alpha4-f1 6638e03 (this branch's RTL in GNET_Z1FULLR with
+GNET_DDR3_LOAD, plus gnet_sd_blank and a gpu_poly change), seed 2, RBF md5
+4c6cc257 (builds/20261020_1926_z1fullr_seed2: every clock met setup and
+hold; map report shows gnet_ddr3_flcopy and its buffer as a dual-clock M10K,
+with Quartus warning 276027, read-during-write of a dual-clock RAM
+undefined). Ray Crisis (V2.03O), MRAs from the patched generator:
+
+| MRA | result |
+|---|---|
+| `--ddr3 all` | "SystemError!  ERROR C094" (screenshot about 2 minutes after the load) |
+| the same MRA without address= | boots to attract |
+| `--ddr3 card` | boots ("Cloning" intro 60 s after the load) |
+
+### 13.1 What C094 is
+
+The G-NET BIOS (m534002c-60.ic353) displays errors with
+SystemError(type, code) at 0xBFC05AE4, which calls the display routine at
+0xBFC0AB88. That routine picks the message by type letter and code and then
+prints "ERROR" followed by the letter and the code as three decimal digits
+(strings at 0xBFC0C080 on, full-width Shift-JIS):
+
+| type, code | message |
+|---|---|
+| B, 930 (3A2h) | CanNotFindProgramRom (the B930 of September) |
+| C, 930 | SecurityCheckError |
+| D, 930 | CanNotMatchMboard |
+| E, 930 / F, 930 / G, 930 | InitSecurityERROR / CheckSecurityERROR / CheckSecurityERROR2 |
+| A, B or C with 93 | ConfigIdError |
+| any other, including C with 94 (5Eh) | SystemError! |
+
+So C094 is type C, code 94, the generic "SystemError!". The BIOS ROM calls
+SystemError only with (B, 930), (D, 930), (S, 901) and (S, 908). The
+sub-BIOS that the BIOS decrypts from U30 into RAM (simulation RAM dump at
+3.5 s, run R7) has its own copy at 0x80008EE0, called with (E, 94) after 9
+failed SIO0 exchanges (0x80002638, the CAT702 protocol) and with (F, 94)
+from three VBlank interrupt counters that run past a limit (0x80001048,
+0x80002C98, 0x80003858). Code 94 is therefore the "gave up waiting" error.
+No (C, 94) call exists in the BIOS, in the sub-BIOS at that point, or in
+the 8 MB of main RAM at 8.0 s of a full `--ddr3 all` boot (run R8, game
+code loaded, attract started): it comes from code loaded or decompressed
+later, which fits the error showing up long after the load. The B930 check of
+the U30 header and the card checks had passed.
+
+### 13.2 Main_MiSTer, checked again (master 63186a3)
+
+- spi8 and spi_w are fpga_spi (spi.h:20-28), which waits for the
+  acknowledge (fpga_io.cpp:688-720), so holding ioctl_wait does stop Main;
+  only fpga_spi_fast and spi_block_write skip the acknowledge, and the
+  ioctl commands and file data do not use them (user_io_file_tx_data uses
+  spi_write, which is spi_w per word, spi.cpp:185-194).
+- rom_finish sends the length for every address ROM, single or multi-part
+  (len = romlen[0], the assembled total), before the memcpy, and ends the
+  download after it.
+- fpga_mem keeps 0x31000000; nothing else in Main writes 0x30000000 to
+  0x3FFFFFFF except address loads and savestates (0x3E000000, not used by
+  this core).
+- The card works through the same mechanism, so the mapping, byte order
+  and the memcpy itself are right.
+
+### 13.3 Simulation, checked again
+
+- R6: the full DDR3 load with hardware-like DDR3 timing (latency 30 +
+  0..40, 20% gaps, BUSY 20%): SDRAM and DDR3 identical to the file, copy
+  time identical to the nanosecond (the copy is bound by the channel 3
+  writes, so the 256-qword buffer is never empty after the first burst).
+- Not covered: anything later than 7 s after the release (the error
+  appears later), the real HPS DDR3 port, and hardware-only behaviour of
+  the copier's dual-clock buffer.
+
+### 13.4 Most likely cause
+
+Not found in the RTL or reproduced in simulation. What the evidence
+supports: after a `--ddr3 all` load the BIOS boots, the game program runs
+from the card, and later the game gives up waiting for something. The
+inputs that differ from a word-path load are only the memory contents:
+SDRAM flash (copier output) and the DDR3 flash area (Main's data, then the
+mirror's write-back of the copier output), the latter being what the Taito
+Zoom runs from (U27 program, waves). A wrong word in U27 or the wave area
+would not stop the BIOS and would stop the sound board, which the game
+then waits for. Ranked candidates:
+
+1. The copy produces wrong data on hardware in some words (a timing or
+   memory-block effect the simulation cannot show, for example the
+   dual-clock buffer).
+2. The DDR3 area the Zoom reads is wrong after the copy (mirror
+   write-back sharing the glue port with the copier reads through
+   gnet_ddr3_gmux).
+3. Main's data as the FPGA reads it differs from the file (unlikely: the
+   card works the same way).
+4. Not memory at all (unlikely: the core's state after the load is the
+   same as after a word-path load).
+
+### 13.5 Diagnosis built in (daa69be)
+
+gnet_ddr3_flcopy now reads every word back from SDRAM through channel 3
+after the copy and re-reads the DDR3 area, keeping three sums (copy,
+SDRAM read-back, DDR3 re-read). With GNET_DDR3_LOAD the debug overlay's
+DR row shows them:
+
+```
+DR 0 1 3E CBA9
+   | |  `------ low 24 bits of the copy sum (Main's data as the copier read it)
+   | `--------- copier flags: 1 done, +2 SDRAM read-back differs, +4 DDR3 re-read differs, +8 busy
+   `----------- overflows: +1 flash mirror FIFO, +2 arbiter owner FIFO, +4 rotation FIFO
+```
+
+tools/gnet/flash_sum.py gives the expected sum from the user's own zip
+(Ray Crisis with this branch's converter: 383ECBA9, so "DR 013E CBA9";
+first boot flash: 8EE040D3). The checks hold the core in reset and Main
+waiting for about 1.3 s more (copy and checks 2.345 s in simulation, R4b
+and R5b: sums equal to the file, flags 1). Bench: SDRAM and DDR3 fault
+injection set the right flag; six mutants caught (flcopy_mutants.py).
+
+Reading the row after a `--ddr3 all` load of Ray Crisis:
+
+| DR row | meaning | next step |
+|---|---|---|
+| 01 + expected sum | copy, SDRAM and DDR3 all equal Main's data | the cause is not the flash data: compare the overlay PC/DA rows at the error with a working load |
+| 01 + other sum | Main's data reached the FPGA wrong | HPS side (mapping, caching, Main version) |
+| 03 + expected sum | SDRAM content wrong after the copy | channel 3 write path at the copier's rate |
+| 05 + expected sum | DDR3 area wrong after the copy, SDRAM right | mirror write-back through the glue port mux; the Zoom data |
+| first digit not 0 | an overflow | the named FIFO |
+
+### 13.6 Checks that need no new build (alpha4-f1 RBF as installed)
+
+1. Flash only: the `--ddr3 all` MRA with address= removed from index 5
+   (card on the word path). Fails like `all`: the flash path alone.
+2. A game without the Zoom board, `--ddr3 all`: Otenami Haiken (V2.04J)
+   or Zooo. Boots and plays while Ray Crisis fails: points at the Zoom's
+   DDR3 data (candidate 2, or 1 limited to U27 and the waves).
+3. After the C094, the debug overlay: DR row first digits (mirror and
+   owner FIFO overflow) and the PC/DA rows.
+
+Until this is settled, ship `--ddr3 card` MRAs (the patch's default):
+proven on hardware with every RBF.
+
+### 13.7 Second hardware result (2026-10-21) and the fix (d14)
+
+taitognetd13 (a145fe7 seed 4), "Ray Crisis (V2.03O) (d13)", full DDR3
+load: ERROR C094 as before; the debug overlay's DR row read **053E C8A7**
+(Lee's photo, gnet-mister hw_tests/20261021_morning/d13_overlay_photo.jpg):
+
+- 0: no FIFO overflow;
+- 5: done, the DDR3 re-read sum differs from the copy sum, the SDRAM
+  read-back agrees with the copy;
+- 3EC8A7: the copy sum, against 3ECBA9 for the file (if Lee's zip is the
+  one flash_sum.py was run on).
+
+So what the copier wrote to SDRAM is what it read, but what it read is not
+the file, and a second read of the same DDR3 area gave a third answer.
+Two reads through the same path disagree, so the fault is in the reading,
+not in Main's data or the SDRAM writes. The copier changes (d14):
+
+1. Buffer read margin. The clk1x side read a qword from the 256-qword M10K
+   buffer as soon as it saw rcv move, which could be one clk2x period after
+   the clk2x write of that entry. An M10K with two clocks returns undefined
+   data when one port reads an address the other is writing in that
+   window; timing analysis does not cover it and the Verilator model always
+   returns the new data, which is why no simulation showed it. The copy
+   pass uses that first read for the low word of each qword (W0) and the
+   re-read pass for both words (SUM), so both passes could take stale
+   qwords, each in different places. rcv now reaches the clk1x side
+   through two registers (rcv_s), so the read comes at least one clk1x
+   plus one clk2x period after the write; both are cleared when a pass
+   starts.
+2. Mirror off during the copy (PSX.sv). The flash mirror wrote every copier
+   SDRAM write back into the same DDR3 area, sharing the glue port with the
+   copier's reads and replacing Main's data with the copier's output (bad
+   words included). Main has already put the data there, so the mirror now
+   ignores channel 3 writes while flc_busy (synchronised into clk_cpu by a
+   cdc_sync from cdc_tx_flc_busy).
+3. Retries. If either check fails, the copier starts again (TRIES = 3 by
+   default); with the mirror off the DDR3 area still holds Main's data.
+   DR digit 1 bit 3 (8) shows that a copy was repeated; the flags describe
+   the last copy.
+
+Bench (sim/ddr3arb, run.sh flcopy; FLC_TRIES and FLC_FAULT): the normal
+runs, the sdram, ddr3 and hang faults with TRIES 1, the sdram fault with
+TRIES 3 (ends clean with retried set, one repeat) and the six mutants.
+The mixed-clock M10K effect itself cannot be shown in Verilator, so d14 on
+hardware is the test: expect "DR 013E CBA9" (or 813E CBA9 if a retry was
+needed) and Ray Crisis booting.
+
+**d14 on hardware (2026-10-21 10:45):** taitognetd14_20261021.rbf =
+9856c09 z1fulld seed 4 (md5 287ff1f6, the only one of seeds 3 to 6 clean
+in every slow corner; worst HDMI -40C +0.018), "Ray Crisis (V2.03O) (d14)",
+full DDR3 load: no C094, the game runs (demo on screen about 140 s after the
+core reset). DR row **013E CBA9**: no overflow, no repeat, checks clean,
+copy sum equal to the file. The other rows: XP to XM all 0 (no watchdog
+expiry). Photo: gnet-mister hw_tests/20261021_morning/d14_overlay_photo.jpg.
+The Quartus map report of d13 had warned 276027 ("read-during-write behavior
+of a dual-clock RAM is undefined") on gnet_ddr3_flcopy buffer_rtl_0.

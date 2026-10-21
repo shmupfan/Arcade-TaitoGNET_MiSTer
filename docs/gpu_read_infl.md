@@ -185,9 +185,10 @@ Target: (1.078 - 1.045) / (1.126 - 1.045) = 0.407 of the way from
 prefetch D = 0 to upstream, assuming the hardware slowdown scales linearly
 with the bench's GPU time (needs-review: the CPU and the rest of the core
 are not in the bench). With time = 1 / work: D = 7.95 at L = 12, 9.6 at
-L = 24; with the busy metric: 5.1 at L = 12, 9.6 at L = 24. GNET_Z1FULLR
-uses 8 (L = 12 is the measured idle DDR3 latency); if the build misses,
-10 when it is still faster than the board, 5 when slower.
+L = 24; with the busy metric: 5.1 at L = 12, 9.6 at L = 24. The bench
+estimate pointed at 8 (L = 12 is the measured idle DDR3 latency).
+GNET_Z1FULLR and the alpha 3 release use 13, set from the hardware results
+below (`GNET_TEX_MISS_DELAY=13` in GNET_Z1FULLR.qsf).
 
 Hardware result (2026-10-15, same demo_drift method): D = 9 gave 1.061, so
 the bench underestimates the effect; linear between D = 0 (1.045) and

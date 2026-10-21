@@ -20,6 +20,12 @@ mixer passes `video_aspect`'s RGB unchanged; checked in simulation on every
 video clock of two frames). Every G-NET build (macro GNET_ZN2, revisions
 GNET_Z1 and GNET_Z1_CPU50) carries it.
 
+Build switch (2026-10-20, branch area, docs/area.md): `GNET_NO_DBG` leaves
+out the overlay, its OSD option and the capture block (psx_top ZN2_DBG = 0);
+the RGB is then `video_aspect`'s, the same value the overlay passes with its
+option Off. GNET_Z1FULLR sets it on that branch (about 300 ALMs and 1 M10K
+in the alpha 4 fit). Every other revision keeps the overlay.
+
 The "Watchdog" option and the overlay are independent: with Watchdog Off
 the MB3773 model still expires every period (8 s) without kicks, the overlay still
 takes its snapshot and counts the expiry, but no reset follows.

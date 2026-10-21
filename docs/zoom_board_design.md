@@ -341,7 +341,10 @@ the lookahead tick has reached the ZSG-2 (`t_idle`).
 - Main-CPU side: `hclk` is a separate clock port. The mailbox RAM has one
   clock per port, the doorbell crosses as a toggle, the reset bit through a
   three-stage synchroniser on each side and the gains as quasi-static
-  double-registered words. Under R1 `hclk` becomes clk_cpu.
+  double-registered words. In the release (R1, CPU_CLK_SPLIT = 1) `hclk`
+  stays clk_1x, the same clock as clk (psx_top.vhd instance):
+  rtl/gnet/zoom_cdc.vhd carries the host port and control bit 4 over from
+  clk_cpu (50 MHz) before they reach the board (14).
 
 The PCB's own 25 MHz is not needed as a clock: the board runs in the
 MN10200's virtual machine-cycle time (6.2).

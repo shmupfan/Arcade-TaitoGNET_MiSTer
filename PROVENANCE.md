@@ -118,6 +118,33 @@ GNET_Z1FULLR.qsf) removes the hold check on the savestate engine's SPU RAM
 read capture, which no build without savestates can reach
 (docs/area_timing.md 2).
 
+### Card save, high score save and output level
+
+Line counts are code and comment changes from 1c93c21 to 167276d (the
+release RTL), including the merge b6dd7c2 that joined the two saves. Both
+features sit behind their own macros (GNET_CARD_JOURNAL, GNET_HISCORE) and
+generic (CARD_JOURNAL, default 0), so a build that does not set them gets
+the previous logic; GNET_Z1FULLR sets both.
+
+| File | Lines added / removed | What changed | Why |
+|---|---|---|---|
+| PSX.sv | +232 / -1 | GNET_CARD_JOURNAL: gnet_card_journal instance; index 6 is the EEPROM in its first 2 KB and the card hunk journal after it (upload mux, ioctl_wait term, upload request on OSD open). GNET_HISCORE: gnet_hiscore instance (MRA index 8 configuration, dump in the index 6 file's padding at 0xA00), its game RAM port on the download side of channel 3, its pause term and the pause crossing for cdc.sdc; build checks that stop a GNET_HISCORE build without GNET_CPU50, GNET_LEAN, GNET_SHELL and GNET_ZN2, and a GNET_CARD_JOURNAL build without GNET_ZN2 | Issue #9 (game settings on the PC card were lost, docs/i9_nvram.md); high score save (docs/hiscore.md) |
+| rtl/psx_top.vhd | +37 / -2 | Generic CARD_JOURNAL (default 0): zn2_board's card write events (zn_cj_tog, zn_cj_hunk) out, and a line read client on zn2_cardmem (zn_cj_rd_*) for the journal; tied off when the ZN-2 layer is not built | Issue #9 |
+| rtl/psx_mister.vhd | +17 / -2 | Passes CARD_JOURNAL and the zn_cj_* ports through | as psx_top |
+
+Own files changed or added: rtl/gnet/gnet_card_journal.sv and
+rtl/gnet/gnet_hiscore.sv (new); rtl/gnet/zn2_board.vhd reports each card
+sector write and rtl/gnet/zn2_cardmem.vhd gained the journal's read port
+(CARD_JOURNAL generic); rtl/zoom/zoom_mix.sv has OUT_SHIFT (default 15),
+which doubles the whole mix (+6.02 dB) because with the MAME gains alone
+the core played about 7 to 17 dB under the mister-core reference level in
+full-system simulation (its header gives the measurement); 16 is the MAME
+scale. rtl/gnet/hiscore.v is derived from Hiscores_MiSTer (GPL-3.0-or-later,
+"Files derived from other projects" below); it is the first file from
+another project outside the MiSTer framework that is GPL-3.0-or-later, so
+the combined core and its RBF stay GPL-3.0-or-later as stated at the top.
+Benches: sim/i9 and sim/hiscore.
+
 ## Checking these claims
 
 - `python3 tools/upstream_marks.py --all`: every change in an upstream file
@@ -132,10 +159,11 @@ read capture, which no build without savestates can reach
 | File | Derived from | Changes | Licence |
 |---|---|---|---|
 | rtl/gnet/gnet_arcade_video.sv | sys/arcade_video.v (Sorgelig, MiSTer framework, as in PSX_MiSTer cd17b5a) | VSync passed on every dot when not scandoubling, so the 480i half-line field offset reaches direct video and 15 kHz analog (issue #3); details in its header | GPL-2.0-or-later, as the original |
+| rtl/gnet/hiscore.v | hiscore.v of Hiscores_MiSTer (Alan Steremberg, Jim Gregory), https://github.com/JimmyStones/Hiscores_MiSTer master 31789f3 (2021-10-09), version 0014 | line endings CRLF to LF; a clock enable on the state machine block and the change mask size as a parameter (HS_MASKBITS, default 256 as upstream), both marked G-NET:; used by rtl/gnet/gnet_hiscore.sv (GNET_HISCORE, docs/hiscore.md) | GPL-3.0-or-later, as the original |
 
 ## Files I wrote
 
-Everything under rtl/gnet and rtl/zoom except the file above: own
+Everything under rtl/gnet and rtl/zoom except the files above: own
 implementations for this core, no code copied from other projects. Each
 file's header gives its origin, licence (GPL-2.0-or-later) and, where it
 models board behaviour, the evidence it follows (MAME 0.288 source files
@@ -417,3 +445,17 @@ markers) are not listed.
   - a43ec84 2026-10-20 GPU: reqVRAMwrap computed one clk2x after the request from registered operands (docs/area_timing.md 9)
 - rtl/mdec.vhd, rtl/spu.vhd
   - 55d6e91 2026-10-20 mdec.vhd, spu.vhd: the two unconditional upstream changes behind generics (IDCT_REG_STAGE, MLAB_WR_NEGEDGE), 0 = upstream, set by psx_top from CPU_CLK_SPLIT and ZN2_BOARD
+
+### Card save and high score save (1c93c21 to 167276d)
+
+From `git log --format='%h %ad %s' --date=short 1c93c21..167276d --
+<file>`; b6dd7c2 is a merge with changes of its own (the shared upload
+mux in PSX.sv).
+
+- PSX.sv
+  - 167276d 2026-10-21 High score pause crossing launched from cdc_tx_hs_paused on clk_cpu (cdc.sdc rule); the first fits timed isPaused to cdc_rx_s1 as a clk_cpu to clk_1x path (-7.9 ns)
+  - b6dd7c2 2026-10-21 Beta candidate: merge i9-nvram (card hunk journal, issue #9) with the high score save; both in GNET_Z1FULLR; zoom_mix +6.02 dB (OUT_SHIFT 15)
+  - 24b2468 2026-10-21 High score save for Super Puzzle Bobble behind GNET_HISCORE (test revision GNET_Z1FULLH)
+  - 617c721 2026-10-20 Issue #9: card hunk journal behind GNET_CARD_JOURNAL (test revision GNET_Z1FULLJ)
+- rtl/psx_top.vhd, rtl/psx_mister.vhd
+  - 617c721 2026-10-20 Issue #9: card hunk journal behind GNET_CARD_JOURNAL (test revision GNET_Z1FULLJ)
