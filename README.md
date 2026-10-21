@@ -1,4 +1,4 @@
-# Taito G-NET - MiSTer FPGA Core (alpha)
+# Taito G-NET - MiSTer FPGA Core (beta)
 
 A MiSTer core for Taito G-NET: Sony's ZN-2 main board (a PlayStation
 derived arcade board) with Taito's FC PCB on top, which carries the
@@ -14,13 +14,16 @@ Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 
 ## Status
 
-**Alpha.** There are MRAs for all 30 MAME 0.288 G-NET sets on Taito
+**Beta 1**, the first beta: the core is as accurate and as free of bugs
+as I can make it from board footage, the board's documentation and
+simulation. There are MRAs for all 30 MAME 0.288 G-NET sets on Taito
 cards. On my MiSTer I have played 7 of them (2026-10-06 and 2026-10-07,
 on the alpha 1 RBFs 20261006 and 20261007 or test builds just before
 them). On 2026-10-21 all 30 reached their title, attract, demo or
-calibration screen with this release's RBF and quick start MRAs. Some timings differ from the real board
-(see Known issues). I am publishing it to get test reports, especially
-from people who own a G-NET board.
+calibration screen with this release's RBF and quick start MRAs. The
+accuracy questions I know of, such as timings that may differ from the
+real board, are listed under Known issues. Test reports, especially from
+people who own a G-NET board, are what can settle them.
 
 **To install, follow [docs/INSTALL.md](docs/INSTALL.md).** Each game needs
 a zip made with the converter: a zip made by hand does not work.
@@ -88,12 +91,12 @@ your MAME `coh3002t.zip` (0.288 or later) and a `gnet_<set>.zip` per game, made 
 CHDs with the converter at **<https://gnet-converter.pages.dev>** (it runs in your
 browser and uploads nothing), in `/media/fat/games/mame/`. No game data is included.
 
-**Loading.** From alpha 4 the MRAs load each game's card image (38.6 to 64.2 MB)
+**Loading.** From beta 1 the MRAs load each game's card image (38.6 to 64.2 MB)
 and its 10 MB of flash straight into the MiSTer's DDR3 memory, instead of
 sending them to the core one 16-bit word at a time; the core then copies
 the flash into SDRAM itself. Games load much faster: Ray Crisis took about
 35 s with the alpha 3 MRAs and now takes about 7.5 s (stopwatch on my MiSTer, from the screen going dark to the TAITO logo).
-This needs Main_MiSTer from March 2021 or later, and the alpha 4 or later
+This needs Main_MiSTer from March 2021 or later, and the beta 1 or later
 RBF: with an older RBF the flash is not loaded and the game does not
 start. The first boot MRAs still need the BIOS's 2.5 minute flash copy
 after loading.
@@ -200,7 +203,7 @@ Direction) are hidden when direct video is on.
 
 **Audio Settings**
 
-- **Volume**: Normal, +6 dB, -6 dB, -12 dB. From alpha 4 the whole mix
+- **Volume**: Normal, +6 dB, -6 dB, -12 dB. From beta 1 the whole mix
   is 6 dB louder at every step (see Known issues, Sound level).
 - **SFX Level**: the PlayStation SPU's level in the mix against the Zoom
   board: 0.3 (MAME's setting, the default), 0.45, 0.6, 0.9, 1.2, 1.5.
@@ -239,9 +242,10 @@ division of the 53.693175 MHz video clock in every mode the games use
 writes and, for Super Puzzle Bobble, the high score table in one NVRAM
 file per MRA, `config/nvram/<MRA name>.nvm` on the SD card. As with other
 MiSTer arcade cores, the file is written only when you open the OSD after
-the game has changed something. From alpha 4 the file is 268,288 bytes
-for every game; a 2 KB file from alpha 1 to 3 still loads, and the EEPROM
-settings in it are kept.
+the game has changed something, and every load puts the saved data back
+from it. From beta 1 the file is 268,288 bytes for every game; a 2 KB
+file from alpha 1 to 3 still loads, and the EEPROM settings in it are
+kept.
 
 ## Known issues
 
@@ -255,6 +259,7 @@ settings in it are kept.
   in-game TIME counter; about 16% slower before the texture prefetch).
   The setting comes from one board recording per game; 60 fps captures of
   heavy scenes on a real board would refine it.
+  <!-- TO FILL: slowdown figures for beta 1 after the XII Stag texture fix (the fix changes the texture prefetch these figures were measured with); Shikigami no Shiro demos 1 to 3 against the new board capture (YouTube eRjVSEEjEBQ: 1.005, 1.003, 1.045 of MAME time) -->
 - **480i games on a CRT** ([#3](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/3)).
   Flip Maze, Kollon, Otenami Haiken Final and Zooo draw 480-line
   interlaced screens. Alpha 3 sends both fields to direct video, so the
@@ -267,7 +272,7 @@ settings in it are kept.
   rotated picture made of two triangles. The graphics chip code gave up
   on any shape that took more than about 15 ms to draw, and alpha 3's
   slower texture timing pushed this picture past that limit, so half the
-  playfield was missing. Alpha 4 always finishes a shape that is still
+  playfield was missing. Beta 1 always finishes a shape that is still
   making progress, and in simulation the frame matches MAME pixel for
   pixel, and on my MiSTer the game's attract now shows the whole
   formation. Because the core now does all the drawing it skipped before,
@@ -276,13 +281,13 @@ settings in it are kept.
 - **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)).
   Up to alpha 3 the scandoubled output had no vertical sync, so any Fx
   setting other than None lost the picture over HDMI, direct video and
-  VGA. Alpha 4 has a fix, which I have not yet been able to check over
+  VGA. Beta 1 has a fix, which I have not yet been able to check over
   HDMI or with the scandoubler on my own setup, so reports over HDMI,
   direct video and 31 kHz monitors are welcome. Any Fx setting other than
   None switches the output to 31 kHz, so a 15 kHz CRT still needs None.
 - **Sound level.** In my simulation of six games the core played about
   7 to 17 dB below the reference level I use for my cores (Final Star
-  Force on the Tecmo 16 core, about -16.4 dBFS), so alpha 4 makes the
+  Force on the Tecmo 16 core, about -16.4 dBFS), so beta 1 makes the
   whole mix 6 dB louder; the balance between music and effects is
   unchanged. The loudest game in that simulation, Psyvariar, now peaks at
   -3.9 dBFS with Volume at Normal. Reports of distortion, most of all
@@ -298,13 +303,15 @@ settings in it are kept.
   Psyvariar keeps its service menu settings, such as the screen
   direction, on its PC card, not in the board's EEPROM. Up to alpha 3 the
   core kept card writes in memory only, so these settings went back to
-  their defaults at every load. Alpha 4 saves the card sectors a game
+  their defaults at every load. Beta 1 saves the card sectors a game
   writes in the NVRAM file with the EEPROM (see Saving, above). On my
   MiSTer, with this release's RBF, Psyvariar -Medium Unit- (V2.02O) kept
   a service menu change (Free Play) across a reload of the MRA, and a
   test core with the same save kept Go By RC's calibration (an EEPROM
-  setting). I have not yet checked a power cycle, so a report is
-  welcome. The TAITO logo is drawn
+  setting). The saved Psyvariar file holds the three card sectors the
+  game writes for its GAME CONFIGURATION, the same three MAME writes.
+  Every load puts the settings back from the file on the SD card, so a
+  power cycle works the same way as a reload. The TAITO logo is drawn
   by the BIOS and does not turn with the game's screen direction setting,
   in MAME as well.
 - **High scores** are saved for Super Puzzle Bobble (V2.05O) only, the
@@ -312,16 +319,8 @@ settings in it are kept.
   and MAME lose them at power off. MiSTer may write a new score only
   when you open the OSD a second time, rather than the first time after
   the score. On my MiSTer, with this release's RBF, a new ranking entry
-  was kept across a reload of the MRA; I have not yet checked a power
-  cycle, or which OSD opening saves it.
-- **XII Stag's intro flash runs too long.** After the Triangle Service
-  logo, the flash in the intro lasts about 1.8 s on a real board (board
-  footage), but more than 5 s on the core in my simulation, and it is
-  dimmer. The cause is the texture timing that matches the Ray Crisis and
-  Shikigami no Shiro recordings (Slowdown, above): it slows this scene
-  more than the board does. I have not yet measured whether it affects
-  gameplay. I am working on it for the beta.
-  <!-- TO CONFIRM: XII Stag flash length on hardware with the release RBF. -->
+  was kept across a reload of the MRA, and the saved file holds the
+  ranking table. I have not yet checked which OSD opening saves it.
 - **First boot MRAs** repeat the 2.5 minute copy at every load, because
   the flash chips are not saved. On my MiSTer the Ray Crisis first boot
   MRA loads with this release and the copy runs (its loading bar was
@@ -334,10 +333,7 @@ settings in it are kept.
   agrees with MAME to about 0.3%, which cannot tell the two apart; a
   frequency counter on a board would.
 - **Not yet checked on hardware:** play in the sets marked Boots;
-  slowdown in heavy scenes of other games; the saves across a power
-  cycle (the Psyvariar settings and the Super Puzzle Bobble high scores
-  are checked across a reload of the MRA only); a first boot copy to
-  the end; rotation and Flip Screen on every display.
+  slowdown in heavy scenes of other games; a first boot copy to the end; rotation and Flip Screen on every display.
 
 ## Roadmap
 
@@ -345,8 +341,6 @@ Roughly in this order. None of it has a date.
 
 - **Slowdown** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)):
   check the texture wait against more board recordings of heavy scenes.
-- **XII Stag's intro flash:** match the texture timing to this scene as
-  well as to Ray Crisis and Shikigami no Shiro (see [Known issues](#known-issues)).
 - **[Known issues](#known-issues):** sound balance, the watchdog period. Some need measurements from a real board.
 - **CompactFlash sets from a first boot:** Kollon (V2.04JC) and Otenami
   Haiken Final run with quick start only, because the core cannot yet run

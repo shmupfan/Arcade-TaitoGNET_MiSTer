@@ -1,13 +1,13 @@
-# Taito G-NET core, alpha 4
-
-<!-- TO CONFIRM: release name. Alpha 4 was staged but never published; this release is built from the development line after it (dev branch beta-cand). If it is called alpha 5, rename this file and the "alpha 4" mentions in README.md, releases/README.md and docs/TESTING_GUIDE.md. -->
+# Taito G-NET core, beta 1
 
 Core: `Arcade-TaitoGNET_20261021.rbf` (md5 `8623149b677c03d2333e42bc2a225d58`, see
 [README.md](README.md)).
 
-I would like the release after this one to be the first beta, so test
-reports on this one are the ones that decide it.
-<!-- TO CONFIRM: keep or drop the beta sentence. -->
+This is the first beta. Beta here means the core is as accurate and as
+free of bugs as I can make it from board footage, the board's
+documentation and simulation. The accuracy questions I know of are listed
+in the README's Known issues and in docs/ACCURACY.md; test reports, and
+board footage most of all, are what can settle them.
 
 ## New
 
@@ -33,8 +33,10 @@ reports on this one are the ones that decide it.
   -Medium Unit- (V2.02O) kept a service menu change (Free Play) across
   a reload of the MRA, and a test core with the same save kept Go By
   RC's calibration (an EEPROM setting), the first time I have checked
-  the EEPROM save on hardware. I have not yet checked a power cycle, so
-  please tell me whether your settings survive one.
+  the EEPROM save on hardware. The saved Psyvariar file holds the three
+  card sectors the game writes for its GAME CONFIGURATION, the same three
+  MAME writes. Every load puts the settings back from the file on the SD
+  card, so a power cycle works the same way as a reload.
 - **High scores for Super Puzzle Bobble (V2.05O).** The core saves its
   ranking table in the same NVRAM file and puts it back after the game
   has booted. It uses MAME's high score list (hiscore.dat), which has
@@ -44,8 +46,8 @@ reports on this one are the ones that decide it.
   option to turn the save off. MiSTer may write a new score only when
   you open the OSD a second time, rather than the first time after the
   score. On my MiSTer, with this RBF, a new ranking entry was kept
-  across a reload of the MRA; I have not yet checked a power cycle, or
-  which OSD opening saves it.
+  across a reload of the MRA, and the saved file holds the ranking table.
+  I have not yet checked which OSD opening saves it.
 - **Louder sound.** The whole mix is 6 dB louder. In my simulation of six
   games the core played about 7 to 17 dB below the reference level I use
   for my cores (Final Star Force on the Tecmo 16 core, about -16.4 dBFS).
@@ -61,6 +63,8 @@ reports on this one are the ones that decide it.
 
 ## Fixes
 
+- **XII Stag's intro flash.**
+  <!-- TO FILL: XII Stag texture timing fix result -->
 - **Space Invaders Anniversary: a triangle hid half the playfield
   ([#10](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/10)).**
   The graphics chip gave up on the big rotated picture the game draws in
@@ -92,7 +96,7 @@ reports on this one are the ones that decide it.
 - Psyvariar: change a setting in the service menu, save it, open and
   close the OSD, reload the MRA, and check the setting is kept.
 - Super Puzzle Bobble: get a score into the ranking, open the OSD (once
-  or twice), power off, load it again and check the ranking.
+  or twice), load the MRA again and check the ranking.
 - Sound: whether the new level sounds right, and any distortion,
   especially with Volume at +6 dB.
 - Scandoubler Fx settings over HDMI, direct video and 31 kHz monitors.
@@ -101,15 +105,8 @@ reports on this one are the ones that decide it.
 
 ## Known issues
 
-- **XII Stag's intro flash runs too long.** After the Triangle Service
-  logo, the flash in the intro lasts about 1.8 s on a real board (board
-  footage), but more than 5 s on the core in my simulation, and it is
-  dimmer. The cause is
-  the texture timing I matched to Ray Crisis and Shikigami no Shiro board
-  recordings in alpha 3 (issue
-  [#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)): it
-  slows this scene more than the board does. I have not yet measured
-  whether it affects XII Stag's gameplay. I am working on it for the beta.
 - Zooo in 480i over HDMI can show a slight line shake; try Weave and Bob.
   <!-- TO CONFIRM: keep this line only if it still applies on the release RBF. -->
-  <!-- TO CONFIRM: XII Stag flash length on hardware with the release RBF (the "more than 5 s" figure is from the alpha 3 settings in simulation, regress-a3 docs/regression_a3_tier2.md; board ~1.8 s from YouTube j-iAwFKdZNs). -->
+- The accuracy questions still open (slowdown against more board
+  recordings, sound balance, the watchdog period, the frame rate) are in
+  the README's Known issues.

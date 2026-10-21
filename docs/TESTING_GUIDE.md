@@ -1,9 +1,11 @@
 # Testing guide
 
-Thanks for trying the Taito G-NET core. It is an alpha: the games boot
-and play, but several things have only been checked in simulation or on
-my own MiSTer, and some timings are known to differ from the real board.
-Your reports decide what I fix next.
+Thanks for trying the Taito G-NET core. This is the first beta: it is as
+accurate and as free of bugs as I can make it from board footage, the
+board's documentation and simulation. Several things have only been
+checked in simulation or on my own MiSTer, and the accuracy questions I
+know of are listed in the README's Known issues. Your reports decide what
+I fix next.
 
 Setup (the RBF, the MRAs and making the game zips from your own MAME
 files) is in the [install guide](INSTALL.md). Please don't share the game
@@ -23,7 +25,7 @@ In order of value:
    footage of one.
 5. **CRT and display checks**: picture position and sync on a CRT
    (test 4), rotation and Flip Screen (test 5).
-6. **Pause** (test 6) and **saving across a power cycle** (test 7).
+6. **Pause** (test 6) and **saving** (test 7).
 7. **Long play**: anything that hangs, resets, glitches or slows down.
 
 If you own a G-NET board, the questions in "For board owners" at the end
@@ -34,7 +36,7 @@ are worth more to the core than any test on the MiSTer.
 - Note the RBF file name and the MRA you load (main or first boot).
 - Note your setup: HDMI or CRT (and 15 kHz or 31 kHz), and for HDMI the
   output resolution.
-- The release core has no **Debug overlay**: from alpha 4 I leave it out
+- The release core has no **Debug overlay**: from beta 1 I leave it out
   to free space on the FPGA. If a game hangs or resets, a photo or video of
   the screen and the time it happened are enough; I may then send you a
   test core with the overlay. In a test core that has it, turn it on in
@@ -96,9 +98,9 @@ Revision yet and expect the same flow.
 | Coin, Start | How-to screen, then the game over clouds |
 
 After the Triangle Service logo the intro has a bright flash. On a real
-board it lasts about 1.8 s; on this core it runs longer and dimmer (a
-known issue, in the README). If you play XII Stag, say whether anything
-in the game itself looks slower than you expect.
+board it lasts about 1.8 s. If you play XII Stag, time the flash, and say
+whether anything in the game itself looks slower than you expect.
+<!-- TO FILL: XII Stag texture timing fix result (the flash length on the beta 1 core) -->
 
 **Shikigami no Shiro** (vertical)
 
@@ -172,7 +174,7 @@ is board evidence per game.
   and 1.5 are louder).
 - Check for crackle, wrong pitch, drop-outs or missing music. The BIOS
   screens and the loading bars are silent; that is normal.
-- Alpha 4 makes the whole mix 6 dB louder than alpha 1 to 3, at every
+- Beta 1 makes the whole mix 6 dB louder than alpha 1 to 3, at every
   Volume setting. Say whether the overall level now sounds about right
   against other MiSTer arcade cores, and whether you hear distortion,
   most of all with Volume at +6 dB.
@@ -214,13 +216,13 @@ and Space Invaders Anniversary.
   on without resetting (the watchdog is held off during pause).
 - Sound should be silent while paused and come back cleanly.
 
-## Test 7: saving across a power cycle
+## Test 7: saving
 
 The core saves the board's EEPROM, the card sectors a game writes and, for
 Super Puzzle Bobble, its ranking table in one file per MRA,
 `config/nvram/<MRA name>.nvm` on the SD card. MiSTer writes the file when
 you open the OSD after the game has changed something, and shows
-"Saving..." for a moment. From alpha 4 the file is 268,288 bytes for every
+"Saving..." for a moment. From beta 1 the file is 268,288 bytes for every
 game; a 2 KB file from an earlier alpha still loads with its EEPROM
 settings.
 
@@ -230,7 +232,8 @@ settings.
 2. Open the OSD, so MiSTer saves the file. For a Super Puzzle Bobble
    score, close the OSD and open it a second time as well: the save may
    come only at the second opening.
-3. Power the MiSTer off, then load the same game again.
+3. Load the same game again. Every load puts the saved data back from the
+   file, so a reload checks the same thing as a power cycle.
 4. Check that the setting or the score is still there. Super Puzzle
    Bobble puts the saved ranking back once its boot has finished.
 
@@ -240,7 +243,7 @@ Two checks I need most:
   INVERT on, choose RETURN and YES, leave test mode, then do steps 2 to 4.
   The game's screens should still be upside down after the reload. The
   TAITO logo does not turn; MAME does the same, because the BIOS draws it.
-- **Super Puzzle Bobble (V2.05O)**: the ranking after a power cycle. It
+- **Super Puzzle Bobble (V2.05O)**: the ranking after a reload. It
   is the only game with a high score save; MAME's high score list has no
   other G-NET game.
 
