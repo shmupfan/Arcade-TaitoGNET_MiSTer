@@ -96,6 +96,11 @@ Revision yet and expect the same flow.
 | 27 s on | XII STAG title over a glowing sphere |
 | Coin, Start | How-to screen, then the game over clouds |
 
+After the Triangle Service logo the intro has a bright flash. On a real
+board it lasts about 1.8 s; on this core it runs longer and dimmer (a
+known issue, in the README). If you play XII Stag, say whether anything
+in the game itself looks slower than you expect.
+
 **Shikigami no Shiro** (vertical)
 
 | MAME time | Screen |
@@ -168,6 +173,10 @@ is board evidence per game.
   and 1.5 are louder).
 - Check for crackle, wrong pitch, drop-outs or missing music. The BIOS
   screens and the loading bars are silent; that is normal.
+- Alpha 4 makes the whole mix 6 dB louder than alpha 1 to 3, at every
+  Volume setting. Say whether the overall level now sounds about right
+  against other MiSTer arcade cores, and whether you hear distortion,
+  most of all with Volume at +6 dB.
 - If you know the real board well, or have a recording of one, say so:
   that is the most useful comparison I can get.
 
@@ -208,17 +217,36 @@ and Space Invaders Anniversary.
 
 ## Test 7: saving across a power cycle
 
-The board's EEPROM (settings and high scores) is saved as NVRAM when you
-open the OSD after the game has written to it.
+The core saves the board's EEPROM, the card sectors a game writes and, for
+Super Puzzle Bobble, its ranking table in one file per MRA,
+`config/nvram/<MRA name>.nvm` on the SD card. MiSTer writes the file when
+you open the OSD after the game has changed something, and shows
+"Saving..." for a moment. From alpha 4 the file is 268,288 bytes for every
+game; a 2 KB file from an earlier alpha still loads with its EEPROM
+settings.
 
-1. Get a high score into a table, or change a setting in the game's test
-   mode (press Test, or set DIP switch 4 On and reset; set it back
-   afterwards).
-2. Open the OSD once, so MiSTer saves the NVRAM.
+1. Change a setting in the game's test mode (press Test, or set the OSD
+   Service Menu On and reset; set it back afterwards), or get a high
+   score into Super Puzzle Bobble's ranking.
+2. Open the OSD, so MiSTer saves the file. For a Super Puzzle Bobble
+   score, close the OSD and open it a second time as well: the save may
+   come only at the second opening.
 3. Power the MiSTer off, then load the same game again.
-4. Check that the score or the setting is still there.
+4. Check that the setting or the score is still there. Super Puzzle
+   Bobble puts the saved ranking back once its boot has finished.
 
-Report: which game, what you changed, and whether it survived.
+Two checks I need most:
+
+- **Psyvariar** (issue #9): in the service menu's GAME CONFIGURATION, set
+  INVERT on, choose RETURN and YES, leave test mode, then do steps 2 to 4.
+  The game's screens should still be upside down after the reload. The
+  TAITO logo does not turn; MAME does the same, because the BIOS draws it.
+- **Super Puzzle Bobble (V2.05O)**: the ranking after a power cycle. It
+  is the only game with a high score save; MAME's high score list has no
+  other G-NET game.
+
+Report: which game, what you changed, whether it survived, and whether
+"Saving..." appeared at the first or the second OSD opening.
 
 ## Test 8: timings against a real board
 

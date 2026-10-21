@@ -55,7 +55,7 @@ calibration screen on my MiSTer, not played. MRA: **main** is
 | Shikigami no Shiro | V1.02J internal build | shikigama | Type 1 | alt | Not tested | Vertical |
 | Soutenryu | V2.07J | soutenry | Type 1 | main | Boots | |
 | Space Invaders Anniversary | V2.02J | sianniv | Type 1 | main | Boots | Vertical; no Zoom board |
-| Super Puzzle Bobble | V2.05O | spuzbobl | Type 2 | main | Boots | |
+| Super Puzzle Bobble | V2.05O | spuzbobl | Type 2 | main | Boots | High scores saved |
 | Super Puzzle Bobble | V2.04J | spuzboblj | Type 2 | alt | Boots | |
 | Usagi | V2.02J | usagi | Type 2 | main | Boots | Mahjong panel |
 | XII Stag | V2.01J | xiistag | Type 1 | main | Boots | Vertical; runs to its gameplay demo |
@@ -200,7 +200,8 @@ Direction) are hidden when direct video is on.
 
 **Audio Settings**
 
-- **Volume**: Normal, +6 dB, -6 dB, -12 dB.
+- **Volume**: Normal, +6 dB, -6 dB, -12 dB. From alpha 4 the whole mix
+  is 6 dB louder at every step (see Known issues, Sound level).
 - **SFX Level**: the PlayStation SPU's level in the mix against the Zoom
   board: 0.3 (MAME's setting, the default), 0.45, 0.6, 0.9, 1.2, 1.5.
 
@@ -234,8 +235,13 @@ the core resets, so a CRT keeps its picture. The pixel clock is an exact
 division of the 53.693175 MHz video clock in every mode the games use
 (256, 320, 512 and 640 dots), so direct video shows even pixel widths.
 
-The board's EEPROM (settings and high scores) is saved to the SD card as
-NVRAM when the OSD opens after the game has written to it.
+**Saving.** The core saves the board's EEPROM, the card sectors a game
+writes and, for Super Puzzle Bobble, the high score table in one NVRAM
+file per MRA, `config/nvram/<MRA name>.nvm` on the SD card. As with other
+MiSTer arcade cores, the file is written only when you open the OSD after
+the game has changed something. From alpha 4 the file is 268,288 bytes
+for every game; a 2 KB file from alpha 1 to 3 still loads, and the EEPROM
+settings in it are kept.
 
 ## Known issues
 
@@ -274,24 +280,46 @@ NVRAM when the OSD opens after the game has written to it.
   HDMI or with the scandoubler on my own setup, so reports over HDMI,
   direct video and 31 kHz monitors are welcome. Any Fx setting other than
   None switches the output to 31 kHz, so a 15 kHz CRT still needs None.
+- **Sound level.** In my simulation of six games the core played about
+  7 to 17 dB below the reference level I use for my cores (Final Star
+  Force on the Tecmo 16 core, about -16.4 dBFS), so alpha 4 makes the
+  whole mix 6 dB louder; the balance between music and effects is
+  unchanged. The loudest game in that simulation, Psyvariar, now peaks at
+  -3.9 dBFS with Volume at Normal. Reports of distortion, most of all
+  with Volume at +6 dB, are welcome.
+  <!-- TO CONFIRM: listen check on hardware. -->
 - **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real
   Psyvariar -Revision- cabinet suggests 0.6 to 0.8 for that game, but 0.7
   sounded wrong for Night Raid. A line-out recording of a board would
   settle it.
-- **Settings that a game keeps on its card are lost at the next load**
-  ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).
-  Psyvariar keeps its service menu settings, such as the screen direction,
-  on its PC card, not in the board's EEPROM: saving a setting writes a
-  card sector, as MAME shows. The core keeps card writes in memory only,
-  and every load copies the card image from the zip again, so these
-  settings go back to their defaults. Psyvariar never writes the EEPROM,
-  so the NVRAM save cannot keep them. The TAITO logo is drawn by the BIOS
-  and does not turn with the game's setting, in MAME as well. Saving card
-  writes in the NVRAM file with the EEPROM is built in a test core and
-  waits for my hardware test.
-  <!-- TO CONFIRM (#9): if the card journal ships in this release, replace this item (and the Roadmap item) with how the save works; if not, keep it. -->
+- **Settings a game keeps on its card** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)).
+  Psyvariar keeps its service menu settings, such as the screen
+  direction, on its PC card, not in the board's EEPROM. Up to alpha 3 the
+  core kept card writes in memory only, so these settings went back to
+  their defaults at every load. Alpha 4 saves the card sectors a game
+  writes in the NVRAM file with the EEPROM (see Saving, above). On my
+  MiSTer a test core with this save kept Go By RC's calibration (an EEPROM
+  setting) across a reload; I have not yet checked the Psyvariar settings
+  themselves on hardware, so a report is welcome. The TAITO logo is drawn
+  by the BIOS and does not turn with the game's screen direction setting,
+  in MAME as well.
+  <!-- TO CONFIRM (#9): Lee's Psyvariar settings test on the release RBF; if it fails, say so here. -->
+- **High scores** are saved for Super Puzzle Bobble (V2.05O) only, the
+  one G-NET game in MAME's high score list (hiscore.dat). The real board
+  and MAME lose them at power off. MiSTer may write a new score only
+  when you open the OSD a second time, rather than the first time after
+  the score; I have not yet checked which on hardware.
+  <!-- TO CONFIRM: high score save on hardware, and that the release RBF has GNET_HISCORE. -->
+- **XII Stag's intro flash runs too long.** After the Triangle Service
+  logo, the flash in the intro lasts about 1.8 s on a real board (board
+  footage), but more than 5 s on the core in my simulation, and it is
+  dimmer. The cause is the texture timing that matches the Ray Crisis and
+  Shikigami no Shiro recordings (Slowdown, above): it slows this scene
+  more than the board does. I have not yet measured whether it affects
+  gameplay. I am working on it for the beta.
+  <!-- TO CONFIRM: XII Stag flash length on hardware with the release RBF. -->
 - **First boot MRAs** repeat the 2.5 minute copy at every load, because
   the flash chips are not saved. I have not yet confirmed the copy on my
   own hardware.
@@ -304,7 +332,8 @@ NVRAM when the OSD opens after the game has written to it.
   frequency counter on a board would.
 - **Not yet checked on hardware:** play in the sets marked Boots; the 3
   sets marked Not tested; slowdown in heavy scenes of other games;
-  the EEPROM save across a power cycle; rotation and Flip Screen on every
+  the save across a power cycle; the Psyvariar settings save; the Super
+  Puzzle Bobble high score save; rotation and Flip Screen on every
   display.
 
 ## Roadmap
@@ -313,8 +342,8 @@ Roughly in this order. None of it has a date.
 
 - **Slowdown** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)):
   check the texture wait against more board recordings of heavy scenes.
-- **Psyvariar's settings not kept** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)):
-  save the card writes with the EEPROM (see [Known issues](#known-issues)).
+- **XII Stag's intro flash:** match the texture timing to this scene as
+  well as to Ray Crisis and Shikigami no Shiro (see [Known issues](#known-issues)).
 - **[Known issues](#known-issues):** sound balance, the watchdog period. Some need measurements from a real board.
 - **CompactFlash sets from a first boot:** Kollon (V2.04JC) and Otenami
   Haiken Final run with quick start only, because the core cannot yet run
@@ -420,8 +449,9 @@ For anyone writing MRAs for this core:
 | 3 | flash area, 10 MB: U30 sub-BIOS, U27 Zoom program, U56/U55/U29 wave data | `<set>.flash` from the game zip (quick start), or `flash.u30` plus 8 MB of FFh (first boot) |
 | 4 | card identify data, CIS, key and card type at 3F0h (01 Type 1, 02 Type 2, 03 CompactFlash) (1 KB) | `<set>.meta` from the game zip |
 | 5 | PC card image (whole sectors, up to 64 MB) | `<set>.img` from the game zip |
-| 6 | EEPROM (2 KB), `<nvram index="6" size="2048"/>` | saved by MiSTer |
+| 6 | NVRAM file (268,288 bytes), `<nvram index="6" size="268288"/>`: EEPROM (2 KB) at 0, the card hunk journal (directory at 800h, 64 slots of 4 KB from 1000h), the high score marker and table at A00h to C03h, the EEPROM again in the last 2 KB. `size="2048"` still works and saves the EEPROM only | saved by MiSTer |
 | 7 | game configuration byte: bit 0 vertical set (MAME ROT270), bit 1 no Taito Zoom board (MAME `init_nozoom`), bits 3:2 controls (0 stick, 1 mahjong panel and P1 stick, 2 mahjong panel, 3 RC wheel and trigger) | inline in the MRA |
+| 8 | high score configuration (hiscore.v format), Super Puzzle Bobble (V2.05O) only | inline in the MRA |
 | 254 | bits 3-0 DIP switch S551, bit 4 JP1 | MRA switches |
 
 The release MRAs load index 3 with `address="0x31000000"` and index 5
@@ -429,6 +459,10 @@ with `address="0x34000000"`, so Main_MiSTer writes them straight into
 DDR3 ([docs/i12_ddr3_load.md](docs/i12_ddr3_load.md)). Without the
 `address` attributes both load through the core as in alpha 1 to 3, which
 also works, only slower.
+
+The index 8 block has to come before the `<nvram>` line, so the core has
+the high score configuration before Main_MiSTer sends the NVRAM file. An
+RBF from alpha 1 to 3 ignores index 8.
 
 JP1 (BIOS Flash) is open in every MRA and the OSD does not offer it. With
 JP1 closed the BIOS runs its flash initialise on every boot and the game
@@ -456,6 +490,10 @@ keep their own licences and headers.
   Olivier Galibert, R. Belmont, hap, superctr, cam900, Aaron Giles,
   pSXAuthor and the other MAME developers. The core follows superctr's
   later ZSG-2 fix (MAME commit 61c7940).
+- **[Hiscores_MiSTer](https://github.com/JimmyStones/Hiscores_MiSTer)**
+  by Alan Steremberg and Jim Gregory: the high score module
+  (`rtl/gnet/hiscore.v`, GPL-3.0-or-later, with two small marked
+  changes), used with the Super Puzzle Bobble entry of MAME's hiscore.dat.
 - **psx-spx** (Martin "nocash" Korth and contributors) for the PlayStation
   hardware, and JaCzekanski's **ps1-tests** for GPU behaviour.
 - **Datasheet and manual authors:** Texas Instruments (TMS57002 User's
