@@ -38,7 +38,13 @@ Loads (docs/zn2_layer_design.md 13.5, docs/m4_shell.md 3):
   index 3  flash area <set>.flash (gnet_<set>.zip, quick start), or
            flash.u30 and 8 MB of FFh (first boot)
   index 4  card metadata <set>.meta, index 5 card image <set>.img
-  index 6  EEPROM, 2048 bytes (nvram)
+  index 6  save file (nvram), 268,288 bytes: the EEPROM (first 2 KB), the
+           card hunk journal of the card sectors the game writes (issue #9,
+           docs/i9_nvram.md) and the high score dump in its padding at
+           0xA00 (docs/hiscore.md); RBFs without the journal save and load
+           the EEPROM only (its copy in the last 2 KB)
+  index 8  high score configuration from MAME 0.288 hiscore.dat, only for
+           sets it lists (spuzbobl); sent before the nvram file
   index 7  game configuration byte: bit 0 = vertical set (MAME ROT270);
            bit 1 = no Taito Zoom board (MAME init_nozoom); bits 3:2 =
            controls (PSX.sv gnet_inmode): 0 joysticks, 1 mahjong panel and
@@ -227,9 +233,25 @@ TEMPLATE = """<misterromdescription>
     <rom index="7">
         <part>{cfg:02X}</part>
     </rom>
-    <nvram index="6" size="2048" />
+{hiscore}    <nvram index="6" size="268288" />
 </misterromdescription>
 """
+
+
+# MAME 0.288 plugins/hiscore/hiscore.dat, in gnet_hiscore.sv's index 8
+# format (docs/hiscore.md 4): spuzbobl `@:maincpu,program,28bf08,10d,20,01`
+# is the only G-NET entry (spuzboblj has none).
+HISCORE = {
+    "spuzbobl": ("02 04 CC 00 FF FF 00 02 00 02 00 01 00 0F 10 00\n"
+                 "            00 28 BF 08 01 0D 20 01"),
+}
+
+
+def hiscore_of(s):
+    if s not in HISCORE:
+        return ""
+    return ('    <rom index="8" md5="none">\n        <part>\n            ' + HISCORE[s] +
+            '\n        </part>\n    </rom>\n')
 
 
 def title_of(s):
@@ -287,7 +309,8 @@ def main():
                 f.write(TEMPLATE.format(title=title_of(s) + suffix, set=s, rbf=a.rbf, year=year, mfr=mfr,
                                         cat=cat, players=players, joy=joy, buttons=buttons, bdefault=bdefault, flash=flash,
                                         rot="vertical (ccw)" if vert else "horizontal", cfg=config_byte(s),
-                                        card_addr=' address="0x34000000"' if a.ddr3 != "none" else ""))
+                                        card_addr=' address="0x34000000"' if a.ddr3 != "none" else "",
+                                        hiscore=hiscore_of(s)))
             print("wrote", os.path.relpath(p, a.out))
             n += 1
     print(n, "MRAs")
