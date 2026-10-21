@@ -415,6 +415,7 @@ int main(int argc, char** argv) {
     // -pctrace_from/-pctrace_to us: every new CPU PC to pc.log (CPU clock domain);
     // -ramdump_us T: the first 64 KB of main RAM to ram_<T>.bin at T
     double pctrace_from = 1e300, pctrace_to = -1, ramdump_ps = -1; FILE* fpc = nullptr; uint32_t lastpc = 0;
+    int ramdump_kb = 64;
     bool wd_apply = false;             // -wd_apply 1: an MB3773 pulse resets the core (PSX.sv zn_wd_hold)
     double wd_release_ps = -1; bool wd1 = false; int nwd = 0;
     bool zn_on_cpu = false;            // ZN-2 board on clk_cpu (CPU_CLK_SPLIT = 1 trees with ZN2_BOARD)
@@ -452,6 +453,7 @@ int main(int argc, char** argv) {
         else if (a == "-pctrace_from") pctrace_from = atof(argv[++i]) * 1e6;
         else if (a == "-pctrace_to") pctrace_to = atof(argv[++i]) * 1e6;
         else if (a == "-ramdump_us") ramdump_ps = atof(argv[++i]) * 1e6;
+        else if (a == "-ramdump_kb") ramdump_kb = atoi(argv[++i]);   // size of the -ramdump_us dump from SDRAM 0 (default 64 KB)
         else if (a == "-iolog_all") iolog_all = atoi(argv[++i]) != 0;
         else if (a == "-ddr_lat") DDR_LAT = atoi(argv[++i]);
         else if (a == "-ddr_hold") DDR_HOLD = atoi(argv[++i]);
@@ -773,7 +775,7 @@ int main(int argc, char** argv) {
         }
         if (ramdump_ps >= 0 && now_ps >= ramdump_ps) {
             char fn[512]; snprintf(fn, sizeof fn, "%s/ram_%.0f.bin", out.c_str(), ramdump_ps / 1e6);
-            FILE* f = fopen(fn, "wb"); if (f) { fwrite(&sdram[0], 2, 0x8000, f); fclose(f); }
+            FILE* f = fopen(fn, "wb"); if (f) { fwrite(&sdram[0], 2, (size_t)ramdump_kb * 512, f); fclose(f); }
             ramdump_ps = -1;
         }
         if (now_ps >= iolog_from && now_ps <= iolog_to) {
@@ -807,7 +809,13 @@ int main(int argc, char** argv) {
             if (top->ioctl_wait != wt1) { wt1 = top->ioctl_wait; if (!hps.download) fprintf(fprog, "%.3f us ioctl_wait %d (no download open)\n", now_ps / 1e6, wt1); }
 #if FS_HAS_DLFULL
             static bool fb1 = false, mo1 = false, oo1 = false;
-            if (top->dbg_flc_busy != fb1) { fb1 = top->dbg_flc_busy; fprintf(fprog, "%.3f us DDR3 flash copier busy %d\n", now_ps / 1e6, fb1); fflush(fprog); }
+            if (top->dbg_flc_busy != fb1) {
+                fb1 = top->dbg_flc_busy;
+                fprintf(fprog, "%.3f us DDR3 flash copier busy %d", now_ps / 1e6, fb1);
+                if (!fb1) fprintf(fprog, ": flags %X, sums copy %08X SDRAM read-back %08X DDR3 re-read %08X", (unsigned)top->dbg_flc_flags,
+                                  (unsigned)top->dbg_flc_sum0, (unsigned)top->dbg_flc_sum1, (unsigned)top->dbg_flc_sum2);
+                fprintf(fprog, "\n"); fflush(fprog);
+            }
             if (top->dbg_mir_ovf != mo1) { mo1 = top->dbg_mir_ovf; fprintf(fprog, "%.3f us MIRROR OVERFLOW %d\n", now_ps / 1e6, mo1); }
             if (top->dbg_own_ovf != oo1) { oo1 = top->dbg_own_ovf; fprintf(fprog, "%.3f us ARBITER OWNER FIFO OVERFLOW %d\n", now_ps / 1e6, oo1); }
 #endif

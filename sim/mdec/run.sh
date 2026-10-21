@@ -11,15 +11,17 @@
 # Pass: result words and IDCT result RAM writes identical in order for both
 # instances, and equal to the .expect file where there is one.
 # Env: REF (git revision of the reference), NMB (decode commands per random
-#      stream, default 150), MUT=1 negative control (the new copy's stage R
-#      first flag is skipped; the bench must fail).
+#      stream, default 150), STAGE (the current MDEC's IDCT_REG_STAGE,
+#      default 1 = the release setting; STAGE=0 REF=cd17b5a compares the
+#      upstream setting with upstream's mdec.vhd), MUT=1 negative control (the
+#      new copy's stage R first flag is skipped; the bench must fail).
 # Work data in $TMPDIR. Each simulation under nice -n 15, one at a time.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 R=$ROOT/rtl; M=$ROOT/sim/system/src/mem
-REF=${REF:-alpha3}; NMB=${NMB:-150}; MUT=${MUT:-0}
-W="${TMPDIR:-/tmp}/gnet_mdec_equiv_m$MUT"
+REF=${REF:-alpha3}; NMB=${NMB:-150}; MUT=${MUT:-0}; STAGE=${STAGE:-1}
+W="${TMPDIR:-/tmp}/gnet_mdec_equiv_m${MUT}_s$STAGE"
 NV="nvc --std=2008 -H 512m"
 rm -rf "$W"; mkdir -p "$W/rtl"; cd "$W"
 
@@ -29,7 +31,7 @@ git -C "$ROOT" show "$REF:rtl/mdec.vhd" | sed -e "$nodbg" \
    > rtl/mdec_ref.vhd
 sed -e "$nodbg" "$R/mdec.vhd" > rtl/mdec.vhd
 if [ "$MUT" = 1 ]; then
-   sed -i.bak 's/idct_calc1_first   <= idct_calcR_first;/idct_calc1_first   <= idct_calc0_first;/' rtl/mdec.vhd
+   sed -i.bak 's/idct_calcS_first   <= idct_calcR_first   when/idct_calcS_first   <= idct_calc0_first   when/' rtl/mdec.vhd
    if cmp -s rtl/mdec.vhd rtl/mdec.vhd.bak; then echo "mutation did not apply"; exit 2; fi
 fi
 grep -q "entity mdec_ref is" rtl/mdec_ref.vhd || { echo "reference rename failed"; exit 2; }
@@ -42,7 +44,7 @@ fail=0
 run_case() {   # name, stimulus base, expected word count, expect file or ""
    local name=$1 base=$2 nout=$3 exp=$4
    mkdir -p "$W/$name"; cd "$W/$name"
-   $NV --work="$W/work" -L "$W" -e tb_mdec_equiv -gSTIM="$base.stim" -gNOUT="$nout" > elab.log 2>&1 \
+   $NV --work="$W/work" -L "$W" -e tb_mdec_equiv -gSTIM="$base.stim" -gNOUT="$nout" -gSTAGE="$STAGE" > elab.log 2>&1 \
       || { echo "$name: elaboration failed"; tail -5 elab.log; fail=1; cd "$W"; return; }
    nice -n 15 $NV --work="$W/work" -L "$W" -r tb_mdec_equiv --ieee-warnings=off > run.log 2>&1 || true
    local msg; msg=$(grep -o "MDEC_EQUIV.*" run.log || echo "no result")

@@ -10,7 +10,7 @@ REF=${1:-zn2-layer}
 T=${TAG:-zn2}
 S=$HERE/work/$T/src
 rm -rf $S; mkdir -p $S
-git -C $HERE/../.. archive $(git -C $HERE/../.. rev-parse $REF) rtl sim/system/src/mem | tar -x -C $S
+git -C $HERE/../.. archive "$(git -C "$HERE/../.." rev-parse "$REF")" rtl sim/system/src/mem | tar -x -C $S
 git -C $HERE/../.. rev-parse $REF > $S/COMMIT
 # EXTRA_VHD_ADD: further VHDL files of newer trees (rtl/ paths are relative
 # to the export, e.g. "rtl/gnet/zn_dbg_regs.vhd"), analysed after the board.

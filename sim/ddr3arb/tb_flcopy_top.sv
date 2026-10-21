@@ -2,7 +2,9 @@
 // the flash mirror share gnet_ddr3_arb's glue port through gnet_ddr3_gmux, as
 // PSX.sv wires them with GNET_DDR3_LOAD; the core port and the DDRAM port are
 // driven by tb_flcopy.cpp (random core reads, random BUSY and latency).
-module tb_flcopy_top (
+module tb_flcopy_top #(
+    parameter int TRIES = 1    // copier TRIES (run.sh: FLC_TRIES)
+) (
     input  logic        clk1x,
     input  logic        clk2x,
     input  logic        clk_cpu,
@@ -12,9 +14,17 @@ module tb_flcopy_top (
     input  logic [26:0] len,
     output logic        busy,
     output logic        w_req,
+    output logic        w_rnw,
     output logic [26:0] w_addr,
     output logic [31:0] w_data,
     input  logic        w_done,
+    input  logic [31:0] r_data,
+    output logic [31:0] sum_copy,
+    output logic [31:0] sum_sdram,
+    output logic [31:0] sum_ddr3,
+    output logic  [3:0] flags,
+    output logic        retried,
+    output logic [23:0] tmo_info,
     // channel 3 writes seen by the mirror, clk_cpu
     input  logic        m_req,
     input  logic [26:0] m_addr,
@@ -61,9 +71,10 @@ module tb_flcopy_top (
         .g_rd(g_rd), .g_we(g_we), .g_addr(g_addr), .g_burstcnt(g_burstcnt), .g_din(g_din), .g_be(g_be),
         .g_busy(g_busy), .g_dout_ready(g_dout_ready));
 
-    gnet_ddr3_flcopy flcopy (.clk1x(clk1x), .start(start), .len(len), .busy(busy), .w_req(w_req),
-        .w_addr(w_addr), .w_data(w_data), .w_done(w_done), .clk2x(clk2x), .g_rd(f_rd), .g_addr(f_addr),
-        .g_burstcnt(f_burstcnt), .g_busy(f_busy), .g_dout_ready(f_dout_ready), .g_dout(rdata), .done_q());
+    gnet_ddr3_flcopy #(.TMO_BITS(16), .TRIES(TRIES)) flcopy (.clk1x(clk1x), .start(start), .len(len), .busy(busy), .w_req(w_req), .w_rnw(w_rnw),
+        .w_addr(w_addr), .w_data(w_data), .w_done(w_done), .r_data(r_data), .clk2x(clk2x), .g_rd(f_rd), .g_addr(f_addr),
+        .g_burstcnt(f_burstcnt), .g_busy(f_busy), .g_dout_ready(f_dout_ready), .g_dout(rdata),
+        .sum_copy(sum_copy), .sum_sdram(sum_sdram), .sum_ddr3(sum_ddr3), .flags(flags), .retried(retried), .tmo_info(tmo_info));
 
     gnet_ddr3_arb arb (.clk(clk2x), .rst(rst),
         .ddr_busy(ddr_busy), .ddr_burstcnt(ddr_burstcnt), .ddr_addr(ddr_addr), .ddr_dout(ddr_dout),

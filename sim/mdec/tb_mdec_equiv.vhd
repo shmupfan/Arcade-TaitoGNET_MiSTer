@@ -5,7 +5,9 @@
 -- CPU group. Each instance writes its result words (out_<g>.txt) and every
 -- IDCT result RAM write (idct_<g>.txt: buffer/block/index and the clipped
 -- value) in order; run.sh compares the files. The instances may differ in
--- timing, so only the sequences are compared.
+-- timing, so only the sequences are compared. STAGE is the current MDEC's
+-- IDCT_REG_STAGE (1 = stage R, the release setting under CPU_CLK_SPLIT;
+-- 0 = upstream).
 library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
@@ -16,7 +18,8 @@ entity tb_mdec_equiv is
    (
       STIM   : string  := "test.stim";
       NOUT   : integer := 16;
-      MAXCYC : integer := 4000000
+      MAXCYC : integer := 4000000;
+      STAGE  : integer := 1
    );
 end entity;
 
@@ -115,6 +118,7 @@ begin
          signal idct_clip   : signed(7 downto 0);
       begin
          u : entity work.mdec
+         generic map (IDCT_REG_STAGE => STAGE)
          port map
          (
             clk1x => clk1x, clk2x => clk2x, clk2xIndex => clk2xIndex, ce => '1', reset => reset,

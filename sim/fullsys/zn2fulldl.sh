@@ -16,7 +16,7 @@ REF=${1:-HEAD}
 T=${TAG:-i12}
 S=$HERE/work/$T/src
 rm -rf $S; mkdir -p $S
-git -C $HERE/../.. archive $(git -C $HERE/../.. rev-parse $REF) rtl sim/system/src/mem | tar -x -C $S
+git -C $HERE/../.. archive "$(git -C "$HERE/../.." rev-parse "$REF")" rtl sim/system/src/mem | tar -x -C $S
 git -C $HERE/../.. rev-parse $REF > $S/COMMIT
 R=$S/rtl
 sed -i '' "s#\"rtl/zoom/#\"$R/zoom/#g" $R/zoom/*.sv

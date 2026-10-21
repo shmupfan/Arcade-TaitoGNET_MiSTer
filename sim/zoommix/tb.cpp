@@ -1,5 +1,5 @@
 // zoom_mix bench (Verilator): every SFX level against a reference model
-// (s * k + z * 65536) >> 16 with 16-bit saturation, k = 0.3/0.45/0.6/0.9/
+// (s * k + z * 65536) >> 15 (OUT_SHIFT, +6.02 dB) with 16-bit saturation, k = 0.3/0.45/0.6/0.9/
 // 1.2/1.5 in Q16 (levels 6 and 7 fall back to 0.3); extremes, then random
 // pairs. Also the gain itself: a full-scale SPU sine with the Zoom at 0
 // gives an output RMS of k times the input RMS.
@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
     auto step = [&](int lvl, int s, int z) {
         m->spu_lvl = lvl; m->spu_l = (int16_t)s; m->spu_r = (int16_t)(-s - 1); m->zoom_l = (int16_t)z; m->zoom_r = (int16_t)z;
         for (int c = 0; c < 2; c++) { m->clk = 1; m->eval(); m->clk = 0; m->eval(); }   // k_spu then the sum
-        auto ref = [&](int sv, int zv) { long long t = ((long long)sv * K[lvl] + (long long)zv * 65536) >> 16;
+        auto ref = [&](int sv, int zv) { long long t = ((long long)sv * K[lvl] + (long long)zv * 65536) >> 15;
             if (t > 32767) { sat++; t = 32767; } if (t < -32768) { sat++; t = -32768; } return (int)t; };
         int el = ref(s, z), er = ref(-s - 1, z);
         n++;
@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
             for (int c = 0; c < 2; c++) { m->clk = 1; m->eval(); m->clk = 0; m->eval(); }
             si += (double)s * s; so += (double)(int16_t)m->out_l * (int16_t)m->out_l;
         }
-        printf("level %d: SPU sine gain %.4f (%.2f dB), expected %.4f\n", lvl, sqrt(so / si), 20 * log10(sqrt(so / si)), K[lvl] / 65536.0);
+        printf("level %d: SPU sine gain %.4f (%.2f dB), expected %.4f\n", lvl, sqrt(so / si), 20 * log10(sqrt(so / si)), K[lvl] / 32768.0);
     }
     printf("RESULT zoom_mix %s\n", errors ? "FAIL" : "PASS");
     delete m;

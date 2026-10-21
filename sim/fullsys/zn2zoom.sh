@@ -11,7 +11,7 @@ REF=${1:-zoom-into-z1}
 T=${TAG:-zn2zoom}
 S=$HERE/work/$T/src
 rm -rf $S; mkdir -p $S
-git -C $HERE/../.. archive $(git -C $HERE/../.. rev-parse $REF) rtl sim/system/src/mem | tar -x -C $S
+git -C $HERE/../.. archive "$(git -C "$HERE/../.." rev-parse "$REF")" rtl sim/system/src/mem | tar -x -C $S
 git -C $HERE/../.. rev-parse $REF > $S/COMMIT
 R=$S/rtl
 # sim-only copy: the MN10200 microcode hex paths are relative to the Quartus

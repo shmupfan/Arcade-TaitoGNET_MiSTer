@@ -13,9 +13,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, '..', '..', 'rtl', 'gnet', 'gnet_ddr3_flcopy.sv')
 MUTANTS = {
     'no_room_check': ('room   = (req - cons + bc) <= 21\'(DEPTH);', 'room   = 1\'b1;'),
-    'high_half_from_low': ('w_data <= q[63:32];', 'w_data <= q[31:0];'),
+    'high_half_from_low': ('w_data   <= q[63:32];', 'w_data   <= q[31:0];'),
     'drop_cmd_on_busy': ('if (g_rd && g_busy) begin', 'if (1\'b0) begin'),
-    'odd_tail_extra_word': ('if ({cons, 1\'b1} < nw) st <= W1;', 'if (1\'b1) st <= W1;'),
+    'odd_tail_extra_word': ('if (hi_ok) st <= W1;', 'if (1\'b1) st <= W1;'),
+    'readback_ignores_data': ('sum_sdram <= sum_sdram + r_data;', 'sum_sdram <= sum_sdram + w_data;'),
+    'ddr3_reread_skips_high': ("sum_ddr3 <= sum_ddr3 + q[31:0] + (hi_ok ? q[63:32] : 32'd0);", "sum_ddr3 <= sum_ddr3 + q[31:0];"),
 }
 args = sys.argv[1:] or ['3', '40', '40', '40']
 src = open(SRC).read()

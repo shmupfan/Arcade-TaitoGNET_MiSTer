@@ -38,6 +38,20 @@ int main(int argc, char** argv) {
     std::vector<uint32_t> lens;
     for (int i = 5; i < argc; i++) lens.push_back(strtoul(argv[i], nullptr, 0));
     if (lens.empty()) lens = {0x30000, 0x12345, 8, 5, 3, 0x40001};
+    // fault injection (FLC_FAULT): "sdram" corrupts one stored SDRAM word of
+    // each copy after it is written, "ddr3" one DDR3 qword of the area after
+    // the copy pass (before the re-read); the copier's flags must show it
+    const char* fault = getenv("FLC_FAULT");
+    bool f_sdram = fault && !strcmp(fault, "sdram"), f_ddr3 = fault && !strcmp(fault, "ddr3");
+    // "hang": the 5th read-back read of each copy never gets its done; the
+    // copier must time out (flags bit 3) and record state 9 (RB_WAIT)
+    bool f_hang = fault && !strcmp(fault, "hang"); int nreads = 0;
+    // FLC_TRIES (run.sh passes the same value to the copier): with more than
+    // one try a failed check makes the copier start the copy again, so the
+    // "sdram" fault (first try only) must end clean with retried set
+    int tries = getenv("FLC_TRIES") ? atoi(getenv("FLC_TRIES")) : 1;
+    if (tries > 1 && (f_ddr3 || f_hang)) { printf("FLC_TRIES > 1 runs only with no fault or FLC_FAULT=sdram\n"); return 2; }
+    bool faulted = false; int attempts = 0;
     std::mt19937 rng(seed);
     std::vector<uint64_t> mem(WQ);
     for (auto& q : mem) q = ((uint64_t)rng() << 32) | rng();
@@ -54,6 +68,8 @@ int main(int argc, char** argv) {
     std::deque<Rd> rds;
     // channel 3 model
     struct Wr { uint32_t a; uint32_t d; };
+    std::vector<uint32_t> sdr(0x280000 + 4, 0xDEADBEEF);   // SDRAM flash area model, 32-bit words
+    bool rb_seen = false; uint32_t rdq = 0;
     std::vector<Wr> writes;
     std::deque<Wr> mq;
     int done_wait = -1, done_hold = 0; bool done_pending = false;
@@ -97,7 +113,7 @@ int main(int argc, char** argv) {
         bool p_ddr_rd = t->ddr_rd, p_ddr_we = t->ddr_we; uint32_t p_addr = t->ddr_addr; int p_bc = t->ddr_burstcnt;
         uint64_t p_din = t->ddr_din; uint8_t p_be = t->ddr_be; bool p_busy = t->ddr_busy;
         bool p_c_busy = t->c_busy, p_cdr = t->c_dout_ready; uint64_t p_rdata = t->rdata;
-        bool p_wreq = t->w_req; uint32_t p_waddr = t->w_addr, p_wdata = t->w_data; bool p_fbusy = t->busy;
+        bool p_wreq = t->w_req, p_wrnw = t->w_rnw; uint32_t p_waddr = t->w_addr, p_wdata = t->w_data; bool p_fbusy = t->busy;
         t->clk2x = r2;
         if (r1) t->clk1x = 1;
         if (f1) t->clk1x = 0;
@@ -141,15 +157,30 @@ int main(int argc, char** argv) {
         }
         // clk1x side: channel 3 model and job control
         if (r1) {
-            if (p_wreq) {
+            if (p_wreq && p_wrnw) {          // read-back pass
+                if (!started) err("read while no copy runs", cyc2);
+                uint32_t w = (p_waddr - 0x1000000) / 4;
+                if (p_waddr < 0x1000000 || w >= sdr.size()) err("read outside the flash area", cyc2);
+                else rdq = sdr[w];
+                if (!rb_seen && f_ddr3) { M(FLQ + 3) ^= 0x100ULL; }   // after the copy pass, before the re-read
+                rb_seen = true;
+                if (done_pending) err("second request before done", cyc2);
+                done_pending = true;
+                done_wait = (f_hang && ++nreads == 5) ? 1 << 30 : 3 + rng() % 18;
+            } else if (p_wreq) {
                 if (!started) err("write while no copy runs", cyc2);
+                if (rb_seen && tries > 1 && p_waddr == 0x1000000) { writes.clear(); rb_seen = false; attempts++; }   // the copier tries again
+                if (rb_seen) err("write after the read-back began", cyc2);
                 writes.push_back({p_waddr, p_wdata}); mq.push_back({p_waddr, p_wdata}); total_writes++;
+                uint32_t w = (p_waddr - 0x1000000) / 4;
+                if (p_waddr >= 0x1000000 && w < sdr.size()) sdr[w] = p_wdata ^ ((f_sdram && !faulted && writes.size() == 7) ? 0x10u : 0u);
+                if (f_sdram && writes.size() == 7) faulted = true;
                 if (done_pending) err("second write before done", cyc2);
                 done_pending = true;
                 done_wait = (rng() % 100 < 2) ? 200 + rng() % 400 : 3 + rng() % 18;
             }
             t->w_done = 0;
-            if (done_pending && --done_wait <= 0) { t->w_done = 1; done_pending = false; }
+            if (done_pending && --done_wait <= 0) { t->w_done = 1; t->r_data = rdq; done_pending = false; }
             t->start = 0;
             idle1 = mq.empty() ? idle1 + 1 : 0;
             if (!started && job < lens.size() && cyc2 > 200 && idle1 > 3000) {
@@ -161,9 +192,9 @@ int main(int argc, char** argv) {
                 }
                 snap.resize(((len + 7) & ~7u) + 8);
                 for (uint32_t i = 0; i < snap.size(); i++) snap[i] = (M(FLQ + i / 8) >> (8 * (i % 8))) & 0xFF;
-                writes.clear();
+                writes.clear(); rb_seen = false; nreads = 0; done_pending = false; faulted = false; attempts = 0;
                 t->start = 1; t->len = len; started = true; job_start = cyc2;
-            } else if (started && !p_fbusy && cyc2 > job_start + 8 && !done_pending) {
+            } else if (started && !p_fbusy && cyc2 > job_start + 8 && (!done_pending || f_hang)) {
                 uint32_t len = lens[job];
                 uint32_t nw = (len + 3) / 4;
                 if (len > 0xA00000) nw = 0x280000;
@@ -175,8 +206,26 @@ int main(int argc, char** argv) {
                         err(m, cyc2); break;
                     }
                 }
-                printf("copy %zu: %u bytes, %zu writes in %lld clk1x (%.2f clk1x per write)\n", job, len, writes.size(),
-                       (cyc2 - job_start) / 2, writes.empty() ? 0.0 : (cyc2 - job_start) / 2.0 / writes.size());
+                // the copier's sums and flags against the source
+                uint32_t es = 0; for (uint32_t k = 0; k < nw; k++) { uint32_t e; memcpy(&e, &snap[4 * k], 4); es += e; }
+                int fl = t->flags;
+                bool want_sd = f_sdram && nw >= 7 && tries == 1, want_dd = f_ddr3 && nw > 6;
+                bool want_rt = f_sdram && nw >= 7 && tries > 1;
+                if (t->retried != want_rt || attempts != (want_rt ? 1 : 0)) { char m[96]; snprintf(m, sizeof m, "retried %d after %d repeats, expected %d", (int)t->retried, attempts, (int)want_rt); err(m, cyc2); }
+                if (t->sum_copy != es) { char m[96]; snprintf(m, sizeof m, "sum_copy %08X, source %08X", (unsigned)t->sum_copy, es); err(m, cyc2); }
+                if (f_hang && nw >= 5) {
+                    unsigned ti = t->tmo_info;
+                    if (fl != 8 || (ti >> 20) != 9) { char m[96]; snprintf(m, sizeof m, "hang: flags %X tmo_info %06X, expected 8 / 9xxxxx", fl, ti); err(m, cyc2); }
+                    printf("copy %zu: timed out as expected, flags %X, tmo_info %06X\n", job, fl, ti);
+                    if (f_ddr3) M(FLQ + 3) ^= 0x100ULL;
+                    started = false; job++; t->eval(); continue;
+                }
+                if ((fl & 1) != 1) err("flags: done bit not set", cyc2);
+                if (((fl >> 1) & 1) != want_sd) { char m[64]; snprintf(m, sizeof m, "flags %X: SDRAM mismatch bit wrong", fl); err(m, cyc2); }
+                if (((fl >> 2) & 1) != want_dd) { char m[64]; snprintf(m, sizeof m, "flags %X: DDR3 mismatch bit wrong", fl); err(m, cyc2); }
+                if (f_ddr3) M(FLQ + 3) ^= 0x100ULL;   // undo, for the end-of-run DDR3 check
+                printf("copy %zu: %u bytes, %zu writes, copy and checks in %lld clk1x, flags %X%s, sums %08X %08X %08X\n", job, len,
+                       writes.size(), (cyc2 - job_start) / 2, fl, t->retried ? " (repeated)" : "", (unsigned)t->sum_copy, (unsigned)t->sum_sdram, (unsigned)t->sum_ddr3);
                 started = false; job++;
             } else if (started && cyc2 - job_start > 2LL * (700LL * ((lens[job] + 3) / 4) + 200000)) {
                 err("copy timed out", cyc2); started = false; job++;

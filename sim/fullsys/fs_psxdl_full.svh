@@ -47,8 +47,12 @@ reg  [26:0] flc_len = 27'd0;
 reg         flc_start = 1'b0;
 wire        flc_busy;
 wire        flc_wreq;
+wire        flc_wrnw;
 wire [26:0] flc_waddr;
 wire [31:0] flc_wdata;
+wire [31:0] flc_rdata;
+wire [31:0] flc_sum_copy, flc_sum_sdram, flc_sum_ddr3;
+wire  [3:0] flc_flags;
 always @(posedge clk_1x) begin
 	flash_download_1 <= flash_download;
 	flc_start        <= 1'b0;
@@ -62,9 +66,17 @@ end
 wire flc_hold = (fl_ddr3 & ~flash_download) | flc_busy;
 assign gnet_download = flash_download | keys_download | meta_download | card_download | ee_download | flc_hold;
 assign dbg_flc_busy = flc_busy;
+assign dbg_flc_flags = flc_flags;
+assign dbg_flc_sum0 = flc_sum_copy;
+assign dbg_flc_sum1 = flc_sum_sdram;
+assign dbg_flc_sum2 = flc_sum_ddr3;
 `else
 assign gnet_download = flash_download | keys_download | meta_download | card_download | ee_download;
 assign dbg_flc_busy = 1'b0;
+assign dbg_flc_flags = 4'd0;
+assign dbg_flc_sum0 = 32'd0;
+assign dbg_flc_sum1 = 32'd0;
+assign dbg_flc_sum2 = 32'd0;
 `endif
 
 // [803-815], [862-883]
@@ -125,6 +137,7 @@ localparam EXE_START = 16777216;
 reg [26:0] ramdownload_wraddr;
 `ifdef GNET_DDR3_LOAD
 wire gnet_flash_dl = flash_download | flc_busy;
+reg  ramdownload_rnw = 1'b0;
 `else
 wire gnet_flash_dl = flash_download;
 `endif
@@ -138,6 +151,7 @@ always @(posedge clk_1x) begin
 		if (flc_wreq) begin
 			ramdownload_wraddr <= flc_waddr;
 			ramdownload_wrdata <= flc_wdata;
+			ramdownload_rnw    <= flc_wrnw;
 			ramdownload_wr     <= 1;
 		end
 		ioctl_wait <= 1;
@@ -186,7 +200,13 @@ fs_ch3_cdc ch3_cdc
 (
 	.src_clk     (clk_1x),
 	.src_start   ((exe_download | bios_download | gnet_flash_dl) & ramdownload_wr),
+`ifdef GNET_DDR3_LOAD
+	.src_req_data({ramdownload_wraddr, ramdownload_wrdata, flc_busy & ramdownload_rnw, 4'b1111}),
+	.src_rsp_data(flc_rdata),
+`else
 	.src_req_data({ramdownload_wraddr, ramdownload_wrdata, 1'b0, 4'b1111}),
+	.src_rsp_data(),
+`endif
 	.src_done    (sdramCh3_done),
 	.dst_clk     (clk_cpu),
 	.dst_valid   (ch3h_req),
@@ -275,9 +295,11 @@ gnet_ddr3_flcopy flcopy
 	.len(flc_len),
 	.busy(flc_busy),
 	.w_req(flc_wreq),
+	.w_rnw(flc_wrnw),
 	.w_addr(flc_waddr),
 	.w_data(flc_wdata),
 	.w_done(sdramCh3_done),
+	.r_data(flc_rdata),
 	.clk2x(clk_2x),
 	.g_rd(flc_g_rd),
 	.g_addr(flc_g_addr),
@@ -285,7 +307,11 @@ gnet_ddr3_flcopy flcopy
 	.g_busy(flc_g_busy),
 	.g_dout_ready(flc_g_dout_ready),
 	.g_dout(arb_rdata),
-	.done_q()
+	.sum_copy(flc_sum_copy),
+	.sum_sdram(flc_sum_sdram),
+	.sum_ddr3(flc_sum_ddr3),
+	.flags(flc_flags),
+	.tmo_info()
 );
 `endif
 wire [28:0] arb_ddr_addr;

@@ -15,7 +15,7 @@ REF=${1:-gnet-full}
 T=${TAG:-zn2full}
 S=$HERE/work/$T/src
 rm -rf $S; mkdir -p $S
-git -C $HERE/../.. archive $(git -C $HERE/../.. rev-parse $REF) rtl sim/system/src/mem | tar -x -C $S
+git -C $HERE/../.. archive "$(git -C "$HERE/../.." rev-parse "$REF")" rtl sim/system/src/mem | tar -x -C $S
 git -C $HERE/../.. rev-parse $REF > $S/COMMIT
 # OVERLAY="<ref>:<path> ...": files taken from another commit on top of the
 # export (e.g. one branch's gnet_ata.sv on another's tree); recorded in COMMIT

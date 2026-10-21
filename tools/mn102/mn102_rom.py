@@ -4,14 +4,19 @@
 The ISA table (manual pp.145-151 with the corrections of
 docs/mn10200_design.md 1.1 and 1.2) is the single source of truth: this
 script decodes every {page, key byte} with mn102_isa.decode() and maps the
-resulting (mnemonic, operand form) to an RTL control word.
+resulting (mnemonic, operand form) to an RTL control word. Two details come
+from MAME 0.288 mn10200.cpp: cmp and mov imm16,An zero-extend the immediate
+(read_arg16), and BRA's cycles split into a base count plus the taken cycle
+(do_branch; 2 in total, as the table).
 
-Outputs (rtl/zoom/, committed, derived from the manual table only):
+Outputs (rtl/zoom/, committed; they carry no header, so regenerate them with
+this script instead of editing them):
   mn10200_form.hex  2048 x 8 bit: {page[2:0], key[7:0]} -> form id
   mn10200_ctl.hex    256 x 40 bit: form id -> control word
 
 Page: 0 = first byte; 1..7 = second byte after F0, F1, F2, F3, F4, F5, F7.
-Control word layout (must match rtl/zoom/mn10200_pkg.sv):
+Control word layout (must match the c_* fields under "decode ROMs" in
+rtl/zoom/mn10200_core.sv; rtl/zoom/mn10200_decode.sv holds the two ROMs):
   [3:0]   kind   0 ALU 1 LD 2 ST 3 BSET 4 BCLR 5 MUL 6 MULU 7 DIVU 8 BCC
                  9 JMP (pc-relative) 10 JSR (pc-relative) 11 JMP (An)
                  12 JSR (An) 13 RTS 14 RTI 15 ILLEGAL

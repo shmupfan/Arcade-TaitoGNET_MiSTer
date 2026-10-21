@@ -16,7 +16,8 @@
 #   n  memorymux RAM_READ_NOWAIT = 1 (main RAM data reads skip
 #      WAITFORRAMREAD; PSX.sv GNET_RAM_READ_NOWAIT, 2:1 only)
 #   w  memorymux RAM_LOAD_WINDOW rescaled for 2:1: 8 with e, 9 without
-#      (PSX.sv GNET_RAM_B2B_WINDOW; upstream 7)
+#      (the archived PSX.sv macro GNET_RAM_B2B_WINDOW, tag
+#      experiments-archive; upstream 7)
 #   g  append the gap 1 back-to-back row (the real CPU's load-after-load
 #      spacing) after the other rows
 #   d  DMA phase only (ROWS = 0, no latency rows)

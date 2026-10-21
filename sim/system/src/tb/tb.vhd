@@ -1,3 +1,12 @@
+-- Modified for the Taito G-NET core (Lee Foot, 2026). This file is part of
+-- PSX_MiSTer (github.com/MiSTer-devel/PSX_MiSTer), base commit cd17b5a, and
+-- keeps PSX_MiSTer's licence (LICENSE, docs/licensing.md).
+-- Changes: psx_top's new CPU group clock ports (clk_cpu, clk_cpu2x,
+-- clk_cpu3x) driven by the same clocks as clk1x, clk2x and clk3x
+-- (CPU_CLK_SPLIT = 0, upstream behaviour).
+-- G-NET commits: f0cd555 (2026-10-05) CPU group on its own 50/100 MHz clocks.
+-- Every change is marked "G-NET:" below. Full list: PROVENANCE.md.
+--
 library IEEE;
 use IEEE.std_logic_1164.all;  
 use IEEE.numeric_std.all;     
@@ -254,7 +263,7 @@ begin
       clk2x                 => clk66, 
       clk3x                 => clk100, 
       clkvid                => clkvid,
-      clk_cpu               => clk33,   -- CPU group clocks: the same signals (CPU_CLK_SPLIT = 0)
+      clk_cpu               => clk33,   -- G-NET: CPU group clocks, the same signals (CPU_CLK_SPLIT = 0)
       clk_cpu2x             => clk66,
       clk_cpu3x             => clk100,
       reset                 => reset,

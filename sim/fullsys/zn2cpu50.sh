@@ -12,7 +12,7 @@ REF=${1:-gnet-cpu50}
 T=${TAG:-zn2c50}
 S=$HERE/work/$T/src
 rm -rf $S; mkdir -p $S
-git -C $HERE/../.. archive $(git -C $HERE/../.. rev-parse $REF) rtl sim/system/src/mem | tar -x -C $S
+git -C $HERE/../.. archive "$(git -C "$HERE/../.." rev-parse "$REF")" rtl sim/system/src/mem | tar -x -C $S
 git -C $HERE/../.. rev-parse $REF > $S/COMMIT
 R=$S/rtl
 C=$R/gnet/cdc; P=$R/gnet/cpu_split
