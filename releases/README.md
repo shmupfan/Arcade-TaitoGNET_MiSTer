@@ -24,10 +24,12 @@ setup slack TO FILL ns, worst hold slack TO FILL ns).
   `coh3002t.zip` and erased chips, so the BIOS copies the card into the
   flash (about 2.5 minutes) at every load.
 - Every MRA loads the card image (rom index 5) straight into DDR3 at
-  0x34000000 (`address="0x34000000"`), so Main_MiSTer copies it into memory
-  instead of sending it to the core a word at a time. This needs
-  Main_MiSTer from March 2021 or later. The flash area still loads through
-  the core.
+  0x34000000 (`address="0x34000000"`) and the flash area (rom index 3) at
+  0x31000000 (`address="0x31000000"`), so Main_MiSTer copies them into
+  memory instead of sending them to the core a word at a time; the core
+  then copies the flash area into SDRAM. This needs Main_MiSTer from March
+  2021 or later and this RBF: with an alpha 1 to 3 RBF the flash area is
+  not loaded and the game does not start.
 
 Every MRA also needs `coh3002t.zip` (MAME 0.288 or later) and the set's
 `gnet_<set>.zip`, both in `/media/fat/games/mame/`. Make the zips from

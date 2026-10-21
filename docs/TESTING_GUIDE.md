@@ -35,10 +35,14 @@ are worth more to the core than any test on the MiSTer.
 - Note the RBF file name and the MRA you load (main or first boot).
 - Note your setup: HDMI or CRT (and 15 kHz or 31 kHz), and for HDMI the
   output resolution.
-- Turn the **Debug overlay** on in the OSD for any test where a game
-  hangs or resets. It draws a small black box of hex numbers in the top
-  left of the picture and changes nothing else. On a vertical monitor the
-  text runs sideways; just rotate the photo.
+- The release core has no **Debug overlay**: from alpha 4 I leave it out
+  to free space on the FPGA. If a game hangs or resets, a photo or video of
+  the screen and the time it happened are enough; I may then send you a
+  test core with the overlay. In a test core that has it, turn it on in
+  the OSD (Advanced) for any test where a game hangs or resets. It draws a
+  small black box of hex numbers in the top left of the picture and
+  changes nothing else. On a vertical monitor the text runs sideways; just
+  rotate the photo.
 - Leave **Watchdog** On and the DIP switches off.
 
 ## Test 1: boot to attract and play (main MRAs)
@@ -122,8 +126,9 @@ Screens that mean something went wrong (please photograph them):
 - **"SYSTEM ERROR"** after the logo: the BIOS found no usable card.
   Check the setup first: a zip made by hand or by an older converter
   gives this error ([install guide](INSTALL.md#if-something-goes-wrong)).
-- **The logo coming back** every few seconds: a reset loop. Turn on the
-  Debug overlay and photograph the box.
+- **The logo coming back** every few seconds: a reset loop. Note how
+  often it comes back; with a test core that has the Debug overlay, turn
+  it on and photograph the box.
 - A loading bar that stops moving for more than 30 s (main MRA) or
   5 minutes (first boot MRA): note where the bar stopped.
 
@@ -241,12 +246,13 @@ Open an issue in this repository, one per problem. Please include:
 - the RBF file name, the MRA, and HDMI or CRT;
 - what you did and what happened, with the time it happened;
 - a photo or a phone video (with sound for anything audio);
-- for a hang or a reset: a photo of the Debug overlay box (see below);
+- for a hang or a reset with a test core that has the Debug overlay: a
+  photo of its box (see below);
 - for timings: your numbers and how you measured them.
 
 ### Reading the debug overlay
 
-All numbers are hexadecimal.
+Only in test cores that have it. All numbers are hexadecimal.
 
 | Row | What it tells me |
 |---|---|

@@ -88,19 +88,24 @@ CHDs with the converter at **<https://gnet-converter.pages.dev>** (it runs in yo
 browser and uploads nothing), in `/media/fat/games/mame/`. No game data is included.
 
 **Loading.** From alpha 4 the MRAs load each game's card image (38.6 to 64.2 MB)
-straight into the MiSTer's DDR3 memory, instead of sending it to the core
-one 16-bit word at a time. This needs Main_MiSTer from March 2021 or later.
-The 10 MB of flash still loads the old way. I expect Ray Crisis to load in
-about 12 to 13 s, against about 35 s with the alpha 3 MRAs.
-<!-- TO CONFIRM: replace the estimate with the measured alpha 4 load time (docs/i12_ddr3_load.md 8 gives 12.0 s plus Main's copy, 12.4 to 13.4 s). -->
-The first boot MRAs still need the BIOS's 2.5 minute flash copy after
-loading.
+and its 10 MB of flash straight into the MiSTer's DDR3 memory, instead of
+sending them to the core one 16-bit word at a time; the core then copies
+the flash into SDRAM itself. Games load much faster: Ray Crisis took about
+35 s with the alpha 3 MRAs and now takes TODO s.
+<!-- TODO: measured Ray Crisis load time on the release RBF, from pressing the MRA to the first picture. -->
+This needs Main_MiSTer from March 2021 or later, and the alpha 4 or later
+RBF: with an older RBF the flash is not loaded and the game does not
+start. The first boot MRAs still need the BIOS's 2.5 minute flash copy
+after loading.
 
 ## Controls
 
 Two players, an 8-way stick and three buttons each, plus Start, Coin,
 Service, Test and Pause. MAME gives no button names for these games and I
-have not found the game manuals, so the buttons are Button 1 to 3.
+have not found the game manuals, so most games show Button 1 to 3. Two
+have names from other sources: XII Stag's button 1 is Shot (the game's
+how-to screen), and Night Raid's buttons are Shoot, Wave and Bomb (the
+game's arcade-history entry).
 
 | Function | Joypad (default) | Keyboard, player 1 | Keyboard, player 2 |
 |---|---|---|---|
@@ -221,8 +226,6 @@ the Test button.
 
 - **Watchdog**: leave it On. It resets a game that stops running, as the
   board's MB3773 does. Off is for debugging.
-- **Debug overlay**: a small box of hex numbers with the board state, for
-  test reports ([docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md)).
 
 **Reset** restarts the game.
 
@@ -260,16 +263,17 @@ NVRAM when the OSD opens after the game has written to it.
   slower texture timing pushed this picture past that limit, so half the
   playfield was missing. Alpha 4 always finishes a shape that is still
   making progress, and in simulation the frame matches MAME pixel for
-  pixel. Because the core now does all the drawing it skipped before,
+  pixel, and on my MiSTer the game's attract now shows the whole
+  formation. Because the core now does all the drawing it skipped before,
   this mode may run slower than on a real board. I do not know yet how
   fast a board runs it; board footage of this mode would help.
-  <!-- TO CONFIRM: the full formation on hardware, and the speed against MAME. -->
 - **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)).
   Up to alpha 3 the scandoubled output had no vertical sync, so any Fx
   setting other than None lost the picture over HDMI, direct video and
-  VGA. Alpha 4 fixes this; reports over HDMI and on 31 kHz monitors are
-  welcome. Any Fx setting other than None switches the output to 31 kHz,
-  so a 15 kHz CRT still needs None.
+  VGA. Alpha 4 has a fix, which I have not yet been able to check over
+  HDMI or with the scandoubler on my own setup, so reports over HDMI,
+  direct video and 31 kHz monitors are welcome. Any Fx setting other than
+  None switches the output to 31 kHz, so a 15 kHz CRT still needs None.
 - **Sound balance.** The SFX Level default follows MAME (0.3). The core also applies the SPU main volume the games set,
   which MAME ignores, so at 0.3 the effects are 2.5 to 14.1 dB quieter
   than in MAME, depending on the game. One phone recording of a real
@@ -285,7 +289,9 @@ NVRAM when the OSD opens after the game has written to it.
   settings go back to their defaults. Psyvariar never writes the EEPROM,
   so the NVRAM save cannot keep them. The TAITO logo is drawn by the BIOS
   and does not turn with the game's setting, in MAME as well. Saving card
-  writes in the NVRAM file with the EEPROM is designed, not built yet.
+  writes in the NVRAM file with the EEPROM is built in a test core and
+  waits for my hardware test.
+  <!-- TO CONFIRM (#9): if the card journal ships in this release, replace this item (and the Roadmap item) with how the save works; if not, keep it. -->
 - **First boot MRAs** repeat the 2.5 minute copy at every load, because
   the flash chips are not saved. I have not yet confirmed the copy on my
   own hardware.
@@ -307,10 +313,6 @@ Roughly in this order. None of it has a date.
 
 - **Slowdown** ([#5](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/5)):
   check the texture wait against more board recordings of heavy scenes.
-- **Faster loading** ([#12](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/12)): alpha 4 loads the card image
-  straight into DDR3 (see [Installation](#installation)). Loading the
-  10 MB of flash the same way would save about 5 more seconds; it works in
-  simulation but not yet on hardware.
 - **Psyvariar's settings not kept** ([#9](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/9)):
   save the card writes with the EEPROM (see [Known issues](#known-issues)).
 - **[Known issues](#known-issues):** sound balance, the watchdog period. Some need measurements from a real board.
@@ -421,6 +423,12 @@ For anyone writing MRAs for this core:
 | 6 | EEPROM (2 KB), `<nvram index="6" size="2048"/>` | saved by MiSTer |
 | 7 | game configuration byte: bit 0 vertical set (MAME ROT270), bit 1 no Taito Zoom board (MAME `init_nozoom`), bits 3:2 controls (0 stick, 1 mahjong panel and P1 stick, 2 mahjong panel, 3 RC wheel and trigger) | inline in the MRA |
 | 254 | bits 3-0 DIP switch S551, bit 4 JP1 | MRA switches |
+
+The release MRAs load index 3 with `address="0x31000000"` and index 5
+with `address="0x34000000"`, so Main_MiSTer writes them straight into
+DDR3 ([docs/i12_ddr3_load.md](docs/i12_ddr3_load.md)). Without the
+`address` attributes both load through the core as in alpha 1 to 3, which
+also works, only slower.
 
 JP1 (BIOS Flash) is open in every MRA and the OSD does not offer it. With
 JP1 closed the BIOS runs its flash initialise on every boot and the game
