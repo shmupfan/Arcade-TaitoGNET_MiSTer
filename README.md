@@ -259,7 +259,16 @@ kept.
   in-game TIME counter; about 16% slower before the texture prefetch).
   The setting comes from one board recording per game; 60 fps captures of
   heavy scenes on a real board would refine it.
-  <!-- TO FILL: slowdown figures for beta 1 after the XII Stag texture fix (the fix changes the texture prefetch these figures were measured with); Shikigami no Shiro demos 1 to 3 against the new board capture (YouTube eRjVSEEjEBQ: 1.005, 1.003, 1.045 of MAME time) -->
+  Beta 1, measured on my MiSTer against a direct board capture
+  (2026-10-22): Shikigami no Shiro's attract demos 1 to 3 take 1.010,
+  1.005 and 1.090 of MAME's time, against 1.005, 1.003 and 1.045 on the
+  board, and Ray Crisis demo 1 about 1.07 to 1.08 (board 1.078). Some
+  heavy scenes still slow down more than on a board: the end of
+  Shikigami no Shiro's demo 3 (about 1.5 s longer over 33 s), XII Stag's
+  vortex after the intro flash, and Psyvariar's attract demo (about 4%
+  over the demo). My tests point mostly away from the graphics chip, to
+  the CPU waiting on memory or on the GPU; that is what I am looking at
+  next.
 - **480i games on a CRT** ([#3](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/3)).
   Flip Maze, Kollon, Otenami Haiken Final and Zooo draw 480-line
   interlaced screens. Alpha 3 sends both fields to direct video, so the

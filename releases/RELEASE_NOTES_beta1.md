@@ -64,7 +64,16 @@ board footage most of all, are what can settle them.
 ## Fixes
 
 - **XII Stag's intro flash.**
-  <!-- TO FILL: XII Stag texture timing fix result -->
+  The white flash after the Triangle Service logo took about 6.7 s with
+  the alpha 3 texture settings, against about 1.9 s on a real board: the
+  core's texture prefetch kept replacing cache lines the next pixels
+  still needed. Beta 1 gives the graphics chip a larger texture cache
+  index for 8-bit and 15-bit textures, and it no longer steps through
+  pixels outside the drawing area. On my MiSTer the flash now lasts about
+  1.4 to 1.5 s, so it is about 0.4 s shorter than on a board. The larger
+  cache makes up for the MiSTer's slower video memory; it is not a copy
+  of the board's cache, whose design is not documented. Ray Crisis and
+  the other games I measured run as before.
 - **Space Invaders Anniversary: a triangle hid half the playfield
   ([#10](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/10)).**
   The graphics chip gave up on the big rotated picture the game draws in

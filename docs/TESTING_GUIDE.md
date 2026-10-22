@@ -100,7 +100,8 @@ Revision yet and expect the same flow.
 After the Triangle Service logo the intro has a bright flash. On a real
 board it lasts about 1.9 s. If you play XII Stag, time the flash, and say
 whether anything in the game itself looks slower than you expect.
-<!-- TO FILL: XII Stag texture timing fix result (the flash length on the beta 1 core) -->
+On my MiSTer the beta 1 core shows it for about 1.4 to 1.5 s (about 6.7 s
+with the alpha 3 texture settings), a little shorter than the board.
 
 **Shikigami no Shiro** (vertical)
 
