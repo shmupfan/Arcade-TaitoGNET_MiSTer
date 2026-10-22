@@ -4,19 +4,19 @@ The released core and its MRA files, in the MiSTer arcade layout.
 
 | File | md5 |
 |---|---|
-| `Arcade-TaitoGNET_20261021.rbf` | `8623149b677c03d2333e42bc2a225d58` |
+| `Arcade-TaitoGNET_20261022.rbf` | `c4cbe300a3540a7cb9c047177ea9b2b1` |
 
-Revision GNET_Z1FULLR, Quartus 17.0.2, fitter seed 8, every clock met
-timing: worst setup slack +0.354 ns and worst hold slack +0.220 ns in
+Revision GNET_Z1FULLR, Quartus 17.0.2, fitter seed 7, every clock met
+timing: worst setup slack +0.345 ns and worst hold slack +0.242 ns in
 the fit's timing report (slow 100C model). At the slow -40C corner the
-worst setup slack is +0.186 ns (HDMI clock); hold slack on clk_1x and
-clk_2x is at least +0.110 ns at all four corners (fast -40C the worst).
+worst setup slack is +0.102 ns (HDMI clock); hold slack on clk_1x and
+clk_2x is at least +0.114 ns at all four corners (fast -40C the worst).
 
 ## Layout
 
 | Path | Copy to | Holds |
 |---|---|---|
-| `Arcade-TaitoGNET_20261021.rbf` | `/media/fat/_Arcade/cores/` | the core |
+| `Arcade-TaitoGNET_20261022.rbf` | `/media/fat/_Arcade/cores/` | the core |
 | `<Game>.mra` | `/media/fat/_Arcade/` | one quick start MRA per game, for MAME's parent set |
 | `_alternatives/_<Game>/` | `/media/fat/_Arcade/_alternatives/_<Game>/` | quick start MRAs for the game's other versions, and the first boot MRAs |
 

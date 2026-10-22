@@ -1,6 +1,6 @@
 # Taito G-NET core, beta 1
 
-Core: `Arcade-TaitoGNET_20261021.rbf` (md5 `8623149b677c03d2333e42bc2a225d58`, see
+Core: `Arcade-TaitoGNET_20261022.rbf` (md5 `c4cbe300a3540a7cb9c047177ea9b2b1`, see
 [README.md](README.md)).
 
 This is the first beta. Beta here means the core is as accurate and as
