@@ -115,7 +115,6 @@ board footage most of all, are what can settle them.
 ## Known issues
 
 - Zooo in 480i over HDMI can show a slight line shake; try Weave and Bob.
-  <!-- TO CONFIRM: keep this line only if it still applies on the release RBF. -->
 - The accuracy questions still open (slowdown against more board
   recordings, sound balance, the watchdog period, the frame rate) are in
   the README's Known issues.
