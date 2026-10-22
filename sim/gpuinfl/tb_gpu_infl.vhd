@@ -61,6 +61,16 @@ entity tb_gpu_infl is
       TEX_QW      : integer := 1;      -- gpu TEX_FETCH_QW
       TEX_ROWS    : integer := 1;      -- gpu TEX_FETCH_ROWS
       TEX_DELAY   : integer := 0;      -- gpu TEX_MISS_DELAY
+      TEX_BIG     : integer := 0;      -- gpu TEX_CACHE_BIG
+      SPX4        : integer := 0;      -- gpu TEX_SPX_COST4
+      SPX8        : integer := 0;      -- gpu TEX_SPX_COST8
+      SPX15       : integer := 0;      -- gpu TEX_SPX_COST15
+      CLIPX       : integer := 0;      -- gpu POLY_CLIP_X
+      -- GPU clock scale (docs/gpu_blend_timing.md 10): clk1x and clk2x run
+      -- GSCALE times faster, the video clock (and so vblank) does not; give
+      -- VRAM_RD_LAT in the faster cycles to keep the latency in ns
+      GSCALE      : real := 1.0;
+      PACED       : boolean := false;  -- release a stream frame at the first vblank after the GPU went idle (DrawSync, VSync)
       ARB         : boolean := false;  -- GPU through a model of gnet_ddr3_arb's core path
       ROT         : boolean := false   -- with screen_rotate's writes at top priority (ARB only)
    );
@@ -68,8 +78,8 @@ end entity;
 
 architecture arch of tb_gpu_infl is
 
-   constant T1X  : time := 29524 ps;    -- 33.8688 MHz
-   constant T2X  : time := 14762 ps;    -- 67.7376 MHz
+   constant T1X  : time := 29524 ps / GSCALE;    -- 33.8688 MHz x GSCALE
+   constant T2X  : time := 14762 ps / GSCALE;    -- 67.7376 MHz x GSCALE
    constant TVID : time := 18624 ps;    -- 53.693175 MHz
 
    signal clk1x, clk2x, clkvid : std_logic := '1';
@@ -124,6 +134,8 @@ architecture arch of tb_gpu_infl is
    signal err_line, err_rect, err_poly : std_logic;
    signal feed_count : integer := 0;
    signal feed_done  : boolean := false;
+   signal gpu_idle   : boolean := false;   -- drawing part of SS_Idle (as GTIME), for PACED and BRK
+   signal rel_vb     : integer := 0;       -- vblank at which the current stream frame was released
    signal video_r_s, video_g_s, video_b_s : std_logic_vector(7 downto 0);
 
    function frame_listed(s : string; f : integer) return boolean is
@@ -161,7 +173,8 @@ begin
 
    igpu : entity psx.gpu
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, GPU_READ_INFL => READ_INFL, TEX_FETCH_QW => TEX_QW, TEX_FETCH_ROWS => TEX_ROWS,
-                TEX_MISS_DELAY => TEX_DELAY)
+                TEX_MISS_DELAY => TEX_DELAY, TEX_CACHE_BIG => TEX_BIG, TEX_SPX_COST4 => SPX4,
+                TEX_SPX_COST8 => SPX8, TEX_SPX_COST15 => SPX15, POLY_CLIP_X => CLIPX)
    port map
    (
       clk1x => clk1x, clk2x => clk2x, clk2xIndex => clk2xIndex, clkvid => clkvid,
@@ -384,6 +397,7 @@ begin
       variable fr, d : std_logic_vector(31 downto 0);
       variable sp : character;
       variable sent : integer := 0;
+      variable p_fr, p_rel, p_vb, idle_n : integer := -1;
    begin
       reset <= '1';
       for i in 1 to 64 loop wait until rising_edge(clk1x); end loop;
@@ -393,7 +407,24 @@ begin
       while not endfile(infile) loop
          readline(infile, il);
          hread(il, k); read(il, sp); hread(il, fr); read(il, sp); hread(il, d);
-         while vblank_count < to_integer(unsigned(fr)) loop
+         if PACED and to_integer(unsigned(fr)) /= p_fr then
+            -- PACED: the game's DrawSync(0), VSync(0) loop. Frame F waits until
+            -- the GPU has finished every earlier word, then for the next vblank,
+            -- and keeps MAME's spacing (F - previous F vblanks at least)
+            if p_fr >= 0 then
+               idle_n := 0;
+               while idle_n < 8 loop
+                  wait until rising_edge(clk1x);
+                  if gpu_idle then idle_n := idle_n + 1; else idle_n := 0; end if;
+               end loop;
+               p_vb := vblank_count;
+               while vblank_count = p_vb or vblank_count < p_rel + to_integer(unsigned(fr)) - p_fr loop
+                  wait until rising_edge(clk1x);
+               end loop;
+            end if;
+            p_fr := to_integer(unsigned(fr)); p_rel := vblank_count; rel_vb <= vblank_count;
+         end if;
+         while not PACED and vblank_count < to_integer(unsigned(fr)) loop
             wait until rising_edge(clk1x);
          end loop;
          feed_frame <= to_integer(unsigned(fr));
@@ -422,6 +453,135 @@ begin
       feed_done <= true;
       report "stream done, words " & integer'image(sent) severity note;
       wait;
+   end process;
+
+   -- GPU idle (the drawing part of gpu.vhd's SS_Idle, as GTIME below) for
+   -- PACED and the per-frame breakdown
+   gidle : block
+      alias i_proc_idle     is << signal .tb_gpu_infl.igpu.proc_idle     : std_logic >>;
+      alias i_fifoIn_Empty  is << signal .tb_gpu_infl.igpu.fifoIn_Empty  : std_logic >>;
+      alias i_fifoIn_Wr     is << signal .tb_gpu_infl.igpu.fifoIn_Wr     : std_logic >>;
+      alias i_fifoIn_Valid  is << signal .tb_gpu_infl.igpu.fifoIn_Valid  : std_logic >>;
+      alias i_fifoOut_idle  is << signal .tb_gpu_infl.igpu.fifoOut_idle  : std_logic >>;
+      alias i_pipeline_busy is << signal .tb_gpu_infl.igpu.pipeline_busy : std_logic >>;
+      alias i_pixelWrite    is << signal .tb_gpu_infl.igpu.pixelWrite    : std_logic >>;
+   begin
+      gpu_idle <= i_proc_idle = '1' and i_fifoIn_Empty = '1' and i_fifoIn_Wr = '0' and i_fifoIn_Valid = '0'
+                  and i_fifoOut_idle = '1' and i_pipeline_busy = '0' and i_pixelWrite = '0';
+   end block;
+
+   -- Per stream frame breakdown (docs/gpu_blend_timing.md): frames_brk.txt,
+   -- one line per stream frame, written when the next frame's first word is
+   -- presented (with PACED that is its release; the cycles between the
+   -- frame's end and the next release are idle):
+   --   frame rel_vblank cycles busy tex clut dst wfifo other misses
+   --   dst_reads dst_beats tex_reads tex_beats wr_beats walk drawn
+   --   then drawn pixels by class: poly flat, flat semi, gouraud, gouraud
+   --   semi, textured, textured semi; rect plain, semi, textured, textured semi
+   --   then spx_cycles spx_waits (TEX_SPX_COST stall cycles, also in tex, and
+   --   their count)
+   -- busy = non-idle clk2x; each busy cycle goes to one class, first match:
+   -- tex = the pipeline's texture fill (texReqActive: request, data and
+   -- TEX_MISS_DELAY wait); clut = a palette read outstanding or requested;
+   -- dst = a destination line read (poly/rect/line, class 3) requested or
+   -- outstanding; wfifo = pixel write FIFO near full (pixelStall); other =
+   -- the rest (pixel walking, setup, fills, copies, CPU uploads, write
+   -- drain). misses = texReqActive rising edges; walk = poly span steps
+   -- (PROCPIXELS with the pipeline taking a pixel), drawn = pixels entering
+   -- the pipeline from poly or rect (walk minus drawn = poly steps outside
+   -- the drawing area).
+   brk : process (clk2x)
+      file fb : text open write_mode is "frames_brk.txt";
+      alias b_tex   is << signal .tb_gpu_infl.igpu.igpu_pixelpipeline.texReqActive : std_logic >>;
+      alias b_pre   is << signal .tb_gpu_infl.igpu.pipeline_reqVRAMEnable : std_logic >>;
+      alias b_epoly is << signal .tb_gpu_infl.igpu.poly_reqVRAMEnable     : std_logic >>;
+      alias b_erect is << signal .tb_gpu_infl.igpu.rect_reqVRAMEnable     : std_logic >>;
+      alias b_eline is << signal .tb_gpu_infl.igpu.line_reqVRAMEnable     : std_logic >>;
+      alias b_stall is << signal .tb_gpu_infl.igpu.pixelStall             : std_logic >>;
+      alias b_pstl  is << signal .tb_gpu_infl.igpu.pipeline_stall         : std_logic >>;
+      alias b_ple   is << signal .tb_gpu_infl.igpu.poly_vramLineEna       : std_logic >>;
+      alias b_pnew  is << signal .tb_gpu_infl.igpu.poly_pipeline_new      : std_logic >>;
+      alias b_rnew  is << signal .tb_gpu_infl.igpu.rect_pipeline_new      : std_logic >>;
+      alias b_ptex  is << signal .tb_gpu_infl.igpu.poly_pipeline_texture     : std_logic >>;
+      alias b_psemi is << signal .tb_gpu_infl.igpu.poly_pipeline_transparent : std_logic >>;
+      alias b_rtex  is << signal .tb_gpu_infl.igpu.rect_pipeline_texture     : std_logic >>;
+      alias b_rsemi is << signal .tb_gpu_infl.igpu.rect_pipeline_transparent : std_logic >>;
+      alias b_shade is << signal .tb_gpu_infl.igpu.igpu_poly.rec_shading     : std_logic >>;
+      alias b_spx   is << signal .tb_gpu_infl.igpu.igpu_pixelpipeline.spxStall : std_logic >>;
+      variable cspx, mspx : integer := 0;
+      variable pspx : std_logic := '0';
+      type px_t is array (0 to 9) of integer;
+      variable px : px_t := (others => 0);
+      variable pk : integer;
+      type q_t is array (0 to 15) of integer;
+      variable qc, qn : q_t := (others => 0);
+      variable qw, qr, qcnt : integer := 0;
+      variable l : line;
+      variable cur : integer := -1;
+      variable cyc, bsy, ctex, cclut, cdst, cwf, coth, mis, dr, db, tr, tb, wb, wk, dn : integer := 0;
+      variable ptex : std_logic := '0';
+      variable hcls : integer;
+   begin
+      if rising_edge(clk2x) then
+         if feed_frame /= cur then
+            if cur >= 0 then
+               write(l, cur); write(l, ' '); write(l, rel_vb); write(l, ' '); write(l, cyc); write(l, ' ');
+               write(l, bsy); write(l, ' '); write(l, ctex); write(l, ' '); write(l, cclut); write(l, ' ');
+               write(l, cdst); write(l, ' '); write(l, cwf); write(l, ' '); write(l, coth); write(l, ' ');
+               write(l, mis); write(l, ' '); write(l, dr); write(l, ' '); write(l, db); write(l, ' ');
+               write(l, tr); write(l, ' '); write(l, tb); write(l, ' '); write(l, wb); write(l, ' ');
+               write(l, wk); write(l, ' '); write(l, dn);
+               for i in 0 to 9 loop write(l, ' '); write(l, px(i)); end loop;
+               write(l, ' '); write(l, cspx); write(l, ' '); write(l, mspx);
+               writeline(fb, l); flush(fb);
+            end if;
+            cur := feed_frame;
+            cyc := 0; bsy := 0; ctex := 0; cclut := 0; cdst := 0; cwf := 0; coth := 0; mis := 0;
+            dr := 0; db := 0; tr := 0; tb := 0; wb := 0; wk := 0; dn := 0; px := (others => 0); cspx := 0; mspx := 0;
+         end if;
+         cyc := cyc + 1;
+         -- outstanding reads by class, in order (the port answers in order)
+         if vram_DOUT_READY = '1' and qcnt > 0 then
+            qn(qr) := qn(qr) - 1;
+            if qn(qr) = 0 then qr := (qr + 1) mod 16; qcnt := qcnt - 1; end if;
+         end if;
+         if g_RD = '1' and g_BUSY = '0' then
+            qc(qw) := g_cls; qn(qw) := to_integer(unsigned(g_BURSTCNT)); qw := (qw + 1) mod 16; qcnt := qcnt + 1;
+            if g_cls = 3 then dr := dr + 1; db := db + to_integer(unsigned(g_BURSTCNT)); end if;
+            if g_cls = 0 then tr := tr + 1; tb := tb + to_integer(unsigned(g_BURSTCNT)); end if;
+         end if;
+         if g_WE = '1' and g_BUSY = '0' then wb := wb + 1; end if;
+         hcls := -1;
+         if qcnt > 0 then hcls := qc(qr); end if;
+         if b_tex = '1' and ptex = '0' then mis := mis + 1; end if;
+         if b_spx = '1' and pspx = '0' then mspx := mspx + 1; end if;
+         pspx := b_spx;
+         ptex := b_tex;
+         if b_ple = '1' and b_pstl = '0' then wk := wk + 1; end if;
+         if b_pnew = '1' or b_rnew = '1' then dn := dn + 1; end if;
+         -- drawn pixels by class: poly flat, flat semi, gouraud, gouraud semi,
+         -- textured, textured semi; rect plain, semi, textured, textured semi
+         if b_pnew = '1' then
+            if b_ptex = '1' then pk := 4; elsif b_shade = '1' then pk := 2; else pk := 0; end if;
+            if b_psemi = '1' then pk := pk + 1; end if;
+            px(pk) := px(pk) + 1;
+         elsif b_rnew = '1' then
+            pk := 6;
+            if b_rtex = '1' then pk := 8; end if;
+            if b_rsemi = '1' then pk := pk + 1; end if;
+            px(pk) := px(pk) + 1;
+         end if;
+         if not gpu_idle then
+            bsy := bsy + 1;
+            if b_spx = '1' then cspx := cspx + 1; end if;
+            if b_tex = '1' or b_spx = '1' then ctex := ctex + 1;
+            elsif hcls = 1 or (b_pre = '1' and b_tex = '0') then cclut := cclut + 1;
+            elsif hcls = 3 or b_epoly = '1' or b_erect = '1' or b_eline = '1' then cdst := cdst + 1;
+            elsif b_stall = '1' then cwf := cwf + 1;
+            else coth := coth + 1;
+            end if;
+         end if;
+      end if;
    end process;
 
    -- R23: GPU drawing time per stream frame and per vblank interval (GTIME)

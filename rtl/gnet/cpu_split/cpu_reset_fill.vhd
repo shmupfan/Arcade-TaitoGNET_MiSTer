@@ -20,7 +20,7 @@
 --
 -- CPU-side part of the reset sequence when the CPU group has its own clock
 -- (docs/r1_cpu_domain_design.md, 50.000 MHz plan, crossing C17; decision 3
--- of "Decisions recorded (Lee, 2026-10-05)" there: the reset zero fill of RAM
+-- of "Decisions recorded (2026-10-05)" there: the reset zero fill of RAM
 -- and scratchpad is kept).
 --
 -- 1. Reset pulses. savestates.vhd (on clk1x/clk2x) issues SS_reset and then,

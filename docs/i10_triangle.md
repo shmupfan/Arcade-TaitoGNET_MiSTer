@@ -106,7 +106,7 @@ downwards, and the 4-beat group fill costs beats for entries the next pixel
 does not use. TEX_MISS_DELAY then adds 13 clk2x to each of the 61,440
 misses.
 
-Which build Lee saw without the triangle, or in which mode, is not known
+Which build I saw without the triangle, or in which mode, is not known
 (open question 2).
 
 ## 4. The game waits for the GPU before its frame-start reset
@@ -231,7 +231,7 @@ spends on this quad is not known either; it has the same cache geometry
    prefetch, or a miss delay calibrated on more than the Ray Crisis demo,
    would be the next step. Needs board evidence (sianniv PCB footage) before
    changing the calibration.
-2. Lee's earlier alpha 3 test screenshot without the cut: build and game
+2. My earlier alpha 3 test screenshot without the cut: build and game
    mode unknown. Every prefetch configuration at L = 12 exceeds the old
    limit on this quad in the bench.
 3. Earth mode (photo p1) not captured in MAME; its shields are drawn in the

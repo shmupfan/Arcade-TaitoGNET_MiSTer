@@ -201,7 +201,7 @@ GNET_Z1FULLH build. The PSX.sv glue adds a few muxes on channel 3 and the
 hps_io wait and data paths. At 87% (36,324 of 41,910 ALMs in the last
 GNET_Z1FULLR fits) this would take the core to about 89%.
 
-## 7. Hardware test (Lee)
+## 7. Hardware test
 
 1. Build GNET_Z1FULLH (tools/pc_build.sh target z1fullh) and copy the
    spuzbobl MRA with the section 4 change.

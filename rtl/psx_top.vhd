@@ -69,6 +69,12 @@ entity psx_top is
       TEX_FETCH_QW          : integer := 1;
       TEX_FETCH_ROWS        : integer := 1;
       TEX_MISS_DELAY        : integer := 0;   -- clk2x cycles added to each texture cache fill, 0 = upstream
+      -- G-NET: GPU texture timing model (gpu.vhd, docs/gpu_blend_timing.md), 0 = off
+      TEX_CACHE_BIG         : integer := 0;
+      TEX_SPX_COST4         : integer := 0;
+      TEX_SPX_COST8         : integer := 0;
+      TEX_SPX_COST15        : integer := 0;
+      POLY_CLIP_X           : integer := 0;   -- 1 = polygon spans clipped to the drawing area (gpu_poly), 0 = upstream
       CLK_FAST_RATIO        : integer := 3;   -- clk3x edges per clk1x cycle: 3 = upstream, 2 = CPU domain at 2:1 (clk3xIndex, sdram.sv)
       -- G-NET: R1 (docs/r1_cpu_domain_design.md): 0 = upstream clocking, every block on
       -- clk1x/clk2x/clk3x. 1 = CPU group (cpu, gte, memorymux, memctrl, dma,
@@ -1851,7 +1857,9 @@ begin
    igpu : entity work.gpu
    -- G-NET: GPU generics (2 MB VRAM, rectangle flip, texture fetch options)
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, RECT_FLIP => RECT_FLIP, GPU_READ_INFL => GPU_READ_INFL,
-                TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS, TEX_MISS_DELAY => TEX_MISS_DELAY)
+                TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS, TEX_MISS_DELAY => TEX_MISS_DELAY,
+                TEX_CACHE_BIG => TEX_CACHE_BIG, TEX_SPX_COST4 => TEX_SPX_COST4, TEX_SPX_COST8 => TEX_SPX_COST8,
+                TEX_SPX_COST15 => TEX_SPX_COST15, POLY_CLIP_X => POLY_CLIP_X)
    port map
    (
       clk1x                => clk1x,

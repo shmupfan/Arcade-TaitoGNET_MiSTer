@@ -10,6 +10,11 @@
 -- TEX_MISS_DELAY (default 0 = upstream): posted pixel writes while a read
 -- waits, texture cache fills of 4 qwords and further rows, and a calibrated
 -- wait per fill, for the DDR3 VRAM latency (docs/gpu_read_infl.md 3, 9, 10).
+-- Generic POLY_CLIP_X (default 0 = off) passed to gpu_poly: spans clipped
+-- to the drawing area. Generics TEX_CACHE_BIG and TEX_SPX_COST4/8/15 (default 0 = off) passed to
+-- the pixel pipeline: an 8 KB texture cache and a wait per miss of a psx-spx
+-- shadow cache, a texture timing model of the board's GPU
+-- (docs/gpu_blend_timing.md).
 -- One known slip at the 480p interlace hack is noted where it is.
 -- G-NET commits: c71a991 (2026-10-04) 2 MB VRAM behind VRAM_Y_BITS;
 -- e775367 (2026-10-05) GP1(10h) index 7; 864ae50 (2026-10-06) GPU read
@@ -47,7 +52,17 @@ entity gpu is
       TEX_FETCH_ROWS       : integer := 1;
       -- G-NET: clk2x cycles added to each texture cache fill
       -- (gpu_pixelpipeline TEX_MISS_DELAY), 0 = upstream
-      TEX_MISS_DELAY       : integer := 0
+      TEX_MISS_DELAY       : integer := 0;
+      -- G-NET: texture timing model (gpu_pixelpipeline, docs/gpu_blend_timing.md),
+      -- 0 = off: 8 KB texture cache, clk2x per miss of a psx-spx shadow cache
+      -- for 4-bit, 8-bit and 15-bit pages
+      TEX_CACHE_BIG        : integer := 0;
+      TEX_SPX_COST4        : integer := 0;
+      TEX_SPX_COST8        : integer := 0;
+      TEX_SPX_COST15       : integer := 0;
+      -- G-NET: 1 = polygon spans clipped to the drawing area (gpu_poly
+      -- POLY_CLIP_X, docs/gpu_blend_timing.md), 0 = upstream
+      POLY_CLIP_X          : integer := 0
    );
    port 
    (
@@ -1357,7 +1372,7 @@ begin
    );
    
    igpu_poly : entity work.gpu_poly
-   generic map (VRAM_Y_BITS => VRAM_Y_BITS)   -- G-NET: VRAM_Y_BITS
+   generic map (VRAM_Y_BITS => VRAM_Y_BITS, POLY_CLIP_X => POLY_CLIP_X)   -- G-NET: VRAM_Y_BITS, span clipping
    port map
    (
       clk2x                => clk2x,     
@@ -1460,7 +1475,8 @@ begin
    
    igpu_pixelpipeline : entity work.gpu_pixelpipeline
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS,
-                 TEX_MISS_DELAY => TEX_MISS_DELAY)   -- G-NET: VRAM_Y_BITS, texture fetch generics
+                 TEX_MISS_DELAY => TEX_MISS_DELAY, TEX_CACHE_BIG => TEX_CACHE_BIG, TEX_SPX_COST4 => TEX_SPX_COST4,
+                 TEX_SPX_COST8 => TEX_SPX_COST8, TEX_SPX_COST15 => TEX_SPX_COST15)   -- G-NET: VRAM_Y_BITS, texture fetch and timing generics
    port map
    (
       clk2x                => clk2x,     

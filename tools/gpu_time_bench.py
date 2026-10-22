@@ -21,7 +21,7 @@ import sys
 T2X_NS = 14.762
 HLINE_HZ = 53693175 / 3413                               # NTSC line rate, 15,732 Hz
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PSXLOG = os.path.join(ROOT, 'reference/ps1-tests/gpu/bandwidth/psx.log')
+PSXLOG = os.environ.get('PS1TESTS_LOG', os.path.join(ROOT, 'reference/ps1-tests/gpu/bandwidth/psx.log'))
 W, H = 320, 240
 CLUT = ((256 << 6) | (768 >> 4)) << 16                  # setClut(768, 256)
 TPAGE_FT4 = ((512 >> 6) | (256 >> 8) << 4 | 0 << 5 | 2 << 7) << 16   # getTPage(2, 0, 512, 256)

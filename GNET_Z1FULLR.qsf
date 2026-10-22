@@ -198,6 +198,12 @@ set_global_assignment -name VERILOG_MACRO "GNET_GPU_READ_INFL=2"
 # board 1.078, prefetch alone 1.045, delay 9 gave 1.061, delay 13 gave 1.0748
 # on this revision's seed 8 build.
 set_global_assignment -name VERILOG_MACRO "GNET_TEX_MISS_DELAY=13"
+# Test build ch13 (docs/gpu_blend_timing.md 4 and 11): polygon spans clipped
+# to the drawing area (PS1 bandwidth log, 1/4 and 1/2 off-screen quads) and an
+# 8 KB texture cache index for 8-bit and 15-bit pages (compensation for DDR3
+# latency, not a model of the board); 4-bit pages and the delay unchanged.
+set_global_assignment -name VERILOG_MACRO "GNET_POLY_CLIP_X=1"
+set_global_assignment -name VERILOG_MACRO "GNET_TEX_CACHE_BIG=2"
 # F1, alpha 4 (docs/hdmi_timing.md): 0.25 ns more HDMI setup uncertainty
 # seen by quartus_fit only, so the HDMI scaler paths keep margin; sign-off
 # STA times the real clock.

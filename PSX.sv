@@ -1932,6 +1932,32 @@ localparam GNET_TEX_MISS_DELAY = `GNET_TEX_MISS_DELAY;   // clk_2x cycles added 
 `else
 localparam GNET_TEX_MISS_DELAY = 0;
 `endif
+// GPU texture timing model (docs/gpu_blend_timing.md); unset = 0 = off
+`ifdef GNET_TEX_CACHE_BIG
+localparam GNET_TEX_CACHE_BIG = `GNET_TEX_CACHE_BIG;     // 1 = 8 KB texture cache, fewer DDR3 fills
+`else
+localparam GNET_TEX_CACHE_BIG = 0;
+`endif
+`ifdef GNET_TEX_SPX_COST4
+localparam GNET_TEX_SPX_COST4 = `GNET_TEX_SPX_COST4;     // clk_2x per psx-spx shadow cache miss, 4-bit pages
+`else
+localparam GNET_TEX_SPX_COST4 = 0;
+`endif
+`ifdef GNET_TEX_SPX_COST8
+localparam GNET_TEX_SPX_COST8 = `GNET_TEX_SPX_COST8;     // 8-bit pages
+`else
+localparam GNET_TEX_SPX_COST8 = 0;
+`endif
+`ifdef GNET_TEX_SPX_COST15
+localparam GNET_TEX_SPX_COST15 = `GNET_TEX_SPX_COST15;   // 15-bit pages
+`else
+localparam GNET_TEX_SPX_COST15 = 0;
+`endif
+`ifdef GNET_POLY_CLIP_X
+localparam GNET_POLY_CLIP_X = `GNET_POLY_CLIP_X;         // 1 = polygon spans clipped to the drawing area
+`else
+localparam GNET_POLY_CLIP_X = 0;
+`endif
 `ifdef GNET_ZN2
 localparam GNET_ZN2_BOARD = 1;   // ZN-2 board and G-NET FC PCB (rtl/gnet/zn2_board.vhd)
 localparam GNET_RECT_FLIP = 1;   // CXD8654Q textured rectangle X/Y flip, E1 bits 12/13 (issue #6, gpu_rect.vhd)
@@ -2034,6 +2060,11 @@ psx_mister
    .TEX_FETCH_QW(GNET_TEX_FETCH_QW),
    .TEX_FETCH_ROWS(GNET_TEX_FETCH_ROWS),
    .TEX_MISS_DELAY(GNET_TEX_MISS_DELAY),
+   .TEX_CACHE_BIG(GNET_TEX_CACHE_BIG),
+   .TEX_SPX_COST4(GNET_TEX_SPX_COST4),
+   .TEX_SPX_COST8(GNET_TEX_SPX_COST8),
+   .TEX_SPX_COST15(GNET_TEX_SPX_COST15),
+   .POLY_CLIP_X(GNET_POLY_CLIP_X),
    .CLK_FAST_RATIO(GNET_CLK_FAST_RATIO),
    .CPU_CLK_SPLIT(GNET_CPU_CLK_SPLIT),
    .ZN2_BOARD(GNET_ZN2_BOARD),

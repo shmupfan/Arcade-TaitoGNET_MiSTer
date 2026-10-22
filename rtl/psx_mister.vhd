@@ -36,6 +36,11 @@ entity psx_mister is
       TEX_FETCH_QW          : integer := 1;
       TEX_FETCH_ROWS        : integer := 1;
       TEX_MISS_DELAY        : integer := 0;
+      TEX_CACHE_BIG         : integer := 0;    -- psx_top / gpu.vhd (docs/gpu_blend_timing.md), 0 = off
+      TEX_SPX_COST4         : integer := 0;
+      TEX_SPX_COST8         : integer := 0;
+      TEX_SPX_COST15        : integer := 0;
+      POLY_CLIP_X           : integer := 0;    -- psx_top / gpu_poly: polygon spans clipped to the drawing area
       CLK_FAST_RATIO        : integer := 3;
       CPU_CLK_SPLIT         : integer := 0;    -- psx_top: 1 = CPU group on clk_cpu/clk_cpu2x/clk_cpu3x
       -- G-NET: ZN-2 board (psx_top ZN2_BOARD), 0 = upstream
@@ -418,6 +423,11 @@ begin
       TEX_FETCH_QW          => TEX_FETCH_QW,
       TEX_FETCH_ROWS        => TEX_FETCH_ROWS,
       TEX_MISS_DELAY        => TEX_MISS_DELAY,
+      TEX_CACHE_BIG         => TEX_CACHE_BIG,
+      TEX_SPX_COST4         => TEX_SPX_COST4,
+      TEX_SPX_COST8         => TEX_SPX_COST8,
+      TEX_SPX_COST15        => TEX_SPX_COST15,
+      POLY_CLIP_X           => POLY_CLIP_X,
       GTE_NARROW_MUL        => GTE_NARROW_MUL,
       CLK_FAST_RATIO        => CLK_FAST_RATIO,
       CPU_CLK_SPLIT         => CPU_CLK_SPLIT,

@@ -56,7 +56,7 @@ real hardware is needs-review per test.
 ## 3. PCB footage (rank 4 candidates, not downloaded)
 
 Capture method unverified unless the title says PCB. No video downloads
-without asking Lee.
+without my approval.
 
 | Game | Title / channel | URL | Note |
 |---|---|---|---|

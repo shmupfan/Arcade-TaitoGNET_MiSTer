@@ -28,7 +28,7 @@
 --   * register write and DMA write: posted into one ordered command FIFO
 --     (C8), one entry per ce cycle with the strobe, as spu.vhd counts them.
 --   * register read (C9, a plain stall handshake: decision 2 of "Decisions
---     recorded (Lee, 2026-10-05)" in docs/r1_cpu_domain_design.md): while
+--     recorded (2026-10-05)" in docs/r1_cpu_domain_design.md): while
 --     memorymux holds bus_spu_read (state EXT_READ_NEXT) the read goes
 --     through the same FIFO; c_bus_stall (combinational: read and no answer
 --     yet) keeps memorymux in EXT_READ_NEXT (memorymux.vhd bus_spu_stall).

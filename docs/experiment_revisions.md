@@ -2,7 +2,7 @@
 
 The Quartus revisions below were the experiments and stand-alone fits that
 led to the release. They were removed from the main line on 2026-10-20
-(refactor plan step 8, Lee's decision 3) and are kept under the annotated
+(refactor plan step 8, my decision 3) and are kept under the annotated
 tag `experiments-archive` (commit f5fef8e), together with their
 `tools/pc_build.sh` targets. Design docs still cite them by name; this table
 says what each one was.

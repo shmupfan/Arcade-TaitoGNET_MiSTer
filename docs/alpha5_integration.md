@@ -133,7 +133,7 @@ upstream build) and GNET_Z1FULLO.qsf's (17,292).
 
 ### 5.4 Lint
 
-`~/.claude/hooks/lint_on_edit.py` on every file changed by the merges and
+A local lint-on-edit hook on every file changed by the merges and
 the later commits (14 files in the standard pass, 6 shell scripts): 0
 errors. Advice only, unchanged from before: PSX.sv's build_id.v stub and
 cpu.vhd's missing altera_mf library on this machine. A Python count of em

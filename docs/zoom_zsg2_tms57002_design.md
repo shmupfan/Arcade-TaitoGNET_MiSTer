@@ -804,7 +804,7 @@ Oracle versions:
 - MAME 0.288 for everything except register 0xB reads.
 - A MAME with 61c7940 (a release that contains it, or 0.288 with that
   one-line change built locally) for board-level runs (3.7). That is a
-  decision for Lee, since it means building MAME.
+  decision for me, since it means building MAME.
 
 All logs are game-derived data and go under gitignored sim/.
 

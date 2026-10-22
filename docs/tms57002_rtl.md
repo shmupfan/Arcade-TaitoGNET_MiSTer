@@ -325,7 +325,7 @@ virtual pin, 29.525 ns clock), target `tools/pc_build.sh tms57`
 5. Coverage: 3 of 6 games, 60 s each. psyvarrv, shikigam and xiistag run
    the same two programs (design study 4.3).
 
-## 8. Questions for Lee
+## 8. Open questions
 
 1. Default behaviour: the core follows the guide on the three points of
    section 5, so its SO1 will not be bit-exact against stock MAME at board

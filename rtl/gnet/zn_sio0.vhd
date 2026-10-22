@@ -67,8 +67,8 @@ entity zn_sio0 is
       -- bit timer step: '1' = one count per clock (33.8688 MHz clk1x); with
       -- psx_top's CPU_CLK_SPLIT = 1 the clock is clk_cpu (50 MHz) and this is
       -- tick_accum's 33.8688 MHz-equivalent sys_tick (decision 1 in
-      -- docs/r1_cpu_domain_design.md, "Decisions recorded (Lee,
-      -- 2026-10-05)"), so a bit keeps its 33.8688 MHz length
+      -- docs/r1_cpu_domain_design.md, "Decisions recorded
+      -- (2026-10-05)"), so a bit keeps its 33.8688 MHz length
       sys_tick     : in  std_logic := '1';
 
       bus_addr     : in  unsigned(3 downto 0);

@@ -28,7 +28,7 @@ the one listed there, e7f365b7...).
   handshake/FIFO entities that are safe for asynchronous clocks. Bring-up
   at 50.8032 MHz / 101.6064 MHz (3/2 of clk_1x, the existing clk_3x as the
   2x clock, one PLL, deterministic and fully timed by STA), then a switch
-  to exactly 50.000 / 100.000 MHz is a PLL and SDC change if Lee wants the
+  to exactly 50.000 / 100.000 MHz is a PLL and SDC change if I want the
   last 1.6%. The GTE stays at 2x the CPU clock with unchanged step
   sequences, so its per-command hold stays exact; closing 10 ns needs MAC
   path work in gte_mac123/gte.vhd (option d1). The busy counter (d2) is the
@@ -459,9 +459,9 @@ for the F0 trims (PLAN.md 5, 2026-10-04 decision).
     non-rational clocks in simulation (for example 20 ns against
     29.5257 ns).
 
-## 5. Open decisions for Lee
+## 5. Open decisions
 
-1. Final CPU rate: DECIDED 2026-10-05 (Lee): exactly 50.000 MHz (100 MHz
+1. Final CPU rate: DECIDED 2026-10-05 (my decision): exactly 50.000 MHz (100 MHz
    crystal halved, the PS1 convention; medium confidence, inference). The
    design targets it directly: crossings to the PS1-clock blocks are
    asynchronous-safe. Calibration once the system boots: the PCB boot
@@ -472,7 +472,7 @@ for the F0 trims (PLAN.md 5, 2026-10-04 decision).
    default: CPU clock, behind a generic, until a board measurement.
    (Superseded: Measurement 1c changed the proposed default to 33.8688
    MHz-equivalent ticks; the 50.000 MHz plan, P3, gives the accumulator.
-   Still open for Lee.)
+   Still open.)
 3. GTE route: (d1) first with (d2) as fallback, or (d2) directly, which
    also allows fixing the MTC2/CTC2/LWC2 hold divergence from psx-spx.
 4. Whether to fix that MTC2/CTC2/LWC2 hold divergence at all (separate from
@@ -741,7 +741,7 @@ before the GTE change (E5 seed 1 fitted at 26,805 ALMs against E4's
 | 10 | Area: the high end reaches 89.7% before further G-NET blocks | f0_budget.md 5.2 margin |
 | 11 | Wait states counted in CPU cycles (memctrl delays, BIOS and EXP1 counts, DMA REP timing) run 1.476x faster in real time than at 33.8688 MHz | Already a calibration item (Measurement 3) |
 
-### P6. Decisions for Lee
+### P6. Decisions to make
 
 1. Root counter and SIO0 tick source default: 33.8688 MHz equivalents by
    the accumulator (my proposal, from raycris's 240 Hz sound tick) or the
@@ -1042,9 +1042,9 @@ Consequences for the open decisions:
   in hardware, which supports building the SPU crossing async-safe as
   section 4 recommends.
 
-## Decisions recorded (Lee, 2026-10-05)
+## Decisions recorded (2026-10-05)
 
-Lee accepted the recommendations for the 50.000 MHz plan:
+I accepted the recommendations for the 50.000 MHz plan:
 1. Root counters and SIO0 tick source: 33.8688 MHz equivalents from the
    phase accumulator (modulo 15625, add 10584 per 50 MHz cycle; tick_accum
    on branch r1-cdc), so raycris's counter 2 sound tick stays at 240 Hz.
@@ -1825,7 +1825,7 @@ What the evidence says:
   behaviour, board_evidence.md M4, is open). The card data port adds the
   C18 handshake (5 to 7 CPU cycles) and a DDR3 line read on each line miss.
 
-Proposal (for Lee; I changed nothing):
+Proposal (to decide; nothing changed):
 1. Keep the programmed delays in CPU cycles (no CLK_HZ scaling): it is the
    CXD8661R behaviour as far as the evidence goes.
 2. A memorymux generic for ZN2_MAP, for example ZN2_READ_OVERLAP (default
@@ -1925,7 +1925,7 @@ Findings:
    programmed delay of about 15; see the bus latency proposal above (read
    overlap).
 
-Options (for Lee; none applied):
+Options (to decide; none applied):
 A. SDRAM at 3:1 to the CPU clock again: clk_cpu3x = 150 MHz from pll_cpu
    (VCO 300 MHz: C 6 / 2 already gives 50 and 150 MHz exactly), CLK_FAST_RATIO
    3, so a load is 5 + 2.6 cycles as at 33.87 MHz. sdram.sv's constants are
@@ -2343,7 +2343,7 @@ here. tools/sta/cpu2x_worst.tcl on the next fit shows it.
 
 ### Main RAM load timing at 2:1 (issue #5, branch ram-timing, 2026-10-14)
 
-Goal agreed with Lee: give a main RAM data load the cycle count PSX_MiSTer
+Agreed goal: give a main RAM data load the cycle count PSX_MiSTer
 has at 3:1, 5 CPU cycles from request to done (about 7.6 per load with the
 pipeline), instead of 7 (about 9.6). Read-only trace behind it: at 2:1 the
 SDRAM part of a read costs 2 more CPU cycles than at 3:1, and memorymux's
@@ -2427,7 +2427,7 @@ Benches (written, not run on 2026-10-14):
   tools/r1/cpu_breakdown.py: main RAM load mean extra cycles about 6.6
   (from 8.61), and the back-to-back special class no higher than isolated.
 
-Home test plan (Lee):
+My home test plan:
 1. Run the mem_lat variants; compare against the table.
 2. Build the fullsys tree and run the warm Shikigami boot; it must reach
    NOTICE with no MB3773 pulse and no BREAK at 0x316C.

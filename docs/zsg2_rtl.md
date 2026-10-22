@@ -56,7 +56,7 @@ behaviour (zsg2.cpp, rank 5); nothing is taken from XelaNotPu's FX-1B core
 | `tools/zsg2/zsg2_directed.py` | Directed and random tests with a synthetic wave set (no game data) and the model's expected outputs and reads |
 | `tools/zsg2/zsg2_stress.py`, `zsg2_latency_sweep.py` | Worst-case load with model outputs; memory latency sweep per `INFL` |
 | `sim/zsg2/tb.cpp`, `build.sh`, `run.sh` | Verilator replay testbench with a DDR3 latency model and optional coverage counters |
-| `ZSG2_FIT.qpf`, `.qsf`, `.sdc` | Area-check project for Quartus 17 (run by Lee, section 6) |
+| `ZSG2_FIT.qpf`, `.qsf`, `.sdc` | Area-check project for Quartus 17 (run by me, section 6) |
 
 Game-derived files (flash images from tools/build_flash.py, traces, event
 streams, logs) stay in `sim/zsg2/work/`, gitignored.

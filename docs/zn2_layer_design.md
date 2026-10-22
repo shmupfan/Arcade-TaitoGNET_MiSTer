@@ -470,7 +470,7 @@ the frame buffer area is needs-review before the offset is fixed.
 MiSTer cannot read the hard-disk CHDs, so the card image and its metadata
 are prepared once per game by the existing tools, and the flash images by
 build_flash.py for a warm boot. Dirty card sectors (R25) are not saved in
-the first test. Two ways for release, Lee to choose: card as an MRA ROM in
+the first test. Two ways for release, still to choose: card as an MRA ROM in
 DDR3 with a dirty-sector save path, or the card as an OSD-mounted image read
 and written through the hps_io block interface into the same DDR3 copy (the
 pattern PSX_MiSTer uses for memory cards).
@@ -656,7 +656,7 @@ card client and the loader are in section 18.
 ## 17. Open questions
 
 Test-build defaults (2026-10-05): Q1 to Q6 below are set as
-listed for the first silent test RBF. They are reversible and Lee decides
+listed for the first silent test RBF. They are reversible and I decide
 the release choices later.
 
 1. Card image path for release: MRA ROM in DDR3 with a dirty-sector save

@@ -51,8 +51,8 @@ notices and markers were added.
 | rtl/savestates.vhd | +35 / -3 | CPU_FILL_EXT generic: the reset zero fill of scratchpad and RAM done by a CPU-side filler | CPU on its own clock (savestates.vhd is also the reset sequencer) |
 | rtl/sdram.sv (GPL-3.0-or-later, its own header) | +90 / -11 | CLK_FAST_RATIO (3 = upstream, 2 = CPU domain); at 2:1 a cache line fill signals ready after its last word, and the CPU request strobes select the row address in the last mux level; EARLY_READY (default 0) | R1 at 2:1; issue #5 |
 | rtl/gte.vhd, gte_mac0.vhd, gte_mac123.vhd, gte_UNRDivide.vhd, pGTE.vhd | +811 / -7 | GTE_NARROW_MUL (0 = upstream; 3, used by the release, runs the GTE at 100 MHz with the same results and step counts; 1 and 2 are earlier experiments) | GTE on the 100 MHz CPU clock (R1) |
-| rtl/gpu.vhd | +135 / -49 | VRAM_Y_BITS (9 = upstream, 10 = 2 MB); GP1(10h) index 7 answers 2 with 2 MB VRAM; GPU_READ_INFL, TEX_FETCH_QW, TEX_FETCH_ROWS, TEX_MISS_DELAY passed to the pipeline; RECT_FLIP passed to gpu_rect | ZN-2 CXD8654Q GPU (2 MB VRAM); DDR3 read latency and calibration to the board (docs/gpu_read_infl.md) |
-| rtl/gpu_pixelpipeline.vhd | +126 / -29 | VRAM_Y_BITS; texture cache fill per miss (TEX_FETCH_QW), extra rows (TEX_FETCH_ROWS), reads in flight, TEX_MISS_DELAY | as gpu.vhd |
+| rtl/gpu.vhd | +135 / -49 | VRAM_Y_BITS (9 = upstream, 10 = 2 MB); GP1(10h) index 7 answers 2 with 2 MB VRAM; GPU_READ_INFL, TEX_FETCH_QW, TEX_FETCH_ROWS, TEX_MISS_DELAY passed to the pipeline; RECT_FLIP passed to gpu_rect; TEX_CACHE_BIG, TEX_SPX_COST4/8/15 passed to the pipeline (docs/gpu_blend_timing.md) | ZN-2 CXD8654Q GPU (2 MB VRAM); DDR3 read latency and calibration to the board (docs/gpu_read_infl.md) |
+| rtl/gpu_pixelpipeline.vhd | +126 / -29 | VRAM_Y_BITS; texture cache fill per miss (TEX_FETCH_QW), extra rows (TEX_FETCH_ROWS), reads in flight, TEX_MISS_DELAY; TEX_CACHE_BIG (8 KB cache, tag valid by epoch) and TEX_SPX_COST4/8/15 (psx-spx shadow tags, wait per shadow miss by colour depth) | as gpu.vhd; texture timing model (docs/gpu_blend_timing.md) |
 | rtl/gpu_rect.vhd | +57 / -20 | VRAM_Y_BITS; RECT_FLIP: textured rectangle X/Y flip (E1 bits 12/13) | CXD8654Q behaviour (issue #6) |
 | rtl/gpu_cpu2vram, gpu_fillVram, gpu_line, gpu_poly, gpu_videoout, gpu_vram2cpu, gpu_vram2vram (.vhd), pGPU.vhd | about +13 / -9 each | VRAM_Y_BITS width expressions; pGPU's vramRange widened | 2 MB VRAM |
 | rtl/mdec.vhd | +39 / -9 | IDCT_REG_STAGE (0 = upstream; psx_top sets it to CPU_CLK_SPLIT): a register stage on the IDCT table reads (one clk2x more latency, same products in the same order) | MDEC timing on the 100 MHz CPU clock (issue #1 put the MDEC in the CPU group) |
@@ -131,6 +131,20 @@ the previous logic; GNET_Z1FULLR sets both.
 | PSX.sv | +232 / -1 | GNET_CARD_JOURNAL: gnet_card_journal instance; index 6 is the EEPROM in its first 2 KB and the card hunk journal after it (upload mux, ioctl_wait term, upload request on OSD open). GNET_HISCORE: gnet_hiscore instance (MRA index 8 configuration, dump in the index 6 file's padding at 0xA00), its game RAM port on the download side of channel 3, its pause term and the pause crossing for cdc.sdc; build checks that stop a GNET_HISCORE build without GNET_CPU50, GNET_LEAN, GNET_SHELL and GNET_ZN2, and a GNET_CARD_JOURNAL build without GNET_ZN2 | Issue #9 (game settings on the PC card were lost, docs/i9_nvram.md); high score save (docs/hiscore.md) |
 | rtl/psx_top.vhd | +37 / -2 | Generic CARD_JOURNAL (default 0): zn2_board's card write events (zn_cj_tog, zn_cj_hunk) out, and a line read client on zn2_cardmem (zn_cj_rd_*) for the journal; tied off when the ZN-2 layer is not built | Issue #9 |
 | rtl/psx_mister.vhd | +17 / -2 | Passes CARD_JOURNAL and the zn_cj_* ports through | as psx_top |
+
+### XII Stag texture fix (beta 1)
+
+Line counts are code and comment changes from 167276d to 766ad60
+(branches gpu-blend and gpu-blend-ch13, merged into beta-cand). Every new
+generic defaults to 0, the previous logic; GNET_Z1FULLR sets
+GNET_POLY_CLIP_X=1 and GNET_TEX_CACHE_BIG=2 (docs/gpu_blend_timing.md).
+
+| File | Lines added / removed | What changed | Why |
+|---|---|---|---|
+| rtl/gpu_poly.vhd | +41 / -5 | POLY_CLIP_X: polygon spans clipped to the drawing area, so pixels outside it take no clk2x step; interpolants start at the clipped start | The PS1 bandwidth log (ps1-tests) gives 0.758 and 0.515 of a full quad's time for a quad 1/4 and 1/2 off screen; the core gave 1.000 (docs/gpu_blend_timing.md 5) |
+| rtl/gpu_pixelpipeline.vhd | +188 / -30 | TEX_CACHE_BIG (1 = 8 KB index for every page, 2 = 8-bit and 15-bit pages only, tag valid by epoch) and TEX_SPX_COST4/8/15 (bench only, unused by the release) | XII Stag intro flash: the prefetch replaced lines the next pixels needed; the larger index makes up for DDR3 latency and is not a model of the board's cache |
+| rtl/gpu.vhd, rtl/psx_top.vhd, rtl/psx_mister.vhd, PSX.sv | +69 / -4 | the new generics passed down from macros | as above |
+| GNET_Z1FULLR.qsf | +6 / -0 | GNET_POLY_CLIP_X=1, GNET_TEX_CACHE_BIG=2 | beta 1 settings |
 
 Own files changed or added: rtl/gnet/gnet_card_journal.sv and
 rtl/gnet/gnet_hiscore.sv (new); rtl/gnet/zn2_board.vhd reports each card

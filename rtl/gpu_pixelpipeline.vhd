@@ -9,6 +9,10 @@
 -- (default 0 = upstream): texture cache fills of 4 qwords and further rows
 -- and a calibrated wait per fill, for the DDR3 VRAM latency
 -- (docs/gpu_read_infl.md 3, 9, 10). Signal texReqActive for a bench.
+-- Generics TEX_CACHE_BIG and TEX_SPX_COST4/8/15 (default 0 = upstream): an 8 KB
+-- texture cache (4 x the index rows, tag valid by epoch) and a wait per
+-- miss of a psx-spx 2 KB shadow cache (docs/gpu_blend_timing.md); signal
+-- spxStall for a bench.
 -- G-NET commits: c71a991 (2026-10-04) 2 MB VRAM behind VRAM_Y_BITS;
 -- 864ae50 (2026-10-06) texture cache group and row fills; 771b9fe
 -- (2026-10-15) TEX_MISS_DELAY.
@@ -40,7 +44,22 @@ entity gpu_pixelpipeline is
       -- G-NET: (docs/gpu_read_infl.md 10) clk2x cycles every texture cache
       -- fill waits after its last beat before the pipeline goes on (models the
       -- real GPU's VRAM cost per miss); 0 = upstream timing
-      TEX_MISS_DELAY       : integer := 0
+      TEX_MISS_DELAY       : integer := 0;
+      -- G-NET: (docs/gpu_blend_timing.md) 1 = four times the cache index rows
+      -- (8 KB: 4/8-bit 256 rows of 4 entries, 15-bit 128 rows of 8), so fewer
+      -- fills wait on DDR3; tag valid by an epoch field in the tag RAM.
+      -- 2 = the same for 8-bit and 15-bit pages only; 4-bit pages keep the
+      -- 2 KB index (rows 0 to 63, as TEX_CACHE_BIG = 0).
+      -- 0 = the 2 KB psx-spx geometry (upstream)
+      TEX_CACHE_BIG        : integer := 0;
+      -- G-NET: (docs/gpu_blend_timing.md) clk2x the pipeline waits on every
+      -- miss of a shadow cache with the psx-spx 2 KB geometry (tags only, a
+      -- model of the board's cache), whatever the real cache does, for 4-bit,
+      -- 8-bit and 15-bit texture pages; the real fill, if any, runs in that
+      -- time. All 0 = off (no shadow cache)
+      TEX_SPX_COST4        : integer := 0;
+      TEX_SPX_COST8        : integer := 0;
+      TEX_SPX_COST15       : integer := 0
    );
    port 
    (
@@ -121,6 +140,16 @@ architecture arch of gpu_pixelpipeline is
    
    type t_filterarray_u2  is array(0 to 3) of unsigned(1 downto 0);
    type t_filterarray_u8  is array(0 to 3) of unsigned(7 downto 0);
+   -- G-NET: cache index width (8, or 10 with TEX_CACHE_BIG) and the tag epoch
+   constant BIGC              : integer := 1 - 1 / (TEX_CACHE_BIG + 1);   -- 1 when TEX_CACHE_BIG > 0
+   constant CA                : integer := 8 + 2 * BIGC;
+   -- G-NET: TEX_SPX_COST*: the largest wait, 0 = no shadow cache
+   function imax(a, b : integer) return integer is begin if a > b then return a; else return b; end if; end function;
+   constant TEX_SPX_COST      : integer := imax(TEX_SPX_COST4, imax(TEX_SPX_COST8, TEX_SPX_COST15));
+   constant EPW               : integer := 4;
+   constant TW                : integer := VRAM_Y_BITS + 1 + EPW * BIGC;   -- tag RAM width
+   type t_filterarray_ua  is array(0 to 3) of unsigned(CA - 1 downto 0);
+   type t_filterarray_bt  is array(0 to 3) of std_logic_vector(TW - 1 downto 0);
    type t_filterarray_u9  is array(0 to 3) of unsigned(8 downto 0);
    type t_filterarray_u10 is array(0 to 3) of unsigned(VRAM_Y_BITS downto 0);   -- G-NET: texture cache tag
    type t_filterarray_u20 is array(0 to 3) of unsigned(VRAM_Y_BITS + 10 downto 0);   -- texture address
@@ -134,16 +163,30 @@ architecture arch of gpu_pixelpipeline is
    signal SetMask             : std_logic := '0';
    signal palette8bit         : std_logic := '0';
   
-   signal tag_addr            : t_filterarray_u8;
+   signal tag_addr            : t_filterarray_ua;
    signal tag_data            : t_filterarray_u10;
    signal tag_data_1          : t_filterarray_u10;
       
-   signal tag_address_a       : unsigned(7 downto 0) := (others => '0');
+   signal tag_address_a       : unsigned(CA - 1 downto 0) := (others => '0');
    -- G-NET: texture page Y base bits (1 at VRAM_Y_BITS 9, 2 at 10)
    signal texPageY            : unsigned(VRAM_Y_BITS - 9 downto 0);
-   signal tag_data_a          : std_logic_vector(VRAM_Y_BITS downto 0) := (others => '0');
+   signal tag_data_a          : std_logic_vector(TW - 1 downto 0) := (others => '0');
    signal tag_wren_a          : std_logic := '0';
-   signal tag_q_b             : t_filterarray_b10;
+   signal tag_q_b             : t_filterarray_bt;
+   -- G-NET: TEX_CACHE_BIG / TEX_SPX_COST: tag epoch (valid when equal to the
+   -- entry's field; 0 = never valid), the sweep that rewrites every tag with
+   -- epoch 0 when the counter wraps, and the psx-spx shadow tags
+   signal tagEpoch            : unsigned(EPW - 1 downto 0) := to_unsigned(1, EPW);
+   signal sweepAddr           : unsigned(CA - 1 downto 0) := (others => '0');
+   signal spx_addr            : unsigned(7 downto 0);
+   signal spx_q               : std_logic_vector(VRAM_Y_BITS + EPW downto 0);
+   signal spx_hit             : std_logic;
+   signal spx_wren            : std_logic := '0';
+   signal spx_wraddr          : unsigned(7 downto 0) := (others => '0');
+   signal spx_wrdata          : std_logic_vector(VRAM_Y_BITS + EPW downto 0) := (others => '0');
+   signal spxWait             : integer range 0 to TEX_SPX_COST := 0;
+   -- the pipeline waits for the shadow cache; read only by the bench
+   signal spxStall            : std_logic;
       
    signal tagValid            : std_logic_vector(0 to 255) := (others => '0');
    -- G-NET: a texture (not palette) VRAM request is open. Only the bench
@@ -151,28 +194,39 @@ architecture arch of gpu_pixelpipeline is
    -- G-NET: TEX_FETCH_QW, TEX_FETCH_ROWS and TEX_MISS_DELAY state below
    signal texReqActive        : std_logic;
    signal reqRows             : unsigned(1 downto 0) := "00";
-   signal fillBase            : unsigned(7 downto 0) := (others => '0');
+   signal fillBase            : unsigned(CA - 1 downto 0) := (others => '0');
    signal fillBeat            : unsigned(3 downto 0) := (others => '0');
    signal tagBeat             : unsigned(3 downto 0) := (others => '0');
    signal texMissWait         : integer range 0 to TEX_MISS_DELAY := 0;
 
    -- cache entry of fill beat k: row k / 4 of the fill, entry k mod 4 of the
    -- group; one cache row is 4 entries (4 and 8 bit layout) or 8 (15 bit)
-   function fillAddr(base : unsigned(7 downto 0); k : unsigned(3 downto 0); mode15 : std_logic) return unsigned is
-      variable r : unsigned(7 downto 0);
+   function fillAddr(base : unsigned(CA - 1 downto 0); k : unsigned(3 downto 0); mode15 : std_logic) return unsigned is
+      variable r : unsigned(CA - 1 downto 0);
    begin
       if (mode15 = '1') then
-         r := base + (resize(k(3 downto 2), 8) sll 3) + resize(k(1 downto 0), 8);
+         r := base + (resize(k(3 downto 2), CA) sll 3) + resize(k(1 downto 0), CA);
       else
-         r := base + (resize(k(3 downto 2), 8) sll 2) + resize(k(1 downto 0), 8);
+         r := base + (resize(k(3 downto 2), CA) sll 2) + resize(k(1 downto 0), CA);
+      end if;
+      return r;
+   end function;
+
+   -- G-NET: tag RAM word: the tag, with TEX_CACHE_BIG the epoch above it
+   function tagWord(t : unsigned(VRAM_Y_BITS downto 0); ep : unsigned(EPW - 1 downto 0)) return std_logic_vector is
+      variable r : std_logic_vector(TW - 1 downto 0);
+   begin
+      r(VRAM_Y_BITS downto 0) := std_logic_vector(t);
+      if (BIGC = 1) then
+         r(TW - 1 downto TW - EPW) := std_logic_vector(ep);
       end if;
       return r;
    end function;
       
-   signal cache_address_a     : unsigned(7 downto 0) := (others => '0');
+   signal cache_address_a     : unsigned(CA - 1 downto 0) := (others => '0');
    signal cache_wren_a        : std_logic := '0';
-   signal cache_address_b     : t_filterarray_u8;
-   signal tag_addr_1          : t_filterarray_u8;
+   signal cache_address_b     : t_filterarray_ua;
+   signal tag_addr_1          : t_filterarray_ua;
    signal cache_q_b           : t_filterarray_b64;
    signal cachehit            : std_logic_vector(0 to 3);
    signal cacherequest        : std_logic_vector(0 to 3) := (others => '0');
@@ -200,7 +254,8 @@ architecture arch of gpu_pixelpipeline is
       REQUESTTEXTURE,
       WAITTEXTURE,
       REQUESTPALETTE,
-      WAITPALETTE
+      WAITPALETTE,
+      CACHESWEEP     -- G-NET: TEX_CACHE_BIG / TEX_SPX_COST epoch wrap
    );
    signal state : tState := IDLE;
    
@@ -377,7 +432,9 @@ architecture arch of gpu_pixelpipeline is
   
 begin 
 
-   pipeline_stall <= '1' when (pixelStall = '1' or state /= IDLE or slowdown = '1') else '0';
+   -- G-NET: or the TEX_SPX_COST wait
+   pipeline_stall <= '1' when (pixelStall = '1' or state /= IDLE or slowdown = '1' or spxStall = '1') else '0';
+   spxStall       <= '1' when (TEX_SPX_COST > 0 and spxWait > 0) else '0';
 
    requestVRAMEnable <= '1'         when (requestVRAMIdle = '1' and (state = REQUESTTEXTURE or (state = REQUESTPALETTE and fifoOut_idle = '1'))) else '0';
    -- G-NET: TEX_FETCH_ROWS
@@ -411,8 +468,8 @@ begin
       itagram : entity mem.RamMLAB
       GENERIC MAP 
       (
-         width                               => VRAM_Y_BITS + 1,
-         widthad                             => 8
+         width                               => TW,
+         widthad                             => CA
       )
       PORT MAP (
          inclock    => clk2x,
@@ -424,8 +481,22 @@ begin
       );
       
       -- 64x64 pixel for 4bit mode, 32*64 for 8bit mode, 32*32 for 15 bit mode
-      tag_addr(i) <= stage0_textaddr(i)(16 downto 11) & stage0_textaddr(i)(4 downto 3) when drawMode(8) = '0' else 
-                  stage0_textaddr(i)(15 downto 11) & stage0_textaddr(i)(5 downto 3);
+      gtagsmall : if TEX_CACHE_BIG = 0 generate
+         tag_addr(i) <= stage0_textaddr(i)(16 downto 11) & stage0_textaddr(i)(4 downto 3) when drawMode(8) = '0' else 
+                     stage0_textaddr(i)(15 downto 11) & stage0_textaddr(i)(5 downto 3);
+      end generate;
+      -- G-NET: TEX_CACHE_BIG: two more texture row bits in the index (v bits 7:6
+      -- for 4/8-bit, 6:5 for 15-bit); the tag keeps them (unchanged expression)
+      gtagbig : if TEX_CACHE_BIG = 1 generate
+         tag_addr(i) <= stage0_textaddr(i)(18 downto 11) & stage0_textaddr(i)(4 downto 3) when drawMode(8) = '0' else 
+                     stage0_textaddr(i)(17 downto 11) & stage0_textaddr(i)(5 downto 3);
+      end generate;
+      -- G-NET: TEX_CACHE_BIG = 2: 4-bit pages keep the 2 KB index
+      gtagbig2 : if TEX_CACHE_BIG = 2 generate
+         tag_addr(i) <= "00" & stage0_textaddr(i)(16 downto 11) & stage0_textaddr(i)(4 downto 3) when drawMode(8 downto 7) = "00" else
+                     stage0_textaddr(i)(18 downto 11) & stage0_textaddr(i)(4 downto 3) when drawMode(8) = '0' else
+                     stage0_textaddr(i)(17 downto 11) & stage0_textaddr(i)(5 downto 3);
+      end generate;
       
       
       tag_data(i) <= drawMode(8) & stage0_textaddr(i)(VRAM_Y_BITS + 10 downto 17) & stage0_textaddr(i)(10 downto 5) when drawMode(8) = '0' else
@@ -439,7 +510,7 @@ begin
                                           (drawMode(3 downto 0) & "000000") + stage0_u_array(i);
       
       icache: entity work.dpram
-      generic map ( addr_width => 8, data_width => 64)
+      generic map ( addr_width => CA, data_width => 64)
       port map
       (
          clock_a     => clk2x,
@@ -456,7 +527,14 @@ begin
       
       cache_address_b(i) <= tag_addr_1(i) when (pipeline_stall = '1') else tag_addr(i);
    
-      cachehit(i)        <= '1' when (unsigned(tag_q_b(i)) = tag_data(i) and tagValid(to_integer(tag_addr(i))) = '1') else '0';
+      gvalidsmall : if BIGC = 0 generate
+         cachehit(i)     <= '1' when (unsigned(tag_q_b(i)) = tag_data(i) and tagValid(to_integer(tag_addr(i))) = '1') else '0';
+      end generate;
+      -- G-NET: TEX_CACHE_BIG > 0: valid = the entry's epoch field equals tagEpoch
+      gvalidbig : if BIGC = 1 generate
+         cachehit(i)     <= '1' when (unsigned(tag_q_b(i)(VRAM_Y_BITS downto 0)) = tag_data(i) and
+                                      unsigned(tag_q_b(i)(TW - 1 downto VRAM_Y_BITS + 1)) = tagEpoch) else '0';
+      end generate;
    
       stage1_u_mux(i)    <= stage1_u(i)(3 downto 2) when drawMode(8 downto 7) = "00" else
                             stage1_u(i)(2 downto 1) when drawMode(8 downto 7) = "01" else
@@ -507,6 +585,35 @@ begin
           
    end generate;
    
+   -- G-NET: TEX_SPX_COST: shadow tags of the psx-spx 2 KB cache (index as
+   -- the TEX_CACHE_BIG = 0 tag_addr, same tag, epoch above it); only the
+   -- unfiltered tap 0 is modelled
+   gspx : if TEX_SPX_COST > 0 generate
+      ispxram : entity mem.RamMLAB
+      GENERIC MAP
+      (
+         width                               => VRAM_Y_BITS + 1 + EPW,
+         widthad                             => 8
+      )
+      PORT MAP (
+         inclock    => clk2x,
+         wren       => spx_wren,
+         data       => spx_wrdata,
+         wraddress  => std_logic_vector(spx_wraddr),
+         rdaddress  => std_logic_vector(spx_addr),
+         q          => spx_q
+      );
+      spx_addr <= stage0_textaddr(0)(16 downto 11) & stage0_textaddr(0)(4 downto 3) when drawMode(8) = '0' else
+                  stage0_textaddr(0)(15 downto 11) & stage0_textaddr(0)(5 downto 3);
+      spx_hit  <= '1' when (unsigned(spx_q(VRAM_Y_BITS downto 0)) = tag_data(0) and
+                            unsigned(spx_q(VRAM_Y_BITS + EPW downto VRAM_Y_BITS + 1)) = tagEpoch) else '0';
+   end generate;
+   gnospx : if TEX_SPX_COST = 0 generate
+      spx_addr <= (others => '0');
+      spx_q    <= (others => '0');
+      spx_hit  <= '1';
+   end generate;
+
    -- G-NET: no cache write during the TEX_MISS_DELAY wait; texReqActive for the bench
    cache_wren_a      <= '1' when (vram_DOUT_READY = '1' and state = WAITTEXTURE and texMissWait = 0) else '0';
    texReqActive      <= '1' when (state = REQUESTTEXTURE or state = WAITTEXTURE or state = REQUESTMORETEXTURE) else '0';
@@ -549,6 +656,11 @@ begin
       if rising_edge(clk2x) then
          
          tag_wren_a    <= '0';
+         -- G-NET: TEX_SPX_COST shadow tag write and wait
+         spx_wren      <= '0';
+         if (spxWait > 0) then
+            spxWait <= spxWait - 1;
+         end if;
          
          -- must be done here, so it also is effected when ce is off = paused
          if (state = WAITTEXTURE) then
@@ -578,10 +690,10 @@ begin
                   -- (tag_wren_a registered) at tag_address_a, which follows.
                   -- Beats 4 to 7 (second row) go one cache row further: 4
                   -- entries (4 and 8 bit layout) or 8 (15 bit layout).
-                  tagValid(to_integer(cache_address_a)) <= '1';
+                  if (BIGC = 0) then tagValid(to_integer(cache_address_a)) <= '1'; end if;
                   fillBeat <= fillBeat + 1;
                   cache_address_a <= fillAddr(fillBase, fillBeat + 1, drawMode(8));
-               else
+               elsif (BIGC = 0) then
                   tagValid(to_integer(tag_address_a)) <= '1';
                end if;
             end if;
@@ -643,6 +755,31 @@ begin
                   if (clearCacheBuffer = '1' and pipeline_busy = '0') then
                      clearCacheBuffer <= '0';
                      tagValid         <= (others => '0');
+                     -- G-NET: TEX_CACHE_BIG / TEX_SPX_COST: next epoch; at the
+                     -- last one every tag is rewritten with epoch 0 first
+                     if (BIGC = 1 or TEX_SPX_COST > 0) then
+                        if (tagEpoch = 2**EPW - 1) then
+                           state     <= CACHESWEEP;
+                           sweepAddr <= (others => '0');
+                        else
+                           tagEpoch  <= tagEpoch + 1;
+                        end if;
+                     end if;
+                  end if;
+                  -- G-NET: TEX_SPX_COST*: a miss of the psx-spx shadow cache waits
+                  -- TEX_SPX_COST4/8/15 clk2x by the page's colour depth (the
+                  -- stall starts next cycle, as a real miss's does) and writes
+                  -- the shadow tag
+                  if (TEX_SPX_COST > 0 and stage0_valid = '1' and stage0_texture = '1' and spx_hit = '0' and
+                      spxWait = 0 and spx_wren = '0' and clearCacheBuffer = '0') then
+                     case (drawMode(8 downto 7)) is
+                        when "00"   => spxWait <= TEX_SPX_COST4;
+                        when "01"   => spxWait <= TEX_SPX_COST8;
+                        when others => spxWait <= TEX_SPX_COST15;
+                     end case;
+                     spx_wren   <= '1';
+                     spx_wraddr <= spx_addr;
+                     spx_wrdata <= std_logic_vector(tagEpoch) & std_logic_vector(tag_data(0));
                   end if;
                   if (textPalReq = '1' and pipeline_busy = '0') then
                      textPalReq     <= '0';
@@ -663,13 +800,17 @@ begin
                      else
                         reqVRAMSize <= to_unsigned(16, 11);
                      end if;
-                  elsif (stage0_valid = '1' and stage0_texture = '1' and stage0_filter = '1' and cachehit /= "1111") then
+                  -- G-NET: TEX_SPX_COST*: no real miss starts while the shadow
+                  -- wait stalls the pipeline (the pixel ahead in stage 1 would
+                  -- read an entry a group fill rewrites); the miss of the pixel
+                  -- that started the wait starts with it, in the same cycle
+                  elsif (stage0_valid = '1' and stage0_texture = '1' and stage0_filter = '1' and cachehit /= "1111" and spxStall = '0') then
                      state        <= REQUESTMORETEXTURE;
                      cacherequest <= not cachehit;
-                  elsif (stage0_valid = '1' and stage0_texture = '1' and cachehit(0) = '0') then
+                  elsif (stage0_valid = '1' and stage0_texture = '1' and cachehit(0) = '0' and spxStall = '0') then
                      state           <= REQUESTTEXTURE;
                      cacherequest    <= (others => '0');
-                     tag_data_a      <= std_logic_vector(tag_data(0));
+                     tag_data_a      <= tagWord(tag_data(0), tagEpoch);
                      tag_address_a   <= tag_addr(0);
                      cache_address_a <= tag_addr(0);
                      
@@ -680,9 +821,9 @@ begin
                      if (TEX_FETCH_QW = 4) then
                         -- G-NET: TEX_FETCH_QW = 4, the aligned group of four qwords (16 halfwords):
                         -- cache index low bits = texture address bits 4:3
-                        tag_address_a   <= tag_addr(0)(7 downto 2) & "00";
-                        cache_address_a <= tag_addr(0)(7 downto 2) & "00";
-                        fillBase        <= tag_addr(0)(7 downto 2) & "00";
+                        tag_address_a   <= tag_addr(0)(CA - 1 downto 2) & "00";
+                        cache_address_a <= tag_addr(0)(CA - 1 downto 2) & "00";
+                        fillBase        <= tag_addr(0)(CA - 1 downto 2) & "00";
                         fillBeat        <= (others => '0');
                         tagBeat         <= (others => '0');
                         reqVRAMXPos     <= stage0_textaddr(0)(10 downto 5) & "0000";
@@ -707,7 +848,7 @@ begin
                      end if;
                   end loop;
                      
-                  tag_data_a      <= std_logic_vector(tag_data_1(selectIndex));
+                  tag_data_a      <= tagWord(tag_data_1(selectIndex), tagEpoch);
                   tag_address_a   <= tag_addr_1(selectIndex);
                   cache_address_a <= tag_addr_1(selectIndex);
                   
@@ -735,6 +876,23 @@ begin
                   end if;
  
                when WAITPALETTE => null; -- handled outside due to ce
+
+               -- G-NET: epoch wrap: every tag (real with TEX_CACHE_BIG, shadow
+               -- with TEX_SPX_COST) gets epoch 0, then counting starts at 1
+               when CACHESWEEP =>
+                  if (BIGC = 1) then
+                     tag_wren_a    <= '1';
+                     tag_address_a <= sweepAddr;
+                     tag_data_a    <= (others => '0');
+                  end if;
+                  spx_wren   <= '1';
+                  spx_wraddr <= sweepAddr(7 downto 0);
+                  spx_wrdata <= (others => '0');
+                  sweepAddr  <= sweepAddr + 1;
+                  if (sweepAddr = 2**CA - 1) then
+                     tagEpoch <= to_unsigned(1, EPW);
+                     state    <= IDLE;
+                  end if;
                
             end case;
             

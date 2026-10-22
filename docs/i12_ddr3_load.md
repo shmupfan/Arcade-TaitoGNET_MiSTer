@@ -65,7 +65,7 @@ they were on this branch.
    header the reset sequencer reads at core byte 0xE000000 (dword address
    58720256, psx_top.vhd:2447, savestates.vhd:558).
 
-Hardware measurement (Lee, 2026-10-16, Ray Crisis, alpha 3): about 35 s:
+My hardware measurement (2026-10-16, Ray Crisis, alpha 3): about 35 s:
 RBF 0.3 s, zip reads about 4 s, flash 10.5 MB (10,485,760 bytes) in 6.5 s,
 card 41 MB (40,960,000 bytes) in 23 s, so 1.6 to 1.8 MB/s through the word
 handshake.
@@ -105,7 +105,7 @@ handshake.
   before its next ROM.
 
 Not verified: the memcpy rate of Main's shmem_put into the uncached
-/dev/mem mapping (section 8 uses a range; Lee's hardware test gives it).
+/dev/mem mapping (section 8 uses a range; my hardware test gives it).
 
 ## 4. Design
 
@@ -319,7 +319,7 @@ same picture 6.8 s after release. PASS.
 
 ## 8. Expected load time
 
-| stage | today (Lee, measured) | `--ddr3 card`, any RBF | `--ddr3 all`, GNET_Z1FULLD |
+| stage | today (my measurement) | `--ddr3 card`, any RBF | `--ddr3 all`, GNET_Z1FULLD |
 |---|---|---|---|
 | RBF | 0.3 s | 0.3 s | 0.3 s |
 | zip reads and assembly in RAM (Main) | about 4 s | about 4 s | about 4 s |
@@ -336,7 +336,7 @@ same picture 6.8 s after release. PASS.
 - t3 and t5 are Main's memcpy of 10.5 MB and 41 MB into the uncached
   /dev/mem mapping. Not measured and not sourced. At 100 MB/s they would be
   0.10 s and 0.41 s (totals about 7.1 s and 12.4 s); at 30 MB/s 0.35 s and
-  1.37 s (about 8.3 s and 13.4 s). Lee's hardware test (section 11) gives
+  1.37 s (about 8.3 s and 13.4 s). My hardware test (section 11) gives
   the real figure.
 - The zip reads (about 4 s) become the largest part; they are Main's and
   unchanged by this work.
@@ -383,7 +383,7 @@ same picture 6.8 s after release. PASS.
   GNET_Z1FULLR; if timing misses, it is a seed question first (the macro
   adds a small block). The pc_build HDMI counter check applies.
 
-## 11. Hardware test steps for Lee
+## 11. Hardware test steps
 
 Use test names, as the deploy rules say (for example
 `_Arcade/cores/TaitoGNET_i12_<date>.rbf` and MRAs with `<rbf>TaitoGNET_i12</rbf>`),
@@ -414,11 +414,11 @@ and keep the alpha 3 RBF in place.
 
 ## 12. Open questions
 
-1. Main's memcpy rate into DDR3 (t3, t5): only Lee's test can give it.
+1. Main's memcpy rate into DDR3 (t3, t5): only my hardware test can give it.
 2. GNET_Z1FULLD has not been fitted. The addition is small, but alpha 3
    closed timing on 1 seed of several; a seed sweep may be needed.
 3. Rollout: `--ddr3 card` MRAs need no RBF change and save about 23 s;
-   they could ship before the new RBF. Lee to decide.
+   they could ship before the new RBF. Open decision.
 4. The copier spends 1.05 s on 2.6 M single 32-bit channel 3 writes, each a
    full clk_1x to clk_cpu handshake. A copier on clk_cpu writing channel 3
    directly could be several times faster; not worth the risk unless the
@@ -573,12 +573,12 @@ proven on hardware with every RBF.
 
 taitognetd13 (a145fe7 seed 4), "Ray Crisis (V2.03O) (d13)", full DDR3
 load: ERROR C094 as before; the debug overlay's DR row read **053E C8A7**
-(Lee's photo, gnet-mister hw_tests/20261021_morning/d13_overlay_photo.jpg):
+(my photo of the screen, not in the repository):
 
 - 0: no FIFO overflow;
 - 5: done, the DDR3 re-read sum differs from the copy sum, the SDRAM
   read-back agrees with the copy;
-- 3EC8A7: the copy sum, against 3ECBA9 for the file (if Lee's zip is the
+- 3EC8A7: the copy sum, against 3ECBA9 for the file (if my zip is the
   one flash_sum.py was run on).
 
 So what the copier wrote to SDRAM is what it read, but what it read is not
@@ -622,6 +622,6 @@ in every slow corner; worst HDMI -40C +0.018), "Ray Crisis (V2.03O) (d14)",
 full DDR3 load: no C094, the game runs (demo on screen about 140 s after the
 core reset). DR row **013E CBA9**: no overflow, no repeat, checks clean,
 copy sum equal to the file. The other rows: XP to XM all 0 (no watchdog
-expiry). Photo: gnet-mister hw_tests/20261021_morning/d14_overlay_photo.jpg.
+expiry). From my photo of the screen (not in the repository).
 The Quartus map report of d13 had warned 276027 ("read-during-write behavior
 of a dual-clock RAM is undefined") on gnet_ddr3_flcopy buffer_rtl_0.

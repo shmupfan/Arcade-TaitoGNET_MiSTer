@@ -16,7 +16,7 @@
 -- Evidence: keeps the 33.8688 MHz rate of PSX_MiSTer's timer.vhd root
 --           counters (cd17b5a) and of zn_sio0's bit timer on a 50.000 MHz
 --           clock; 10584 / 15625 = 33.8688 / 50.000 exactly. Decision 1 of
---           "Decisions recorded (Lee, 2026-10-05)" in
+--           "Decisions recorded (2026-10-05)" in
 --           docs/r1_cpu_domain_design.md.
 -- Design: docs/r1_cpu_domain_design.md, P3.
 --         Bench: sim/cdc/tb_tick_accum.vhd

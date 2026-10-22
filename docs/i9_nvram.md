@@ -383,7 +383,7 @@ so it stresses the stall more than Main does).
 - Test MRAs: copies of the release MRAs with `size="268288"` on the nvram
   line and `<rbf>` pointed at the test RBF name (section 9, part B).
 
-## 10. Hardware test procedure for Lee
+## 10. Hardware test procedure
 
 Part A works on the alpha 3 or alpha 4 RBF, no new build. It checks the
 EEPROM save that exists today and confirms the Psyvariar finding.

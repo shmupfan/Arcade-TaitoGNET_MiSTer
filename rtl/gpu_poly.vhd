@@ -23,7 +23,13 @@ use work.pGPU.all;
 entity gpu_poly is
    generic
    (
-      VRAM_Y_BITS          : integer := 9   -- G-NET: 9 = PS1 (1 MB VRAM, upstream), 10 = ZN-2 CXD8654Q (2 MB)
+      VRAM_Y_BITS          : integer := 9;  -- G-NET: 9 = PS1 (1 MB VRAM, upstream), 10 = ZN-2 CXD8654Q (2 MB)
+      -- G-NET: (docs/gpu_blend_timing.md) 1 = each span starts at the drawing
+      -- area's left edge and stops after its right edge (upstream clips only
+      -- at x = 0 and steps every pixel of the overhang, one clk2x each, without
+      -- drawing it); the destination line read covers only the clipped span.
+      -- 0 = upstream
+      POLY_CLIP_X          : integer := 0
    );
    port 
    (
@@ -387,7 +393,10 @@ begin
       variable calc3    : signed(44 downto 0);
       variable calc4    : signed(44 downto 0);
       variable stop     : std_logic;
-      variable skip     : std_logic; 
+      variable skip     : std_logic;
+      -- G-NET: POLY_CLIP_X span start and end (exclusive) inside the drawing area
+      variable xClipS   : signed(11 downto 0);
+      variable xClipE   : signed(11 downto 0); 
       variable uFilter  : unsigned(10 downto 0);
       variable vFilter  : unsigned(10 downto 0);
    begin
@@ -963,12 +972,25 @@ begin
                   xEnd   <= xEnd   - xStepEnd;
                   
                when PREPARELINE =>
+                  -- G-NET: POLY_CLIP_X: the span clipped to the drawing area
+                  xClipS := xStart(43 downto 32);
+                  if (xClipS < signed(resize(drawingAreaLeft, 12))) then
+                     xClipS := signed(resize(drawingAreaLeft, 12));
+                  end if;
+                  xClipE := xEnd(43 downto 32);
+                  if (xClipE > signed(resize(drawingAreaRight, 12)) + 1) then
+                     xClipE := signed(resize(drawingAreaRight, 12)) + 1;
+                  end if;
+                  if (POLY_CLIP_X = 1) then
+                     xPos  <= xClipS;
+                     xStop <= xClipE;
+                     xSize <= unsigned(xClipE(10 downto 0)) - unsigned(xClipS(10 downto 0)) + 1;
+                  else
                   if (xStart(43 downto 32) < 0) then
                      xPos  <= (others => '0');
                   else
                      xPos  <= xStart(43 downto 32);
                   end if;
-                  yPos  <= to_signed(yCoord, 11);
                   xStop <= xEnd(43 downto 32);
                   if (xStart(43 downto 32) < 0 and xEnd(43 downto 32) > 1023) then
                      xSize <= to_unsigned(1024, 11);
@@ -977,6 +999,8 @@ begin
                   else 
                      xSize <= ('0' & (unsigned(xEnd(41 downto 32)) - unsigned(xStart(41 downto 32)))) + 1;
                   end if;
+                  end if;
+                  yPos  <= to_signed(yCoord, 11);
                
                   if (rec_transparency = '1' or DrawPixelsMask = '1') then
                      if (firstPixel = '1') then
@@ -993,7 +1017,11 @@ begin
                   if (yCoord >= 0) then
 -- synthesis translate_on
                   if (rec_shading = '1') then
-                     if (xStart(43 downto 32) < 0) then
+                     if (POLY_CLIP_X = 1) then   -- G-NET: values at the clipped start
+                        work_R <= base_R + resize(dxR * to_integer(xClipS), 32) + resize(dyR * yCoord, 32);
+                        work_G <= base_G + resize(dxG * to_integer(xClipS), 32) + resize(dyG * yCoord, 32);
+                        work_B <= base_B + resize(dxB * to_integer(xClipS), 32) + resize(dyB * yCoord, 32);
+                     elsif (xStart(43 downto 32) < 0) then
                         work_R <= base_R + resize(dyR * yCoord, 32);
                         work_G <= base_G + resize(dyG * yCoord, 32);
                         work_B <= base_B + resize(dyB * yCoord, 32);
@@ -1009,7 +1037,10 @@ begin
                   end if;
                   
                   if (rec_texture = '1') then
-                     if (xStart(43 downto 32) < 0) then
+                     if (POLY_CLIP_X = 1) then   -- G-NET: values at the clipped start
+                        work_U <= base_U + resize(dxU * to_integer(xClipS), 32) + resize(dyU * yCoord, 32);
+                        work_V <= base_V + resize(dxV * to_integer(xClipS), 32) + resize(dyV * yCoord, 32);
+                     elsif (xStart(43 downto 32) < 0) then
                         work_U <= base_U + resize(dyU * yCoord, 32);
                         work_V <= base_V + resize(dyV * yCoord, 32);
                      else
@@ -1037,6 +1068,11 @@ begin
                   end if;                  
                   
                   if (xEnd(43 downto 32) <= 0) then
+                     skip := '1';
+                  end if;
+                  
+                  -- G-NET: POLY_CLIP_X: nothing of the span inside the drawing area
+                  if (POLY_CLIP_X = 1 and xClipE <= xClipS) then
                      skip := '1';
                   end if;
                   
