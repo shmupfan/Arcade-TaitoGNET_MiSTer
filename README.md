@@ -74,6 +74,19 @@ CompactFlash sets have no first boot MRA ([docs/INSTALL.md](docs/INSTALL.md#5-pl
 card types and the game configuration byte of each set are in
 [releases/README.md](releases/README.md).
 
+### Screenshots
+
+One per game, taken on my MiSTer with this core. Go By RC and RC De Go boot to their calibration screen, so they have none.
+
+| | | | |
+|---|---|---|---|
+| <img src="docs/images/chaoshea.png" height="150" alt="Chaos Heat"><br>Chaos Heat | <img src="docs/images/flipmaze.png" height="150" alt="Flip Maze"><br>Flip Maze | <img src="docs/images/kollon.png" height="150" alt="Kollon"><br>Kollon | <img src="docs/images/mahjngoh.png" height="150" alt="Mahjong Oh"><br>Mahjong Oh |
+| <img src="docs/images/nightrai.png" height="150" alt="Night Raid"><br>Night Raid | <img src="docs/images/otenamih.png" height="150" alt="Otenami Haiken"><br>Otenami Haiken | <img src="docs/images/otenamhf.png" height="150" alt="Otenami Haiken Final"><br>Otenami Haiken Final | <img src="docs/images/otenki.png" height="150" alt="Otenki Kororin"><br>Otenki Kororin |
+| <img src="docs/images/psyvaria.png" height="150" alt="Psyvariar -Medium Unit-"><br>Psyvariar -Medium Unit- | <img src="docs/images/psyvarrv.png" height="150" alt="Psyvariar -Revision-"><br>Psyvariar -Revision- | <img src="docs/images/raycris.png" height="150" alt="Ray Crisis"><br>Ray Crisis | <img src="docs/images/shangtou.png" height="150" alt="Shanghai Sangokuhai Tougi"><br>Shanghai Sangokuhai Tougi |
+| <img src="docs/images/shanghss.png" height="150" alt="Shanghai Shoryu Sairin"><br>Shanghai Shoryu Sairin | <img src="docs/images/shikigam.png" height="150" alt="Shikigami no Shiro"><br>Shikigami no Shiro | <img src="docs/images/soutenry.png" height="150" alt="Soutenryu"><br>Soutenryu | <img src="docs/images/sianniv.png" height="150" alt="Space Invaders Anniversary"><br>Space Invaders Anniversary |
+| <img src="docs/images/spuzbobl.png" height="150" alt="Super Puzzle Bobble"><br>Super Puzzle Bobble | <img src="docs/images/usagi.png" height="150" alt="Usagi"><br>Usagi | <img src="docs/images/xiistag.png" height="150" alt="XII Stag"><br>XII Stag | <img src="docs/images/zokuotena.png" height="150" alt="Zoku Otenamihaiken"><br>Zoku Otenamihaiken |
+| <img src="docs/images/zooo.png" height="150" alt="Zooo"><br>Zooo |
+
 ## Not supported yet
 
 - **Mawasunda.** It runs on the ZN-1 G-NET board (`coh1002t`), not the
