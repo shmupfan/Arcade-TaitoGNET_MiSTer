@@ -52,7 +52,10 @@ Loads (docs/zn2_layer_design.md 13.5, docs/m4_shell.md 3):
            trigger (gobyrc, rcdego); the mahjong keys are on the keyboard
            (MAME defaults) and on pad 1 (issue #2: the face buttons, Y, L
            and R shifts); bit 4 = the Dash button (Chaos Heat, issue #7,
-           rtl/gnet/gnet_dash.sv), listed after Button 3 in the MRA
+           rtl/gnet/gnet_dash.sv), listed after Button 3 in the MRA;
+           bit 5 = the set draws 224 of its 240 lines (CROP224 below,
+           issue #13): the core crops it (OSD Crop 224 lines, On by
+           default, shown only for these sets)
   index 254 switches, byte 0: bits 3-0 DIP S551 (active low, all Off, MAME
            DSW 0Fh), bit 4 JP1 (BIOS Flash). JP1 is 0 (open) for every set
            and not offered in the OSD: with JP1 closed the BIOS runs the
@@ -132,6 +135,13 @@ RELEASE = {
 # Button 3 in the MRA's button list (J1 bit 7; the core's gnet_dash_remap
 # takes it out and moves Start and the rest back), default X.
 DASH = {"chaoshea", "chaosheaj"}
+
+# Sets that draw 224 of their 240 lines (issue #13): configuration bit 5, so
+# the core crops lines 0 to 7 and 232 to 239 (OSD Crop 224 lines, On by
+# default, shown only for these sets). Shikigami no Shiro fills them with a flat colour and its own
+# test-mode crosshatch is 224 lines (MAME 0.288, the core's docs/crop224.md).
+# Chaos Heat has 8-line black bars in play but a 240-line crosshatch: not here.
+CROP224 = {"shikigam", "shikigama"}
 
 # Sets that are not their game's main MRA, and the main set they go under.
 # Every MAME clone (the converter's parent column) is here; MAME lists the
@@ -268,7 +278,7 @@ def title_of(s):
 
 def config_byte(s):
     _, _, _, vert, nozoom, ctl, _ = RELEASE[s]
-    return int(vert) | (int(nozoom) << 1) | (ctl << 2) | (int(s in DASH) << 4)
+    return int(vert) | (int(nozoom) << 1) | (ctl << 2) | (int(s in DASH) << 4) | (int(s in CROP224) << 5)
 
 
 def main():
