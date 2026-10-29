@@ -118,10 +118,13 @@ after loading.
 
 Two players, an 8-way stick and three buttons each, plus Start, Coin,
 Service, Test and Pause. MAME gives no button names for these games and I
-have not found the game manuals, so most games show Button 1 to 3. Two
+have not found the game manuals, so most games show Button 1 to 3. Three
 have names from other sources: XII Stag's button 1 is Shot (the game's
-how-to screen), and Night Raid's buttons are Shoot, Wave and Bomb (the
-game's arcade-history entry).
+how-to screen), Night Raid's buttons are Shoot, Wave and Bomb (the game's
+arcade-history entry), and Zooo's are Swap and Binoculars (Success's game
+page and Amusement Journal, May 2004: the game uses two buttons, button 1
+is the action button and button 2 the Binoculars hint, four uses; Button 3
+is not used).
 
 | Function | Joypad (default) | Keyboard, player 1 | Keyboard, player 2 |
 |---|---|---|---|
@@ -138,7 +141,11 @@ MiSTer's (SNES layout): B is the bottom face button, A the right, Y the
 left and X the top. A mapping you defined for an earlier version is kept
 and overrides these: define the buttons again in the OSD, or delete the
 game's file in `config/inputs/` on the SD card (for example
-`raycris_input_<vid>_<pid>_v3.map`).
+`raycris_input_<vid>_<pid>_v3.map`). Alternative mappings are kept there as
+`<set>_advanced_input_<vid>_<pid>_v1.map`; one that uses Down or Start can
+stop the OSD shortcut from opening, so delete it too if Down + Start fails
+in one game. Both files are named after the MRA's `<setname>`, so they
+affect that game only.
 
 Chaos Heat has a Dash button (X on the pad; Left Shift for player 1 and W
 for player 2 on the keyboard). It is a shortcut I added, not a cabinet

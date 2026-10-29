@@ -480,7 +480,13 @@ Button names (shell-test MRAs in gnet_games/test_z1, gitignored): MAME
 gives none and the game manuals are open (docs/board_evidence.md
 D3). Named where a source exists: XII Stag button 1 "Shot" (its
 how-to screen, gnet_games_test_matrix.md); Night Raid "Shoot, Wave, Bomb"
-(arcade-history, secondary). The other four keep Button 1 to 3.
+(arcade-history, secondary); Zooo "Swap, Binoculars" (two buttons per
+Amusement Journal, May 2004 and the TOPS control sheet; Success's game page
+names button 1 and the four-use Binoculars hint, so button 2 carries the
+hint). Zooo's Button 3 is not used: it is named "-" so it takes no default
+pad button, and BUTTON_DEFAULTS gives the set its four named defaults (the
+default list counts only named buttons). The other four keep Button 1
+to 3.
 
 ## 10. README
 

@@ -183,11 +183,22 @@ DASH_BUTTONS = ("Button 1,Button 2,Button 3,Dash,Start,Coin,Service,Test,Pause",
 # game manuals are not found (docs/board_evidence.md D3); docs/m4_shell.md 9:
 # XII Stag button 1 "Shot", its how-to screen ("A (shot)",
 # docs/gnet_games_test_matrix.md); Night Raid "Shoot, Wave, Bomb",
-# arcade-history's Night Raid page (secondary). The other sets keep Button 1
-# to 3.
+# arcade-history's Night Raid page (secondary); Zooo "Swap, Binoculars",
+# Success's game page (button 1 acts; the Binoculars hint has four uses) and
+# the two-button count from Amusement Journal, May 2004 and the TOPS control
+# sheet; Button 3 is not used. The other sets keep Button 1 to 3.
 BUTTON_NAMES = {
     "xiistag": "Shot,Button 2,Button 3",
     "nightrai": "Shoot,Wave,Bomb",
+    "zooo": "Swap,Binoculars,-",
+}
+
+# Default pad buttons for sets whose BUTTON_NAMES leaves a button out: a "-"
+# name is skipped in place and Main_MiSTer's joymapping.cpp takes one default
+# per named button, so this list counts only the names (Swap, Binoculars,
+# Start, Coin for Zooo).
+BUTTON_DEFAULTS = {
+    "zooo": "B,A,Start,Select",
 }
 
 FLASH_WARM = """    <rom index="3" zip="gnet_{set}.zip" md5="none"{flash_addr}>
@@ -290,11 +301,19 @@ def main():
             if ctl != 0:
                 sys.exit(f"error: {s}: Dash is only for joystick sets")
             buttons, bdefault = DASH_BUTTONS
+        if s in BUTTON_DEFAULTS and s not in BUTTON_NAMES:
+            sys.exit(f"error: {s}: BUTTON_DEFAULTS is only for sets in BUTTON_NAMES")
         if s in BUTTON_NAMES:
             generic = "Button 1,Button 2,Button 3,"
             if ctl != 0 or s in DASH or not buttons.startswith(generic):
                 sys.exit(f"error: {s}: BUTTON_NAMES is only for joystick sets without Dash")
             buttons = BUTTON_NAMES[s] + "," + buttons[len(generic):]
+            if "-" in buttons.split(",") and s not in BUTTON_DEFAULTS:
+                sys.exit(f"error: {s}: a '-' button needs BUTTON_DEFAULTS")
+            bdefault = BUTTON_DEFAULTS.get(s, bdefault)
+            named = sum(1 for b in buttons.split(",") if b != "-")
+            if len(bdefault.split(",")) > named:
+                sys.exit(f"error: {s}: more default pad buttons than named buttons")
         alt =os.path.join(a.out, "_alternatives", "_" + game_of(s))
         # CompactFlash cards need the v2 sub-BIOS in U30, which the BIOS installs from
         # its EPROM in flash-initialise mode; the core has no EPROM, so only quick start

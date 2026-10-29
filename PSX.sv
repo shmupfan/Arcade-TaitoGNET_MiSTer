@@ -403,7 +403,8 @@ parameter CONF_STR = {
 `endif
 	"R0,Reset;",
 	"J1,Button 1,Button 2,Button 3,Start,Coin,Service,Test,Pause;",
-	"jn,A,B,X,Start,Select,L,R;",
+	// G-NET: B, A, Y, Start, Select, the pad default the release MRAs use (a562abb)
+	"jn,B,A,Y,Start,Select;",
 	"V,v",`BUILD_DATE
 };
 `else
@@ -422,7 +423,8 @@ parameter CONF_STR = {
 	"-;",
 	"R0,Reset;",
 	"J1,Button 1,Button 2,Button 3,Start,Coin,Service,Test;",
-	"jn,A,B,X,Start,Select,L,R;",
+	// G-NET: B, A, Y, Start, Select, the pad default the release MRAs use (a562abb)
+	"jn,B,A,Y,Start,Select;",
 	"V,v",`BUILD_DATE
 };
 `endif
