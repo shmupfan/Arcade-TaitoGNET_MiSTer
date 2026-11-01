@@ -183,11 +183,15 @@ DASH_BUTTONS = ("Button 1,Button 2,Button 3,Dash,Start,Coin,Service,Test,Pause",
 # game manuals are not found (docs/board_evidence.md D3); docs/m4_shell.md 9:
 # XII Stag button 1 "Shot", its how-to screen ("A (shot)",
 # docs/gnet_games_test_matrix.md); Night Raid "Shoot, Wave, Bomb",
-# arcade-history's Night Raid page (secondary). The other sets keep Button 1
+# arcade-history's Night Raid page (secondary); Zooo button 2 "Binoculars"
+# (Success's game page and Amusement Journal name a four-use binoculars
+# button; a MAME 0.288 run, issue 15, shows button 2 enlarges the catchable
+# animals and button 3 has no effect in play). The other sets keep Button 1
 # to 3.
 BUTTON_NAMES = {
     "xiistag": "Shot,Button 2,Button 3",
     "nightrai": "Shoot,Wave,Bomb",
+    "zooo": "Button 1,Binoculars,Unused",
 }
 
 FLASH_WARM = """    <rom index="3" zip="gnet_{set}.zip" md5="none"{flash_addr}>
