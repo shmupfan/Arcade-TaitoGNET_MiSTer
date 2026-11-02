@@ -39,7 +39,7 @@ add `coh3002t.zip` and the converted game zips (steps 2 to 4).
 
 From the [releases](../releases/) folder of this repository:
 
-1. Copy `Arcade-TaitoGNET_20261022.rbf` to `/media/fat/_Arcade/cores/`.
+1. Copy `Arcade-TaitoGNET_20261102.rbf` to `/media/fat/_Arcade/cores/`.
 2. Copy every `.mra` file to `/media/fat/_Arcade/`.
 3. Copy the `_alternatives` folder to `/media/fat/_Arcade/`, keeping the
    folders inside it as they are.

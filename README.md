@@ -409,7 +409,7 @@ and the measurements listed at the end of the guide.
 
 - Synthesis: Quartus 17, project `PSX.qpf`, revision `GNET_Z1FULLR`.
   Releases are built only from a fit with every clock meeting timing.
-  `Arcade-TaitoGNET_20261022.rbf` is the GNET_Z1FULLR build of the RTL in
+  `Arcade-TaitoGNET_20261102.rbf` is the GNET_Z1FULLR build of the RTL in
   this repository (Quartus 17.0.2, every clock met).
 - Simulation: NVC 1.23 and Verilator 5.x benches in `sim/`. The MAME
   reference traces need MAME 0.288 and your own files; the trace scripts
