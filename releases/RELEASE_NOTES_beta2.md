@@ -23,8 +23,13 @@ can settle them.
   board, 20.8 ms for Cellophane, also means two refreshes per frame. It
   comes from the Ray Crisis board timing, not from footage of this game.
   The pictures are the same pixel for pixel, and Ray Crisis's
-  demo stays within 0.3% of beta 1 in the same simulation. TO CONFIRM
-  invader speed on my MiSTer (Cellophane and Upright).
+  demo stays within 0.3% of beta 1 in the same simulation. On my MiSTer
+  (2026-11-02, Cellophane, the same start with no other input on both
+  RBFs, invader march speed from screenshots every 0.5 s) the invaders
+  move 1.4 times as fast as on beta 1: 0.60 of MAME's speed against 0.43.
+  MAME draws in no time, so it is the upper limit, not the board; the
+  board estimate above puts the board at the same two refreshes per drawn
+  frame as beta 2. I have not measured Upright.
 - **Shikigami no Shiro: side bars on a vertical screen and cut-off
   portraits
   ([#13](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/13)).**
