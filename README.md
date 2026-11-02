@@ -14,9 +14,10 @@ Zoom sound board (MN10200, ZSG-2, TMS57002) for this core.
 
 ## Status
 
-**Beta 1**, the first beta: the core is as accurate and as free of bugs
-as I can make it from board footage, the board's documentation and
-simulation. There are MRAs for all 30 MAME 0.288 G-NET sets on Taito
+**Beta 2** (beta 1 plus fixes for issues #13, #14 and #15, notes in
+`releases/RELEASE_NOTES_beta2.md`). Beta means the core is as accurate
+and as free of bugs as I can make it from board footage, the board's
+documentation and simulation. There are MRAs for all 30 MAME 0.288 G-NET sets on Taito
 cards. On my MiSTer I have played 7 of them (2026-10-06 and 2026-10-07,
 on the alpha 1 RBFs 20261006 and 20261007 or test builds just before
 them). On 2026-10-21 all 30 reached their title, attract, demo or
@@ -198,6 +199,12 @@ For vertical games, at the top of the menu:
   arcade monitor adjusted to fill the tube shows it. There is no 216p crop:
   the games use 240 lines, and a 216-line crop would cut part of the
   picture.
+- **Crop 224 lines** (Shikigami no Shiro only): On (the default) or Off.
+  Shikigami no Shiro draws its game and its test mode grid in 224 of the
+  240 lines; On turns the top and bottom 8 lines into blanking, so over
+  HDMI the 224 lines fill the screen. On a CRT those lines are black. Off
+  shows all 240 lines, as MAME does. The item needs this release's
+  Shikigami MRAs ([#13](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/13)).
 - **Scale** (HDMI): Normal, V-Integer, Narrower HV-Integer, Wider
   HV-Integer.
 - **Scandoubler Fx**: None, HQ2x, CRT 25%, CRT 50%, CRT 75%. Any setting
@@ -298,8 +305,15 @@ kept.
   making progress, and in simulation the frame matches MAME pixel for
   pixel, and on my MiSTer the game's attract now shows the whole
   formation. Because the core now does all the drawing it skipped before,
-  this mode may run slower than on a real board. I do not know yet how
-  fast a board runs it; board footage of this mode would help.
+  beta 1 ran every 2D version too slowly
+  ([#14](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/14)):
+  the big picture reads its texture walking up the columns, so nearly
+  every pixel missed the texture cache. Beta 2 fills the cache in the
+  direction of the walk: in simulation Cellophane goes from 34.6 ms to
+  21.0 ms per frame and Upright from 22.5 ms to 13.4 ms. My only estimate
+  for the board, 20.8 ms for Cellophane, comes from the Ray Crisis board
+  timing, not from footage of this game, so board footage of the 2D
+  versions would still help.
 - **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)).
   Up to alpha 3 the scandoubled output had no vertical sync, so any Fx
   setting other than None lost the picture over HDMI, direct video and
