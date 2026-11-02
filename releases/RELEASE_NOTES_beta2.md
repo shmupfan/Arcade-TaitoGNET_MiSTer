@@ -38,13 +38,16 @@ can settle them.
   Video Settings > **Crop 224 lines** (On by default, shown only for
   Shikigami no Shiro), turns the top and bottom 8 lines into blanking, so
   over HDMI the 224 lines fill the screen as on an arcade monitor adjusted
-  to that grid. On a CRT the 16 lines are black and the sync is unchanged.
+  to that grid. On a CRT the sync and picture size are unchanged; the 16
+  lines are only blanked to black, and as the game's own strips are
+  already black or nearly black there, the option makes no visible
+  difference on a CRT.
   Off shows all 240 lines, as MAME does. Only the two Shikigami no Shiro
   sets can crop; the other games draw 240 lines. The Shikigami MRAs in
   this release turn the option on; older MRAs do not show it. On my
   MiSTer with this RBF a screenshot of the Shikigami title (the picture
   the HDMI scaler receives) is 320 x 224, against 320 x 240 for XII
-  Stag. TO CONFIRM on a CRT.
+  Stag. On my CRT the picture stays stable with the option On and Off.
 - **Zooo button names
   ([#15](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/15)).**
   Button 2 is now called Binoculars and button 3 Unused.

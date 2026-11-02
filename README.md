@@ -202,7 +202,9 @@ For vertical games, at the top of the menu:
 - **Crop 224 lines** (Shikigami no Shiro only): On (the default) or Off.
   Shikigami no Shiro draws its game and its test mode grid in 224 of the
   240 lines; On turns the top and bottom 8 lines into blanking, so over
-  HDMI the 224 lines fill the screen. On a CRT those lines are black. Off
+  HDMI the 224 lines fill the screen. On a CRT nothing visible changes:
+  the lines turn black, and the game already draws them black or nearly
+  black. Off
   shows all 240 lines, as MAME does. The item needs this release's
   Shikigami MRAs ([#13](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/13)).
 - **Scale** (HDMI): Normal, V-Integer, Narrower HV-Integer, Wider
