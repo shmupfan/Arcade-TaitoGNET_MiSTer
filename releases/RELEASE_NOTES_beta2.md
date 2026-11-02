@@ -51,8 +51,10 @@ can settle them.
 
 - The slowdown calibration (Ray Crisis demo 1 against the board, about
   1.077 of MAME's time on beta 1, board 1.078) and the other games' timing are as in
-  beta 1, apart from the Space Invaders change above. TO CONFIRM Ray
-  Crisis demo 1 on my MiSTer.
+  beta 1, apart from the Space Invaders change above. On my MiSTer with
+  this RBF (2026-11-02, same screenshot method as beta 1, 95 screenshots
+  matched to MAME frames) Ray Crisis demo 1 takes 1.073 of MAME's time,
+  against the board's 1.078.
 - XII Stag's first boss explosion still slows down a lot on the core. I
   have traced it to the graphics chip's texture reads, which take about
   33 ms per frame there in simulation, and to the game making the CPU wait
