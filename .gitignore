@@ -121,3 +121,5 @@ ckpt_*
 !releases/Arcade-TaitoGNET_*.rbf
 sim/hiscore/work/
 sim/i9/work/
+sim/ascal_equiv/work/
+sim/ascal_equiv/*.log

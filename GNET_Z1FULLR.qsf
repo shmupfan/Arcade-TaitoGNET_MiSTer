@@ -121,6 +121,7 @@ set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_overlay.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crt_pos.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_arcade_video.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_sd_blank.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crop224.sv
 # G-NET DDR3 arbiter (docs/ddr3_arbiter.md): rotation, Zoom port, flash mirror, core through rtl/gnet/gnet_ddr3_arb.sv
 set_global_assignment -name VERILOG_MACRO "GNET_DDR3_ARB=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_arb.sv
@@ -197,7 +198,11 @@ set_global_assignment -name VERILOG_MACRO "GNET_GPU_READ_INFL=2"
 # matches the board. Ray Crisis attract demo 1, core time over MAME time:
 # board 1.078, prefetch alone 1.045, delay 9 gave 1.061, delay 13 gave 1.0748
 # on this revision's seed 8 build.
-set_global_assignment -name VERILOG_MACRO "GNET_TEX_MISS_DELAY=13"
+# Issue #14 test build (docs/gpu_speed_sianniv.md): fill rows follow a span
+# that walks up the texture (sianniv's rotated quad), and the delay goes from
+# 13 to 15 so Ray Crisis keeps its calibration. Check Ray Crisis demo 1.
+set_global_assignment -name VERILOG_MACRO "GNET_TEX_MISS_DELAY=15"
+set_global_assignment -name VERILOG_MACRO "GNET_TEX_FETCH_DIR=2"
 # Test build ch13 (docs/gpu_blend_timing.md 4 and 11): polygon spans clipped
 # to the drawing area (PS1 bandwidth log, 1/4 and 1/2 off-screen quads) and an
 # 8 KB texture cache index for 8-bit and 15-bit pages (compensation for DDR3

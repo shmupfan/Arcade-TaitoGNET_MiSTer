@@ -41,6 +41,7 @@ entity psx_mister is
       TEX_SPX_COST8         : integer := 0;
       TEX_SPX_COST15        : integer := 0;
       POLY_CLIP_X           : integer := 0;    -- psx_top / gpu_poly: polygon spans clipped to the drawing area
+      TEX_FETCH_DIR         : integer := 0;
       CLK_FAST_RATIO        : integer := 3;
       CPU_CLK_SPLIT         : integer := 0;    -- psx_top: 1 = CPU group on clk_cpu/clk_cpu2x/clk_cpu3x
       -- G-NET: ZN-2 board (psx_top ZN2_BOARD), 0 = upstream
@@ -428,6 +429,7 @@ begin
       TEX_SPX_COST8         => TEX_SPX_COST8,
       TEX_SPX_COST15        => TEX_SPX_COST15,
       POLY_CLIP_X           => POLY_CLIP_X,
+      TEX_FETCH_DIR         => TEX_FETCH_DIR,
       GTE_NARROW_MUL        => GTE_NARROW_MUL,
       CLK_FAST_RATIO        => CLK_FAST_RATIO,
       CPU_CLK_SPLIT         => CPU_CLK_SPLIT,

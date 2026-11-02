@@ -47,7 +47,7 @@ module rot_top #(
     output logic [7:0]  rot_be,
     output logic        rot_ovf,
     output logic [9:0]  rot_hiwater,
-    output logic        own_ovf,
+    output logic        own_orphan,
     output logic        fb_en,
     output logic [11:0] fb_width,
     output logic [11:0] fb_height,
@@ -114,7 +114,7 @@ module rot_top #(
         .z_req(1'b0), .z_line(21'd0), .z_ready(), .z_rvalid(),
         .g_rd(1'b0), .g_we(1'b0), .g_addr(29'd0), .g_burstcnt(8'd1), .g_din(64'd0), .g_be(8'd0), .g_busy(), .g_dout_ready(),
         .c_rd, .c_we, .c_addr, .c_burstcnt, .c_din, .c_be, .c_busy, .c_dout_ready,
-        .rdata, .rot_ovf, .rot_hiwater, .own_ovf);
+        .rdata, .rot_ovf, .rot_hiwater, .own_orphan);
 endmodule
 
 module sync_fix (input clk, input sync_in, output sync_out);  // sys/sys_top.v:1882

@@ -32,7 +32,7 @@ highest priority first:
   broadcast DOUT_READY (rtl/psx_top.vhd:1609, 1761) correct.
 - Nothing is acknowledged in reset.
 - Status: rot_ovf (sticky: a rotation write found the FIFO full and was
-  dropped), rot_hiwater (highest FIFO level), own_ovf (protocol error).
+  dropped), rot_hiwater (highest FIFO level), own_orphan (orphan beat, a protocol error).
 
 Expected size: about 300 ALMs and 2 M10K (the rotation FIFO, 512 x 69
 bits); not fitted.
@@ -170,7 +170,7 @@ In PSX.sv:
   keeps sdram.sv's byte order (din[15:0] at the lower address, byte enable
   0 for the lowest byte), so DDR3 holds the same bytes as SDRAM.
 - Status wires (clk_2x): gnet_ddr3_rot_ovf, gnet_ddr3_rot_hiwater (of
-  512), gnet_ddr3_own_ovf, gnet_ddr3_mirror_ovf; the overflow flags are
+  512), gnet_ddr3_own_orphan, gnet_ddr3_mirror_ovf; the overflow flags are
   sticky until power-up. Shown in the debug overlay's DR row in every
   GNET_DDR3_ARB build (docs/hw_debug_overlay.md 2).
 - GNET_Z1_DDR3.qsf lists rtl/gnet/zn_dbg_regs.vhd and zn_dbg_overlay.vhd

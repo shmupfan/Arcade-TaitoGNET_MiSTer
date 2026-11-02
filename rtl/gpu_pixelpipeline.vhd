@@ -59,7 +59,17 @@ entity gpu_pixelpipeline is
       -- time. All 0 = off (no shadow cache)
       TEX_SPX_COST4        : integer := 0;
       TEX_SPX_COST8        : integer := 0;
-      TEX_SPX_COST15       : integer := 0
+      TEX_SPX_COST15       : integer := 0;
+      -- G-NET (docs/gpu_speed_sianniv.md): 1 = with TEX_FETCH_ROWS > 1 the
+      -- further rows follow the walk: when a miss is on a lower texture row
+      -- than the previous miss, the fill covers this row and the
+      -- TEX_FETCH_ROWS - 1 rows above it (v - 1, ...) instead of below it.
+      -- 2 = the same, only when the previous miss was on the same screen
+      -- line (a span that walks up the texture: rotated quads, sianniv's
+      -- formation); 3 = as 2, and at most 2 pixels right of the previous
+      -- miss (a miss on every pixel or every second one: a near vertical
+      -- walk); 0 = rows v + 1, ... always (alpha 3)
+      TEX_FETCH_DIR        : integer := 0
    );
    port 
    (
@@ -198,6 +208,11 @@ architecture arch of gpu_pixelpipeline is
    signal fillBeat            : unsigned(3 downto 0) := (others => '0');
    signal tagBeat             : unsigned(3 downto 0) := (others => '0');
    signal texMissWait         : integer range 0 to TEX_MISS_DELAY := 0;
+   -- TEX_FETCH_DIR: texture row (page y and v) of the last miss
+   signal lastMissY           : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
+   signal lastMissScrY        : unsigned(VRAM_Y_BITS - 1 downto 0) := (others => '0');
+   signal lastMissScrX        : unsigned(9 downto 0) := (others => '0');
+   signal walkUp              : std_logic;
 
    -- cache entry of fill beat k: row k / 4 of the fill, entry k mod 4 of the
    -- group; one cache row is 4 entries (4 and 8 bit layout) or 8 (15 bit)
@@ -615,6 +630,13 @@ begin
    end generate;
 
    -- G-NET: no cache write during the TEX_MISS_DELAY wait; texReqActive for the bench
+
+   -- TEX_FETCH_DIR: this miss is on a lower texture row than the previous
+   -- one (2: and on the same screen line; 3: and 1 or 2 pixels to the right)
+   walkUp            <= '1' when (TEX_FETCH_DIR > 0 and stage0_textaddr(0)(VRAM_Y_BITS + 10 downto 11) < lastMissY and
+                                  (TEX_FETCH_DIR = 1 or stage0_y = lastMissScrY) and
+                                  (TEX_FETCH_DIR < 3 or stage0_x - lastMissScrX <= 2)) else '0';
+
    cache_wren_a      <= '1' when (vram_DOUT_READY = '1' and state = WAITTEXTURE and texMissWait = 0) else '0';
    texReqActive      <= '1' when (state = REQUESTTEXTURE or state = WAITTEXTURE or state = REQUESTMORETEXTURE) else '0';
                      
@@ -809,6 +831,9 @@ begin
                      cacherequest <= not cachehit;
                   elsif (stage0_valid = '1' and stage0_texture = '1' and cachehit(0) = '0' and spxStall = '0') then
                      state           <= REQUESTTEXTURE;
+                     lastMissY       <= stage0_textaddr(0)(VRAM_Y_BITS + 10 downto 11);
+                     lastMissScrY    <= stage0_y;
+                     lastMissScrX    <= stage0_x;
                      cacherequest    <= (others => '0');
                      tag_data_a      <= tagWord(tag_data(0), tagEpoch);
                      tag_address_a   <= tag_addr(0);
@@ -831,7 +856,24 @@ begin
                         -- further rows only inside the same cache block (no carry
                         -- out of the row bits of the index)
                         if (TEX_FETCH_ROWS > 1) then
-                           if (drawMode(8) = '0' and stage0_textaddr(0)(16 downto 11) <= 64 - TEX_FETCH_ROWS) or
+                           if (walkUp = '1') then
+                              -- walking up the texture: this row and the ones
+                              -- above it; the fill starts TEX_FETCH_ROWS - 1
+                              -- rows up (4 cache entries a row, 8 in 15 bit)
+                              if (drawMode(8) = '0' and stage0_textaddr(0)(16 downto 11) >= TEX_FETCH_ROWS - 1) then
+                                 reqRows         <= to_unsigned(TEX_FETCH_ROWS - 1, 2);
+                                 reqVRAMYPos     <= stage0_textaddr(0)(VRAM_Y_BITS + 10 downto 11) - (TEX_FETCH_ROWS - 1);
+                                 tag_address_a   <= (tag_addr(0)(CA - 1 downto 2) - (TEX_FETCH_ROWS - 1)) & "00";
+                                 cache_address_a <= (tag_addr(0)(CA - 1 downto 2) - (TEX_FETCH_ROWS - 1)) & "00";
+                                 fillBase        <= (tag_addr(0)(CA - 1 downto 2) - (TEX_FETCH_ROWS - 1)) & "00";
+                              elsif (drawMode(8) = '1' and stage0_textaddr(0)(15 downto 11) >= TEX_FETCH_ROWS - 1) then
+                                 reqRows         <= to_unsigned(TEX_FETCH_ROWS - 1, 2);
+                                 reqVRAMYPos     <= stage0_textaddr(0)(VRAM_Y_BITS + 10 downto 11) - (TEX_FETCH_ROWS - 1);
+                                 tag_address_a   <= (tag_addr(0)(CA - 1 downto 2) - 2 * (TEX_FETCH_ROWS - 1)) & "00";
+                                 cache_address_a <= (tag_addr(0)(CA - 1 downto 2) - 2 * (TEX_FETCH_ROWS - 1)) & "00";
+                                 fillBase        <= (tag_addr(0)(CA - 1 downto 2) - 2 * (TEX_FETCH_ROWS - 1)) & "00";
+                              end if;
+                           elsif (drawMode(8) = '0' and stage0_textaddr(0)(16 downto 11) <= 64 - TEX_FETCH_ROWS) or
                               (drawMode(8) = '1' and stage0_textaddr(0)(15 downto 11) <= 32 - TEX_FETCH_ROWS) then
                               reqRows <= to_unsigned(TEX_FETCH_ROWS - 1, 2);
                            end if;

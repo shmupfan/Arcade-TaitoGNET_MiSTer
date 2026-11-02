@@ -171,6 +171,64 @@ Risk: medium. It is a local change to a framework file that every `sys/` update 
 - `o_div`: splitting the last divider stage adds a cycle to `o_hfrac(1)`, so every C-numbered stage of the horizontal filter (`o_hfrac(2 TO 9)`, `o_hpixq`, `o_copyv`, `o_dcptv_*`) must move by one. Not a clearly correct single register; only if the Tcl run shows this family on the current seeds.
 - `o_vacpt`: register the two compare results (`o_vacpt > o_ivsize`, `= o_ivsize`) when `o_vacpt` is updated, so CYCLE 8 selects on flags. Correct only if no displayed pixel uses the flags in the cycle after an `o_vacpt` update; needs the same NVC bench as F3.
 
+### F5. Registered line select before the `o_adrs_pre` multiply (applied, i14-speed tree)
+
+Found 2026-10-24 on the issue #14 builds (GPU TEX_FETCH_DIR, 223e69a plus the speed patch, GNET_FIT_OC 0.4 and 0.3). Twelve fits, none clean in both slow corners; nearly all fail the same 24 endpoints at -40C:
+
+| Seed (FIT_OC) | HDMI 100C | HDMI -40C |
+|---|---|---|
+| 5 (0.4) | -0.020 | -0.083 |
+| 6 (0.4) | -0.027 | -0.201 |
+| 7 (0.4) | -0.172 | -0.093 |
+| 8 (0.4) | +0.051 | -0.125 |
+| 9 (0.4) | +0.014 | -0.120 |
+| 10 (0.4) | -0.785 | -0.639 |
+| 11 (0.4) | -2.540 | -2.777 |
+| 12 (0.4) | -0.107 | -0.225 |
+| 5 (0.3) | +0.091 | -0.070 |
+| 8 (0.3) | +0.032 | -0.145 |
+| 9 (0.3) | -0.315 | -0.488 |
+| 13 (0.4) | +0.127 | -0.058 |
+
+Every other clock meets in both slow corners on all twelve. Seed 13 -40C worst path: `o_vacpt[4]` -> `Add83` (the `o_vacpt - 1` of the bob branch, 1.6 ns in an LAB carry chain) -> 1.0 ns route -> `Mult12` DSP (3.7 ns) -> `o_adrs_pre[0]_OTERM55` (the retimed product register inside the DSP); 1 logic level, data delay 6.885 ns against 6.732 ns. The 24 endpoints are the product bits.
+
+Change (sys/ascal.vhd, marked "G-NET"): the bob/weave mux that picks the line (`o_vacpt`, `o_vacpt - 1`, `o_vacpt` even) is written to a new register `o_vline`, and `o_adrs_pre <= o_vline * o_stride`. The subtractor and mux move to the cycle before; the DSP input comes straight from a register. `o_adrs_pre` now lags `o_vacpt` by 2 clocks instead of 1.
+
+Is one more clock safe? `o_adrs_pre` is read into `o_adrs` on every `o_adrsa` cycle, and `o_adrs` is used twice per read request: by the Avalon side (sampled after the `o_read` toggle crosses into avl_clk) and, in the `sREAD` cycle that issues the request, by `pixoffset` for the framebuffer pixel offset. In `sHSYNC` with `o_fload = 0`, `o_vacpt` never changes in the cycle that leaves for `sREAD` (it only increments while `vcarry_v` holds, and the `o_vmin` reset falls on a preload line with `o_fload > 0`, which takes its address from `o_hbcpt`). This is my reading of the RTL; the bench below measures it.
+
+Bench: `sim/ascal_equiv/run.sh` (NVC, VHDL-2008). It runs git HEAD's ascal (`ascal_orig`) and the working tree side by side on one stimulus, each with its own Avalon memory model (6-clock read latency, unwritten words return a pattern of the address), and compares every o_clk the video outputs (RGB, syncs, DE, vblank, border) and every avl_clk the requests, addresses and write data. Input 160 x 60 (per field when interlaced), output 320 x 120, nearest-neighbour mode, 12 output frames. Two simulation-only wraps in both copies (`o_pshift` and `o_ihsizem` are naturals the hardware wraps at their width; NVC stops on the range error).
+
+| Scenario | Output frames | Video diff | Avalon diff | Read bursts | Non-black output pixels |
+|---|---|---|---|---|---|
+| 0 progressive | 12 | 0 | 0 | 1,344 | 423,360 |
+| 1 HPS framebuffer, 16 bpp, stride 302 bytes (not a multiple of 16) | 12 | 0 | 0 | 2,222 | 423,360 |
+| 2 interlaced, bob (o_inter and o_bob_deint high on 498,932 o_clk) | 12 | 0 | 0 | 1,708 | 423,360 |
+| 3 interlaced, weave | 12 | 0 | 0 | 1,708 | 423,360 |
+
+In the original, the fewest o_clk from an `o_vacpt` change to a read request with `o_fload = 0` is 4 in every scenario.
+
+The bench catches the fault it is there for. Copies with extra delay on `o_vline` (sim only, not kept):
+
+| `o_vacpt` to `o_adrs_pre` | Progressive | Framebuffer | Bob |
+|---|---|---|---|
+| 2 (F5) | 0 diff | 0 diff | 0 diff |
+| 3 | 0 diff | 415,354 video, 1,460 Avalon | 0 diff |
+| 4 | 0 diff | differs | 70,504 video, 367 Avalon |
+| 5 | differs | differs | differs |
+
+So F5's extra clock is the most the framebuffer path takes (measured); that the limit is the `pixoffset` read in the issuing cycle is my inference from the RTL. Not covered by the bench: polyphase and bilinear filter modes (the line address does not depend on the mode, so not expected to matter, but not run), downscaling, VRR, low-lag, and real HDMI timings.
+
+Fits with F5 (same tree otherwise, GNET_FIT_OC 0.4, 2026-10-25), worst setup slack per slow corner and hold:
+
+| Seed | HDMI 100C | HDMI -40C | 2x | cpu | cpu2x | Hold (4 corners) | RBF md5 |
+|---|---|---|---|---|---|---|---|
+| 5 | +0.277 | +0.302 | +0.954 / +1.108 | +0.707 / +0.608 | +0.441 / +0.619 | FAILS: hold1x -0.379 (Slow 100C) to -0.185, 2 endpoints; hold2x -0.003 (Slow -40C) | efb0cab1459378a8b2ab3efa5a735593 |
+| 8 | +0.300 | +0.016 | +1.271 / +1.537 | +0.879 / +1.119 | +0.553 / +0.649 | clean | a4225447e0c5c4714c5c7690b64a1a82 |
+| 9 | +0.235 | +0.129 | +1.061 / +0.948 | +1.116 / +1.545 | +0.542 / +0.777 | clean | 53cfbd217dff6cb76b64d60f902e890c |
+| 13 | +0.098 | +0.296 | +0.858 / +1.095 | +0.752 / +1.092 | +0.331 / +0.695 | clean | d80ad49afdc43d44c4540a041cad5b65 |
+
+Setup meets on 4 of 4 (0 of 12 before F5 on this tree); 3 of 4 meet everything. No HDMI endpoint under 0.1 ns on seeds 5, 9 and 13; seed 8's one is `o_hacc -> o_dir` (F3/F4 family). Seed 5's hold failure is on the emu PLL (clk_sys domain), not HDMI. Seed 9 has the largest worst-case margin of the clean three.
+
 ## 5. Tcl path report (seed 3 and seed 4 databases)
 
 Script: `tools/sta/hdmi_paths.tcl` on this branch. It opens the project, then for each slow corner (100C and -40C) and each of the HDMI clock, clk_cpu2x and clk_cpu writes: the 200 worst endpoints (summary), the 50 worst with `-detail full_path`, the endpoints under +0.1 ns grouped into from-family to to-family (bus indices folded, count, worst slack, data delay), the worst path from each launch clock, and one corners file with worst slack, TNS and failing endpoint count. Output goes to `output_files/setup_*.rpt`.

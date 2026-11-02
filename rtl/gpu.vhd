@@ -62,7 +62,10 @@ entity gpu is
       TEX_SPX_COST15       : integer := 0;
       -- G-NET: 1 = polygon spans clipped to the drawing area (gpu_poly
       -- POLY_CLIP_X, docs/gpu_blend_timing.md), 0 = upstream
-      POLY_CLIP_X          : integer := 0
+      POLY_CLIP_X          : integer := 0;
+      -- G-NET: 1 or 2 = the further rows of a fill follow the walk direction
+      -- (gpu_pixelpipeline TEX_FETCH_DIR), 0 = always the rows below
+      TEX_FETCH_DIR        : integer := 0
    );
    port 
    (
@@ -1476,7 +1479,8 @@ begin
    igpu_pixelpipeline : entity work.gpu_pixelpipeline
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, TEX_FETCH_QW => TEX_FETCH_QW, TEX_FETCH_ROWS => TEX_FETCH_ROWS,
                  TEX_MISS_DELAY => TEX_MISS_DELAY, TEX_CACHE_BIG => TEX_CACHE_BIG, TEX_SPX_COST4 => TEX_SPX_COST4,
-                 TEX_SPX_COST8 => TEX_SPX_COST8, TEX_SPX_COST15 => TEX_SPX_COST15)   -- G-NET: VRAM_Y_BITS, texture fetch and timing generics
+                 TEX_SPX_COST8 => TEX_SPX_COST8, TEX_SPX_COST15 => TEX_SPX_COST15,
+                 TEX_FETCH_DIR => TEX_FETCH_DIR)   -- G-NET: VRAM_Y_BITS, texture fetch and timing generics
    port map
    (
       clk2x                => clk2x,     
@@ -1846,11 +1850,10 @@ begin
                         -- G-NET: source flag at F_SRC
                         frameVramType   <= fifoOut_Dout(F_SRC);
                         fifoOut2_Dout_1 <= fifoOut2_Dout;
-                        -- G-NET: known slip, not fixed yet: fifoOut_Dout(85) is the source flag only at
-                        -- VRAM_Y_BITS 9; at 10 it is the top byte enable and the flag is F_SRC (86).
-                        -- Not reachable in the release build: GNET_LEAN ties interlaced480pHack to 0
-                        -- (PSX.sv). The fix, fifoOut_Dout(F_SRC), is planned as a separate change.
-                        if (interlacedDrawing = '1' and interlaced480pHack = '1' and videoout_reports.activeLineLSB = fifoOut_Dout(72) and fifoOut_Dout(85) = '1') then
+                        -- G-NET: source flag at F_SRC (upstream's bit 85 at VRAM_Y_BITS 9; at 10 bit 85
+                        -- is the top byte enable). The release ties interlaced480pHack to 0 (GNET_LEAN,
+                        -- PSX.sv), so this term is constant there.
+                        if (interlacedDrawing = '1' and interlaced480pHack = '1' and videoout_reports.activeLineLSB = fifoOut_Dout(72) and fifoOut_Dout(F_SRC) = '1') then
                            vram_WE    <= '0';
                         end if;
                      elsif (frameClearRequest = '1' and SS_Idle = '1') then

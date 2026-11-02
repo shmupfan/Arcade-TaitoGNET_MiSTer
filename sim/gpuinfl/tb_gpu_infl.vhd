@@ -71,6 +71,7 @@ entity tb_gpu_infl is
       -- VRAM_RD_LAT in the faster cycles to keep the latency in ns
       GSCALE      : real := 1.0;
       PACED       : boolean := false;  -- release a stream frame at the first vblank after the GPU went idle (DrawSync, VSync)
+      TEX_DIR     : integer := 0;      -- gpu TEX_FETCH_DIR
       ARB         : boolean := false;  -- GPU through a model of gnet_ddr3_arb's core path
       ROT         : boolean := false   -- with screen_rotate's writes at top priority (ARB only)
    );
@@ -174,7 +175,8 @@ begin
    igpu : entity psx.gpu
    generic map (VRAM_Y_BITS => VRAM_Y_BITS, GPU_READ_INFL => READ_INFL, TEX_FETCH_QW => TEX_QW, TEX_FETCH_ROWS => TEX_ROWS,
                 TEX_MISS_DELAY => TEX_DELAY, TEX_CACHE_BIG => TEX_BIG, TEX_SPX_COST4 => SPX4,
-                TEX_SPX_COST8 => SPX8, TEX_SPX_COST15 => SPX15, POLY_CLIP_X => CLIPX)
+                TEX_SPX_COST8 => SPX8, TEX_SPX_COST15 => SPX15, POLY_CLIP_X => CLIPX,
+                TEX_FETCH_DIR => TEX_DIR)
    port map
    (
       clk1x => clk1x, clk2x => clk2x, clk2xIndex => clk2xIndex, clkvid => clkvid,
@@ -837,6 +839,44 @@ begin
             report "LONG rect " & integer'image(r_last) & " clk2x, stream frame " & integer'image(feed_frame) severity note;
          end if;
          p_last := p_now; r_last := r_now;
+      end if;
+   end process;
+
+   -- Texture cache misses (docs/gpu_speed_sianniv.md): texmiss.txt, one line
+   -- per GPU vblank interval: vblank misses miss_cycles misses_poly
+   -- misses_rect. misses = rising edges of the pipeline's texReqActive (one
+   -- per miss event, whatever the fill size); miss_cycles = clk2x edges with
+   -- texReqActive high (request, data and TEX_MISS_DELAY wait; the pipeline
+   -- is stalled meanwhile); misses_poly / misses_rect = the misses that start
+   -- while gpu_poly / gpu_rect is out of IDLE (drawTiming counting).
+   texmon : process (clk2x)
+      file ftm : text open write_mode is "texmiss.txt";
+      alias t_act is << signal .tb_gpu_infl.igpu.igpu_pixelpipeline.texReqActive : std_logic >>;
+      alias tp_dt is << signal .tb_gpu_infl.igpu.igpu_poly.drawTiming : unsigned(31 downto 0) >>;
+      alias tr_dt is << signal .tb_gpu_infl.igpu.igpu_rect.drawTiming : unsigned(31 downto 0) >>;
+      variable l : line;
+      variable tm, tc, tmp, tmr, vbn : integer := 0;
+      variable pa, pv : std_logic := '0';
+   begin
+      if rising_edge(clk2x) then
+         if t_act = '1' then
+            tc := tc + 1;
+            if pa = '0' then
+               tm := tm + 1;
+               if tp_dt /= 0 then tmp := tmp + 1; end if;
+               if tr_dt /= 0 then tmr := tmr + 1; end if;
+            end if;
+         end if;
+         pa := t_act;
+         if irq_VBLANK = '1' and pv = '0' then
+            vbn := vbn + 1;
+            write(l, vbn); write(l, ' '); write(l, tm); write(l, ' '); write(l, tc);
+            write(l, ' '); write(l, tmp); write(l, ' '); write(l, tmr);
+            writeline(ftm, l);
+            flush(ftm);
+            tm := 0; tc := 0; tmp := 0; tmr := 0;
+         end if;
+         pv := irq_VBLANK;
       end if;
    end process;
 

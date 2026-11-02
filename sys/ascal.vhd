@@ -484,6 +484,7 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_copyv : unsigned(0 TO 14);
 	SIGNAL o_adrs : unsigned(31 DOWNTO 0); -- Avalon address
 	SIGNAL o_adrs_pre : natural RANGE 0 TO 2**24-1;
+	SIGNAL o_vline : natural RANGE 0 TO 4095;
 	SIGNAL o_stride : unsigned(13 DOWNTO 0);
 	SIGNAL o_adrsa,o_adrsb,o_rline : std_logic;
 	SIGNAL o_ad,o_ad1,o_ad2,o_ad3 : natural RANGE 0 TO 2*BLEN-1;
@@ -2152,19 +2153,22 @@ BEGIN
 			-- To counteract the severe vibrating/motion with bob deinterlacing, we need to offset one field
 			-- by a half-line. This is done by only reading the first line of the 'even' frame once
 
+			-- G-NET: line select registered before the multiply (HDMI setup
+			-- timing, docs/hdmi_timing.md F5); o_adrs_pre lags o_vacpt by 2.
 			IF o_inter='1' AND o_bob_deint='1' THEN
 				IF o_iwfl(o_obuf0)='0' THEN
 					IF o_vacpt=0 OR o_rline='1' THEN
-						o_adrs_pre <= to_integer(o_vacpt) * to_integer(o_stride);
+						o_vline <= to_integer(o_vacpt);
 					ELSE
-						o_adrs_pre <= (to_integer(o_vacpt)-1) * to_integer(o_stride);
+						o_vline <= to_integer(o_vacpt)-1;
 					END IF;
 				ELSE
-					o_adrs_pre <= to_integer(o_vacpt(11 DOWNTO 1) & "0") * to_integer(o_stride);
+					o_vline <= to_integer(o_vacpt(11 DOWNTO 1) & "0");
 				END IF;
 			ELSE
-				o_adrs_pre<=to_integer(o_vacpt) * to_integer(o_stride);
+				o_vline <= to_integer(o_vacpt);
 			END IF;
+			o_adrs_pre <= o_vline * to_integer(o_stride);
 
 			IF o_adrsa='1' THEN
 				IF o_fload=2 THEN

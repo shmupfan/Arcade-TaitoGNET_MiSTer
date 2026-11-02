@@ -48,7 +48,7 @@ module tb_flcopy_top #(
     output logic        ddr_we,
     output logic [63:0] rdata,
     output logic        mir_ovf,
-    output logic        own_ovf
+    output logic        own_orphan
 );
     wire        mir_we, mir_busy;
     wire [28:0] mir_addr;
@@ -85,5 +85,5 @@ module tb_flcopy_top #(
         .g_busy(g_busy), .g_dout_ready(g_dout_ready),
         .c_rd(c_rd), .c_we(1'b0), .c_addr(c_addr), .c_burstcnt(c_burstcnt), .c_din(64'd0), .c_be(8'hFF),
         .c_busy(c_busy), .c_dout_ready(c_dout_ready),
-        .rdata(rdata), .rot_ovf(), .rot_hiwater(), .own_ovf(own_ovf));
+        .rdata(rdata), .rot_ovf(), .rot_hiwater(), .own_orphan(own_orphan));
 endmodule

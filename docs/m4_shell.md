@@ -305,6 +305,7 @@ Shell menu (GNET_SHELL):
 | Video Settings: Deinterlacing (Weave, Bob) | 41 | not on direct_video |
 | Video Settings: CRT H Position (0, +2 .. +14, -16 .. -2 dots) | 110:107 | always |
 | Video Settings: CRT V Position (0, +1 .. +3, -4 .. -1 lines) | 113:111 | always |
+| Video Settings: Crop 224 lines (On, Off; docs/crop224.md) | 122 | sets with configuration bit 5 (H4) |
 | Audio Settings page (P2): Volume | 106:105 | always |
 | Audio Settings: SFX Level (PS1 SPU gain in the mix: 0.3 MAME default, 0.45, 0.6, 0.9, 1.2, 1.5) | 119:117 | GNET_ZOOM builds (zoom_mix) |
 | Pause Options page (P3): Pause when OSD is open (On, Off) | 64 | always |

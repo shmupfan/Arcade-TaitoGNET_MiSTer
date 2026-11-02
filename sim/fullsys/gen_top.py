@@ -79,7 +79,7 @@ if dl:
     io += ['   input RESET', '   input ioctl_download', '   input [15:0] ioctl_index', '   input [26:0] ioctl_addr',
            '   input [15:0] ioctl_dout', '   input ioctl_wr', '   output reg ioctl_wait', '   output dbg_reset']
 if dlfull:
-    io += ['   output dbg_flc_busy', '   output dbg_mir_ovf', '   output dbg_own_ovf', '   output [3:0] dbg_flc_flags',
+    io += ['   output dbg_flc_busy', '   output dbg_mir_ovf', '   output dbg_own_orphan', '   output [3:0] dbg_flc_flags',
            '   output [31:0] dbg_flc_sum0', '   output [31:0] dbg_flc_sum1', '   output [31:0] dbg_flc_sum2']
 if not zn2:
     io += ['   input [26:0] ch3_addr', '   output [31:0] ch3_dout', '   input [31:0] ch3_din', '   input ch3_req',

@@ -334,16 +334,18 @@ always @(posedge clk_1x) begin
 	if (zn_wd_reset & ~status[100] & ~zn_wd_mask) zn_wd_hold <= 8'hFF;
 	else if (zn_wd_hold) zn_wd_hold <= zn_wd_hold - 1'd1;
 end
+wire gnet_reset_zn2 = gnet_download | (zn_wd_hold != 0);
+`else
+wire gnet_reset_zn2 = 1'b0;
+`endif
+// G-NET: the CPU group stays in reset until its PLL locks
 `ifdef GNET_CPU50
-wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | gnet_download | (zn_wd_hold != 0) | ~pll_cpu_locked_s[1];
+wire gnet_reset_extra = gnet_reset_zn2 | ~pll_cpu_locked_s[1];
 `else
-wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | gnet_download | (zn_wd_hold != 0);
+wire gnet_reset_extra = gnet_reset_zn2;
 `endif
-`elsif GNET_CPU50
-wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | ~pll_cpu_locked_s[1];
-`else
-wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset;
-`endif
+// G-NET: upstream's line plus gnet_reset_extra (1'b0 in an upstream build)
+wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | cdDownloadReset | gnet_reset_extra;
 
 ////////////////////////////  HPS I/O  //////////////////////////////////
 
@@ -364,10 +366,13 @@ wire reset_or = RESET | buttons[1] | status[0] | bios_download | exe_download | 
 // Orientation, 103 Rotate direction, 104 Flip, 106:105 Volume, 110:107 CRT H
 // position, 113:111 CRT V position, 116:114 Scandoubler Fx, 119:117 SFX
 // level (GNET_ZOOM: SPU gain in zoom_mix), 120 Dim video after 10s (0 =
-// On), 121 Service Menu (holds S551:4 Test Mode on); 64 keeps its PSX
+// On), 121 Service Menu (holds S551:4 Test Mode on), 122 Crop 224 lines
+// (0 = On; only for sets with configuration bit 5, rtl/gnet/
+// gnet_crop224.sv); 64 keeps its PSX
 // meaning (Pause when OSD open). Also: 100 Watchdog, 101 debug overlay
 // (docs/hw_debug_overlay.md; not in builds with GNET_NO_DBG, the release). Menu mask: H0 direct_video, H1
-// horizontal set, H2 no rotation available, H3 H2 or Orientation Horizontal.
+// horizontal set, H2 no rotation available, H3 H2 or Orientation Horizontal,
+// H4 the set does not draw 224 lines (configuration bit 5 clear).
 // Layout: rotation items at the top, then pages P1 Video Settings, P2 Audio
 // Settings, P3 Pause Options, DIP and Service Menu, P4 Advanced (mask
 // letters go before the page prefix, as upstream's "DEP1O[62]").
@@ -384,6 +389,7 @@ parameter CONF_STR = {
 	"H0P1O[41],Deinterlacing,Weave,Bob;",
 	"P1O[110:107],CRT H Position,0,+2,+4,+6,+8,+10,+12,+14,-16,-14,-12,-10,-8,-6,-4,-2;",
 	"P1O[113:111],CRT V Position,0,+1,+2,+3,-4,-3,-2,-1;",
+	"H4P1O[122],Crop 224 lines,On,Off;",
 	"P2,Audio Settings;",
 	"P2O[106:105],Volume,Normal,+6 dB,-6 dB,-12 dB;",
 `ifdef GNET_ZOOM
@@ -591,10 +597,14 @@ GNET_HISCORE_needs_GNET_ZN2();
 // only (Usagi), 3 RC wheel and trigger (Go By RC, RC De Go).
 // Bit 4 = the Dash button (Chaos Heat, issue #7, rtl/gnet/gnet_dash.sv): the
 // MRA lists Dash after Button 3 and the core does the double tap.
+// Bit 5 = the set draws 224 of its 240 lines (Shikigami no Shiro, issue #13,
+// docs/crop224.md): the OSD shows Crop 224 lines, On by default; other sets
+// never crop and do not show the item.
 reg  gnet_vertical = 1'b0;
 reg  gnet_nozoom   = 1'b0;
 reg  [1:0] gnet_inmode = 2'd0;
 reg  gnet_dash     = 1'b0;
+reg  gnet_224      = 1'b0;
 wire DIRECT_VIDEO;
 // EEPROM NVRAM save (MRA <nvram index="6" size="2048"/>), see the loader
 wire        ioctl_upload;
@@ -660,7 +670,7 @@ localparam GNET_ROT_READY = 1'b1;
 localparam GNET_ROT_READY = 1'b0;
 `endif
 wire gnet_rot_hide = DIRECT_VIDEO | ~gnet_vertical | ~GNET_ROT_READY;
-wire [15:0] status_menumask = {12'd0, (gnet_rot_hide | status[102]), gnet_rot_hide, ~gnet_vertical, DIRECT_VIDEO};
+wire [15:0] status_menumask = {11'd0, ~gnet_224, (gnet_rot_hide | status[102]), gnet_rot_hide, ~gnet_vertical, DIRECT_VIDEO};
 `else
 wire [15:0] status_menumask = {(PadPortNeGcon1 | PadPortNeGcon2), hack_480p, filter_on, saving_memcard, (bk_pending | saving_memcard), bk_pending, status[59], multitap, biosMod, ~TURBO_MEM, (status[55] && ~hack_480p), (PadPortDS1 | PadPortDS2), dbg_enabled, (PadPortGunCon1 | PadPortGunCon2 | PadPortJustif1 | PadPortJustif2), SDRAM2_EN, (snacPort1 | snacPort2)};
 `endif
@@ -1019,6 +1029,7 @@ always @(posedge clk_1x)
 		gnet_nozoom   <= ioctl_dout[1];
 		gnet_inmode   <= ioctl_dout[3:2];
 		gnet_dash     <= ioctl_dout[4];
+		gnet_224      <= ioctl_dout[5];
 	end
 
 // Keyboard, MAME default keys (ps2_key: [10] toggles per event, [9] pressed,
@@ -1836,187 +1847,8 @@ wire zc2 = zj2[8];
 
 ////////////////////////////  SYSTEM  ///////////////////////////////////
 
-// G-NET: GNET_LEAN fixes the console-only OSD options to constants so their
-// logic is removed (docs/f0_budget.md 3.1). Without the macro every option
-// stays live.
-`ifdef GNET_LEAN
-`define GNET_OPT(live, fixed) (fixed)
-`else
-`define GNET_OPT(live, fixed) (live)
-`endif
-
-// G-NET: trim switches (docs/f0_budget.md); upstream builds define none of
-// these macros, so every block stays in.
-`ifdef GNET_NO_CD
-localparam GNET_HAS_CD = 0;
-`else
-localparam GNET_HAS_CD = 1;
-`endif
-`ifdef GNET_NO_PADS
-localparam GNET_HAS_PADS = 0;
-`else
-localparam GNET_HAS_PADS = 1;
-`endif
-`ifdef GNET_NO_SAVESTATES
-localparam GNET_HAS_SAVESTATES = 0;
-`else
-localparam GNET_HAS_SAVESTATES = 1;
-`endif
-`ifdef GNET_NO_CHEATS
-localparam GNET_HAS_CHEATS = 0;
-`else
-localparam GNET_HAS_CHEATS = 1;
-`endif
-// MDEC: always built (issue #1); psx_top HAS_MDEC stays an upstream-default
-// generic. The GNET_NO_MDEC trim of the early revisions is archived
-// (docs/experiment_revisions.md).
-localparam GNET_HAS_MDEC = 1;
-// G-NET: area switches (docs/area.md). GNET_NO_DCACHE: the CPU's turbo data cache
-// (cpu.vhd datacache, 64 M10K) is not built. Only with GNET_LEAN, which ties
-// TURBO_CACHE to 0 so the cache's data is never used; without GNET_LEAN the
-// macro is ignored and the OSD option keeps its cache.
-`ifdef GNET_NO_DCACHE
-`ifdef GNET_LEAN
-localparam GNET_HAS_DCACHE = 0;
-`else
-localparam GNET_HAS_DCACHE = 1;
-`endif
-`else
-localparam GNET_HAS_DCACHE = 1;
-`endif
-// GNET_NO_DBG: no debug overlay (zn_dbg_overlay below, OSD option O[101]) and
-// no capture block (psx_top ZN2_DBG 0, rtl/gnet/zn_dbg_regs.vhd).
-`ifdef GNET_NO_DBG
-localparam GNET_ZN2_DBG = 0;
-`else
-localparam GNET_ZN2_DBG = 1;
-`endif
-`ifdef GNET_VRAM_2MB
-localparam GNET_VRAM_Y_BITS = 10;   // ZN-2 CXD8654Q, 1024 x 1024 VRAM
-`else
-localparam GNET_VRAM_Y_BITS = 9;
-`endif
-`ifdef GNET_GTE_NARROW_MUL
-localparam GNET_GTE_NARROW_MUL = `GNET_GTE_NARROW_MUL;   // 1, 2 or 3, see rtl/gte_mac123.vhd and rtl/gte.vhd
-`else
-localparam GNET_GTE_NARROW_MUL = 0;
-`endif
-`ifdef GNET_ZOOM
-localparam GNET_ZOOM_BOARD = 1;  // Taito Zoom sound board (rtl/zoom, rtl/gnet/zoom_cdc.vhd)
-`else
-localparam GNET_ZOOM_BOARD = 0;
-`endif
-`ifdef GNET_DDR3_ARB
-localparam GNET_ZOOM_INFL = 8;   // ZSG-2 reads outstanding behind the DDR3 arbiter (docs/ddr3_bandwidth.md 4.4, not in this tree)
-`else
-localparam GNET_ZOOM_INFL = 4;
-`endif
-// GPU VRAM read latency options (docs/gpu_read_infl.md); unset = upstream (1)
-`ifdef GNET_GPU_READ_INFL
-localparam GNET_GPU_READ_INFL = `GNET_GPU_READ_INFL;     // reads in flight / posted writes: 1, 2 or 4
-`else
-localparam GNET_GPU_READ_INFL = 1;
-`endif
-`ifdef GNET_TEX_FETCH_QW
-localparam GNET_TEX_FETCH_QW = `GNET_TEX_FETCH_QW;       // texture cache fill per miss: 1 or 4 qwords
-`else
-localparam GNET_TEX_FETCH_QW = 1;
-`endif
-`ifdef GNET_TEX_FETCH_ROWS
-localparam GNET_TEX_FETCH_ROWS = `GNET_TEX_FETCH_ROWS;   // texture rows per fill: 1, 2 or 4 (needs QW 4)
-`else
-localparam GNET_TEX_FETCH_ROWS = 1;
-`endif
-`ifdef GNET_TEX_MISS_DELAY
-localparam GNET_TEX_MISS_DELAY = `GNET_TEX_MISS_DELAY;   // clk_2x cycles added to each texture cache fill (real GPU VRAM cost)
-`else
-localparam GNET_TEX_MISS_DELAY = 0;
-`endif
-// GPU texture timing model (docs/gpu_blend_timing.md); unset = 0 = off
-`ifdef GNET_TEX_CACHE_BIG
-localparam GNET_TEX_CACHE_BIG = `GNET_TEX_CACHE_BIG;     // 1 = 8 KB texture cache, fewer DDR3 fills
-`else
-localparam GNET_TEX_CACHE_BIG = 0;
-`endif
-`ifdef GNET_TEX_SPX_COST4
-localparam GNET_TEX_SPX_COST4 = `GNET_TEX_SPX_COST4;     // clk_2x per psx-spx shadow cache miss, 4-bit pages
-`else
-localparam GNET_TEX_SPX_COST4 = 0;
-`endif
-`ifdef GNET_TEX_SPX_COST8
-localparam GNET_TEX_SPX_COST8 = `GNET_TEX_SPX_COST8;     // 8-bit pages
-`else
-localparam GNET_TEX_SPX_COST8 = 0;
-`endif
-`ifdef GNET_TEX_SPX_COST15
-localparam GNET_TEX_SPX_COST15 = `GNET_TEX_SPX_COST15;   // 15-bit pages
-`else
-localparam GNET_TEX_SPX_COST15 = 0;
-`endif
-`ifdef GNET_POLY_CLIP_X
-localparam GNET_POLY_CLIP_X = `GNET_POLY_CLIP_X;         // 1 = polygon spans clipped to the drawing area
-`else
-localparam GNET_POLY_CLIP_X = 0;
-`endif
-`ifdef GNET_ZN2
-localparam GNET_ZN2_BOARD = 1;   // ZN-2 board and G-NET FC PCB (rtl/gnet/zn2_board.vhd)
-localparam GNET_RECT_FLIP = 1;   // CXD8654Q textured rectangle X/Y flip, E1 bits 12/13 (issue #6, gpu_rect.vhd)
-`else
-localparam GNET_ZN2_BOARD = 0;
-localparam GNET_RECT_FLIP = 0;
-`endif
-// Fast clock edges per CPU clock cycle for the request strobes in sdram.sv
-// and psx_top.vhd (docs/r1_cpu_domain_design.md). Selects logic only; the
-// clocks come from GNET_CPU50: with it the CPU group runs on clk_cpu
-// (50 MHz) and clk_cpu2x (100 MHz), a 2:1 pair, as in the release. Without
-// GNET_CPU50 the emu PLL still makes clk_3x : clk_1x = 3:1, so
-// GNET_CLK_RATIO2 alone (revision GNET_B1R2) checks synthesis and area
-// only and does not run correctly. Nothing rejects that pairing yet.
-`ifdef GNET_CLK_RATIO2
-localparam GNET_CLK_FAST_RATIO = 2;
-`else
-localparam GNET_CLK_FAST_RATIO = 3;
-`endif
-// G-NET: R1 option B: main SDRAM plain reads ready one fast edge earlier at 2:1
-// (sdram.sv EARLY_READY; docs/r1_cpu_domain_design.md, throughput section)
-`ifdef GNET_EARLY_READY
-localparam GNET_EARLY_READY_P = 1;
-`else
-localparam GNET_EARLY_READY_P = 0;
-`endif
-// G-NET: R1 read overlap: a ZN-2 expansion read step issues its request when its
-// read delay starts (memorymux ZN2_READ_OVERLAP; docs/r1_cpu_domain_design.md)
-`ifdef GNET_READ_OVERLAP
-localparam GNET_READ_OVERLAP_P = 1;
-`else
-localparam GNET_READ_OVERLAP_P = 0;
-`endif
-// G-NET: R1 main RAM load timing at 2:1 (docs/r1_cpu_domain_design.md,
-// "Main RAM load timing at 2:1"), both off at 3:1. GNET_RAM_READ_NOWAIT: memorymux
-// skips WAITFORRAMREAD for main RAM data reads (psx_top RAM_READ_NOWAIT; the
-// CPU's back-to-back compensation is then skipped for RAM-RAM pairs).
-// memorymux's back-to-back read window stays at upstream's 7 (psx_top
-// RAM_LOAD_WINDOW). The alternative that rescaled it at 2:1 (8 with
-// GNET_EARLY_READY, 9 without; macro GNET_RAM_B2B_WINDOW, set by no
-// revision) is archived under the tag experiments-archive; the generic stays
-// for tools/r1/mem_lat (mode w).
-`ifdef GNET_RAM_READ_NOWAIT
-localparam GNET_RAM_READ_NOWAIT_P = (GNET_CLK_FAST_RATIO == 2) ? 1 : 0;
-`else
-localparam GNET_RAM_READ_NOWAIT_P = 0;
-`endif
-`ifdef GNET_CARD_JOURNAL
-localparam GNET_CARD_JOURNAL_P = 1;   // G-NET: zn2_cardmem journal read client (issue #9)
-`else
-localparam GNET_CARD_JOURNAL_P = 0;
-`endif
-localparam GNET_RAM_LOAD_WINDOW_P = 7;
-// G-NET: R1, CPU group on clk_cpu/clk_cpu2x (needs GNET_CLK_RATIO2 and the LEAN trims)
-`ifdef GNET_CPU50
-localparam GNET_CPU_CLK_SPLIT = 1;
-`else
-localparam GNET_CPU_CLK_SPLIT = 0;
-`endif
+// G-NET: build switch table (macros to localparams), rtl/gnet/gnet_params.svh
+`include "rtl/gnet/gnet_params.svh"
 
 `ifdef GNET_SHELL
 // G-NET: core video before gnet_sync_keeper, core sound before gnet_volume
@@ -2046,7 +1878,7 @@ wire [3:0] zd2 = zj2[3:0];
 
 psx_mister
 #(
-   // G-NET: generics from the macro table above; psx_mister's defaults are upstream's
+   // G-NET: generics from rtl/gnet/gnet_params.svh; psx_mister's defaults are upstream's
    .HAS_CD(GNET_HAS_CD),
    .HAS_PADS(GNET_HAS_PADS),
    .HAS_SAVESTATES(GNET_HAS_SAVESTATES),
@@ -2065,6 +1897,7 @@ psx_mister
    .TEX_SPX_COST8(GNET_TEX_SPX_COST8),
    .TEX_SPX_COST15(GNET_TEX_SPX_COST15),
    .POLY_CLIP_X(GNET_POLY_CLIP_X),
+   .TEX_FETCH_DIR(GNET_TEX_FETCH_DIR),
    .CLK_FAST_RATIO(GNET_CLK_FAST_RATIO),
    .CPU_CLK_SPLIT(GNET_CPU_CLK_SPLIT),
    .ZN2_BOARD(GNET_ZN2_BOARD),
@@ -2500,6 +2333,8 @@ psx
 `endif
 `endif
 );
+// G-NET: GNET_OPT is used only above; undefined so it cannot leak into files compiled later
+`undef GNET_OPT
 
 `ifdef GNET_ZOOM
 // G-NET: SPU and Zoom mix. MAME taitogn.cpp 441-448: SPU to the speakers at
@@ -3126,11 +2961,11 @@ reg [2:0] arb_rst_s = 3'b111;
 always @(posedge clk_2x) arb_rst_s <= {arb_rst_s[1:0], ~pll_locked};
 
 // status for the debug overlay's DR row (all clk_2x): rotation FIFO
-// overflowed (sticky), its highest fill level (of 512), own_ovf: a read
+// overflowed (sticky), its highest fill level (of 512), own_orphan: a read
 // beat arrived with the owner FIFO empty (orphan beat, a protocol error,
-// sticky; the name is historical, see gnet_ddr3_arb.sv), flash mirror FIFO
+// sticky; see gnet_ddr3_arb.sv), flash mirror FIFO
 // overflow (sticky; the stall prevents it)
-wire        gnet_ddr3_rot_ovf, gnet_ddr3_own_ovf, gnet_ddr3_mirror_ovf;
+wire        gnet_ddr3_rot_ovf, gnet_ddr3_own_orphan, gnet_ddr3_mirror_ovf;
 wire  [9:0] gnet_ddr3_rot_hiwater;
 assign gnet_ddr3_mirror_ovf = mir_ovf;
 
@@ -3247,7 +3082,7 @@ gnet_ddr3_arb ddr3_arb
 	.rdata(arb_rdata),
 	.rot_ovf(gnet_ddr3_rot_ovf),
 	.rot_hiwater(gnet_ddr3_rot_hiwater),
-	.own_ovf(gnet_ddr3_own_ovf)
+	.own_orphan(gnet_ddr3_own_orphan)
 );
 `endif
 logic [11:0] aspect_x, aspect_y;
@@ -3335,6 +3170,27 @@ always_comb begin
 	hb_end = hb_end_lut[video_hResMode];
 end
 
+// G-NET: Crop 224 lines, only for the sets whose MRA sets configuration bit
+// 5 (OSD status[122], 0 = On, the item hidden for every other set): lines 0
+// to 7 and 232 to 239 of a 240p frame become vblank in video_aspect
+// (rtl/gnet/gnet_crop224.sv)
+wire crop224_blank;
+`ifdef GNET_SHELL
+wire crop224_en = gnet_224 & ~status[122];
+gnet_crop224 crop224
+(
+	.clk      (CLK_VIDEO),
+	.ce       (ce_pix),
+	.en       (crop224_en),
+	.interlace(video_interlace),
+	.hb       (hbl),
+	.vb       (vbl),
+	.blank    (crop224_blank)
+);
+`else
+assign crop224_blank = 1'b0;
+`endif
+
 // G-NET: steps on the core's dot enable ce_pix (equal to CE_PIXEL except in
 // GNET_SHELL builds, where CE_PIXEL comes from arcade_video's mixer)
 always_ff @(posedge CLK_VIDEO) if (ce_pix) begin
@@ -3344,9 +3200,9 @@ always_ff @(posedge CLK_VIDEO) if (ce_pix) begin
 	video_aspect.vs <= vs;
 	video_aspect.vb <= vbl;
 	video_aspect.interlace <= video_interlace;
-	video_aspect.red <= (vbl || hbl) ? 8'd0 : r;
-	video_aspect.green <= (vbl || hbl) ? 8'd0 : g;
-	video_aspect.blue <= (vbl || hbl) ? 8'd0 : b;
+	video_aspect.red <= (vbl || hbl || crop224_blank) ? 8'd0 : r;
+	video_aspect.green <= (vbl || hbl || crop224_blank) ? 8'd0 : g;
+	video_aspect.blue <= (vbl || hbl || crop224_blank) ? 8'd0 : b;
 	{aspect_x, aspect_y} <= video_isPal ? aspect_ratio_lut_pal[v_total] : aspect_ratio_lut_ntsc[v_total];
 
 	VGA_DISABLE <= fast_forward;
@@ -3386,6 +3242,9 @@ always_ff @(posedge CLK_VIDEO) if (ce_pix) begin
 	// G-NET: GNET_GAME_HBLANK (1 with the shell) keeps the game's own hblank
 	if (status[62] || hack_480p || (status[54:53] > 0) || GNET_GAME_HBLANK)
 		video_aspect.hb <= hbl;
+	// G-NET: Crop 224 lines, after upstream's vb_pos rule so it always holds
+	if (crop224_blank)
+		video_aspect.vb <= 1'b1;
 
 end
 
@@ -3399,7 +3258,7 @@ wire [23:0] rgb_dbg;
 `ifndef GNET_NO_DBG
 // DR row (GNET_DDR3_ARB builds only): the DDR3 arbiter status, all clk_2x,
 // fetched by the overlay over its own cdc_handshake into clk_2x. Digits:
-// rotation FIFO overflow | owner FIFO orphan beat (own_ovf) | flash mirror
+// rotation FIFO overflow | owner FIFO orphan beat (own_orphan) | flash mirror
 // overflow | 0,
 // then the rotation FIFO high-water mark (of 512). Without the arbiter the
 // row is not built (DR_ROW 0) and the word is tied to 0.
@@ -3414,11 +3273,11 @@ wire [23:0] rgb_dbg;
 // after a timeout where it stuck (state, flags, index). The rotation
 // high-water mark is not shown in these builds.
 localparam GNET_DBG_DR_ROW = 1;
-wire [31:0] gnet_dbg_dr_word = {flc_retried, gnet_ddr3_rot_ovf, gnet_ddr3_own_ovf, gnet_ddr3_mirror_ovf,
+wire [31:0] gnet_dbg_dr_word = {flc_retried, gnet_ddr3_rot_ovf, gnet_ddr3_own_orphan, gnet_ddr3_mirror_ovf,
                                 flc_flags, flc_flags[3] ? flc_tmo_info : flc_sum_copy[23:0]};
 `elsif GNET_DDR3_ARB
 localparam GNET_DBG_DR_ROW = 1;
-wire [31:0] gnet_dbg_dr_word = {3'd0, gnet_ddr3_rot_ovf, 3'd0, gnet_ddr3_own_ovf,
+wire [31:0] gnet_dbg_dr_word = {3'd0, gnet_ddr3_rot_ovf, 3'd0, gnet_ddr3_own_orphan,
                                 3'd0, gnet_ddr3_mirror_ovf, 4'd0, 6'd0, gnet_ddr3_rot_hiwater};
 `else
 localparam GNET_DBG_DR_ROW = 0;

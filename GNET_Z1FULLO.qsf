@@ -120,6 +120,7 @@ set_global_assignment -name VHDL_FILE rtl/gnet/zn_dbg_overlay.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crt_pos.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_arcade_video.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_sd_blank.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_crop224.sv
 # G-NET DDR3 arbiter (docs/ddr3_arbiter.md): rotation, Zoom port, flash mirror, core through rtl/gnet/gnet_ddr3_arb.sv
 set_global_assignment -name VERILOG_MACRO "GNET_DDR3_ARB=1"
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/gnet/gnet_ddr3_arb.sv

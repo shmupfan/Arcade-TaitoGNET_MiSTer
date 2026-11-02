@@ -817,7 +817,7 @@ int main(int argc, char** argv) {
                 fprintf(fprog, "\n"); fflush(fprog);
             }
             if (top->dbg_mir_ovf != mo1) { mo1 = top->dbg_mir_ovf; fprintf(fprog, "%.3f us MIRROR OVERFLOW %d\n", now_ps / 1e6, mo1); }
-            if (top->dbg_own_ovf != oo1) { oo1 = top->dbg_own_ovf; fprintf(fprog, "%.3f us ARBITER OWNER FIFO OVERFLOW %d\n", now_ps / 1e6, oo1); }
+            if (top->dbg_own_orphan != oo1) { oo1 = top->dbg_own_orphan; fprintf(fprog, "%.3f us ARBITER OWNER FIFO ORPHAN BEAT %d\n", now_ps / 1e6, oo1); }
 #endif
 #endif
             if (!reset_done && t_reset < 0) {

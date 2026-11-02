@@ -16,7 +16,7 @@
 // 0x1000000 + 4k, each equal to DDR3 byte 0x31000000 + 4k (bytes past len
 // are what DDR3 held there); none after busy falls; at the end DDR3's flash
 // area still equals the source (the mirror wrote the same bytes back); no
-// mirror or owner FIFO overflow; every core read right.
+// mirror FIFO overflow or owner FIFO orphan beat; every core read right.
 //
 //   obj_flcopy/Vtb_flcopy_top <seed> <busy %> <lat> <jit> [len ...]
 #include "Vtb_flcopy_top.h"
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
         if (bad) { char m[80]; snprintf(m, sizeof m, "DDR3 flash area: %zu bytes changed by the mirror write-back", bad); err(m, cyc2); }
     }
     if (t->mir_ovf) err("mirror FIFO overflow", cyc2);
-    if (t->own_ovf) err("arbiter owner FIFO overflow", cyc2);
+    if (t->own_orphan) err("arbiter owner FIFO orphan beat", cyc2);
     printf("seed %u busy %d%% lat %d+%d: %zu copies, %lld channel 3 writes, %lld core beats checked, %d errors: %s\n",
            seed, busy_pct, lat, jit, lens.size(), total_writes, c_beats, errors, errors ? "FAIL" : "pass");
     delete t;

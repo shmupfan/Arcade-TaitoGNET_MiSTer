@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
                 }
             }
             if (d_beat) { Rd &h = q.front(); if (++h.beat == h.len) q.pop_front(); last_beat = c2; }
-            if (t->own_ovf) err("owner FIFO overflow");
+            if (t->own_orphan) err("owner FIFO orphan beat");
         }
         if (w_we) {
             rot_writes++; frame_writes++;
@@ -220,9 +220,9 @@ int main(int argc, char **argv) {
     long maxw = 0;
     for (size_t i = 2; i < writes_per_frame.size(); i++) maxw = std::max(maxw, writes_per_frame[i]);
     printf("RESULT width %d fx %ld sd %ld busy %d lat %d+%d stall %ld us: rotation writes %ld (max per frame %ld, %.1f M/s over the frame), pixels %zu, "
-           "wrong %ld; FIFO high-water %d of 512, rot_ovf %d, own_ovf %d; FB %ux%u en %d; core reads %ld; errors %ld; image checksum %016llx\n",
+           "wrong %ld; FIFO high-water %d of 512, rot_ovf %d, own_orphan %d; FB %ux%u en %d; core reads %ld; errors %ld; image checksum %016llx\n",
            W, kv["fx"], kv["sd"], busy_pct, lat_base, lat_jit, kv["stall_us"], rot_writes, maxw, maxw * 59.83 / 1e6, expect.size(), wrong, (int)t->rot_hiwater, (int)t->rot_ovf,
-           (int)t->own_ovf, t->fb_width, t->fb_height, (int)t->fb_en, c_reads, errors, (unsigned long long)csum);
+           (int)t->own_orphan, t->fb_width, t->fb_height, (int)t->fb_en, c_reads, errors, (unsigned long long)csum);
     delete t;
     return 0;
 }

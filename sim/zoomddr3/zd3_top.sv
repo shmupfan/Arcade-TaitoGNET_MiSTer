@@ -66,7 +66,7 @@ module zd3_top #(
     output logic [15:0] aud_r,
     output logic        mir_ovf,
     output logic        rot_ovf,
-    output logic        own_ovf
+    output logic        own_orphan
 );
     logic        h_ack, h_hit;
     logic [31:0] h_rdata;
@@ -103,5 +103,5 @@ module zd3_top #(
         .z_req, .z_line, .z_ready, .z_rvalid,
         .g_rd(1'b0), .g_we, .g_addr, .g_burstcnt(8'd1), .g_din, .g_be, .g_busy, .g_dout_ready(),
         .c_rd, .c_we, .c_addr, .c_burstcnt, .c_din, .c_be, .c_busy, .c_dout_ready,
-        .rdata, .rot_ovf, .rot_hiwater, .own_ovf);
+        .rdata, .rot_ovf, .rot_hiwater, .own_orphan);
 endmodule

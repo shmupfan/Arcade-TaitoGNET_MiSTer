@@ -102,13 +102,13 @@ module gnet_ddr3_arb #(
     output logic [63:0] rdata,
 
     // status (clk domain): rotation FIFO overflow (sticky until reset), its
-    // highest fill level, and own_ovf: sticky, set when a read beat arrives
-    // from DDR3 while the owner FIFO is empty (an orphan beat no client
-    // asked for, a protocol error). The owner FIFO itself cannot overflow
-    // (rd_room holds reads back); the name own_ovf is historical.
+    // highest fill level, and own_orphan: sticky, set when a read beat
+    // arrives from DDR3 while the owner FIFO is empty (an orphan beat no
+    // client asked for, a protocol error). The owner FIFO itself cannot
+    // overflow (rd_room holds reads back).
     output logic        rot_ovf,
     output logic [RAW:0] rot_hiwater,
-    output logic        own_ovf
+    output logic        own_orphan
 );
     localparam logic [1:0] O_R = 2'd0, O_Z = 2'd1, O_G = 2'd2, O_C = 2'd3;
 
@@ -264,7 +264,7 @@ module gnet_ddr3_arb #(
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            of_wp <= '0; of_rp <= '0; bc <= 8'd0; own_ovf <= 1'b0;
+            of_wp <= '0; of_rp <= '0; bc <= 8'd0; own_orphan <= 1'b0;
         end else begin
             if (accept && k_rd) begin
                 of_own[of_wp[OFW-1:0]] <= k_own;
@@ -272,7 +272,7 @@ module gnet_ddr3_arb #(
                 of_wp <= of_wp + 1'd1;
             end
             if (ddr_dout_ready) begin
-                if (of_empty) own_ovf <= 1'b1;     // orphan beat (see the port comment)
+                if (of_empty) own_orphan <= 1'b1;     // orphan beat (see the port comment)
                 if (bc == h_len - 8'd1) begin bc <= 8'd0; of_rp <= of_rp + 1'd1; end
                 else bc <= bc + 8'd1;
             end

@@ -15,7 +15,7 @@
 //      pixel's qword half must hold the last value written
 // Checks: read data, Avalon stability of the downstream command while BUSY,
 // no acknowledge in reset (the Zoom client already requests in reset),
-// no owner FIFO overflow, rotation FIFO overflow only in the stall mode.
+// no owner FIFO orphan beat, rotation FIFO overflow only in the stall mode.
 // Mode "stall" holds BUSY for 120 us once: the rotation FIFO (512) must
 // overflow and set rot_ovf.
 //
@@ -151,7 +151,7 @@ int main(int argc, char** argv) {
             if (++h.beat == h.len) q.pop_front();
             last_beat = cyc;
         }
-        if (t->own_ovf) err("owner FIFO overflow", cyc);
+        if (t->own_orphan) err("owner FIFO orphan beat", cyc);
         // in reset nothing may be acknowledged (Zoom requests arrive in reset)
         if (t->rst && (t->z_ready || !t->c_busy || !t->g_busy)) err("acknowledge in reset", cyc);
 

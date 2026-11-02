@@ -75,7 +75,7 @@ Without the arbiter the row is not built (zn_dbg_overlay generic DR_ROW =
 | XP, XD | 8 | PC and last data address at the last expiry |
 | XI | 4 + 4 | ms since the last kick at the expiry (about 1F40h when the watchdog expired normally, 1388h with the old 5 s period), last 0x1F80xxxx address at the expiry |
 | XM | 8 | ms since the core reset was released, at the expiry |
-| DR | 1 + 1 + 1 + 1 + 4 | GNET_DDR3_ARB builds only. Digit 1: rotation FIFO overflow (gnet_ddr3_rot_ovf, a screen_rotate write was dropped); digit 2: owner FIFO overflow (gnet_ddr3_own_ovf, protocol error); digit 3: flash mirror FIFO overflow (gnet_ddr3_mirror_ovf, a channel 3 flash write was not mirrored); each 0 or 1 and sticky until power-up; digit 4: 0; last four: the rotation FIFO high-water mark (gnet_ddr3_rot_hiwater, 0 to 200h of 512 entries). Normal: `DR 0000 000x` with a small high-water mark |
+| DR | 1 + 1 + 1 + 1 + 4 | GNET_DDR3_ARB builds only. Digit 1: rotation FIFO overflow (gnet_ddr3_rot_ovf, a screen_rotate write was dropped); digit 2: owner FIFO orphan beat (gnet_ddr3_own_orphan, read data with no request waiting, a protocol error); digit 3: flash mirror FIFO overflow (gnet_ddr3_mirror_ovf, a channel 3 flash write was not mirrored); each 0 or 1 and sticky until power-up; digit 4: 0; last four: the rotation FIFO high-water mark (gnet_ddr3_rot_hiwater, 0 to 200h of 512 entries). Normal: `DR 0000 000x` with a small high-water mark |
 
 The snapshot rows read 0 until the first expiry and then keep the last
 expiry until power-off (a new core load); no reset clears them.

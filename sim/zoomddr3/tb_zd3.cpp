@@ -24,7 +24,7 @@
 // requests) at their logged cycles.
 // Checks: every m_rvalid answers the oldest open line with the image's data;
 // none without an open line, none in reset; Avalon stability downstream;
-// own_ovf, rot_ovf, mirror ovf; board flags except under; the mirror copy.
+// own_orphan, rot_ovf, mirror ovf; board flags except under; the mirror copy.
 // Writes insn.bin (as tb_zoomlink), mbx.log (MN10200 mailbox accesses and
 // host acks in order, as the scratch tb_zoomlink) and prints a summary.
 #include "Vzd3_top.h"
@@ -195,7 +195,7 @@ int main(int argc, char **argv) {
             d_cmd = top->ddr_rd || top->ddr_we; d_busy = top->ddr_busy;
             d_beat = top->ddr_dout_ready; d_data = top->ddr_dout;
             c_dr = top->c_dout_ready; c_acc = (top->c_rd || top->c_we) && !top->c_busy;
-            if (top->own_ovf) ERR("owner FIFO overflow");
+            if (top->own_orphan) ERR("owner FIFO orphan beat");
             // Avalon stability
             if (p_cmd && p_busy) {
                 if (!d_cmd || top->ddr_rd != p_rd || top->ddr_addr != p_addr || top->ddr_burstcnt != p_bc ||
@@ -355,9 +355,9 @@ int main(int argc, char **argv) {
            (unsigned long long)lat_max, (unsigned long long)stray, (unsigned long long)mn_mb, (unsigned long long)acks);
     printf("zoom: wave lines (ZSG-2) %llu, latency max %llu clk_1x, first at replay cycle %llu (%.3f s)\n",
            (unsigned long long)wave_lines, (unsigned long long)wave_lat_max, (unsigned long long)first_wave_c1, first_wave_c1 / 33868800.0);
-    printf("ddr3: %llu reads, %llu writes; core reads %llu; flags %02x, mirror ovf %d, rot_ovf %d, own_ovf %d, audio non-zero cycles %llu\n",
+    printf("ddr3: %llu reads, %llu writes; core reads %llu; flags %02x, mirror ovf %d, rot_ovf %d, own_orphan %d, audio non-zero cycles %llu\n",
            (unsigned long long)ddr_reads, (unsigned long long)ddr_writes, (unsigned long long)c_reads, top->flags, top->mir_ovf,
-           top->rot_ovf, top->own_ovf, (unsigned long long)aud_nz);
+           top->rot_ovf, top->own_orphan, (unsigned long long)aud_nz);
     if (hold_at >= 0) {
         printf("hold: %ld clk_1x (%.1f ms) from replay cycle %ld; instructions retired after the hold rose %llu (last at clk_2x %llu after), "
                "settled: not at boundary %llu, machine cycles %llu, bus cycles %llu, sample ticks %llu, TMS SYNC %llu, output pushes %llu, lines %llu\n",
@@ -376,7 +376,7 @@ int main(int argc, char **argv) {
             if (i <= hw + 1 || i >= he - 1)
                 printf("  window %ld ms: machine cycles %llu, sample ticks %llu\n", i, (unsigned long long)win[i].first, (unsigned long long)win[i].second);
     }
-    if (top->own_ovf) ERR("own_ovf");
+    if (top->own_orphan) ERR("own_orphan");
     if (top->mir_ovf) ERR("mirror ovf");
     if (top->flags & 0xfe) ERR("board flags %02x", top->flags);
     printf("RESULT tb_zd3 errors %llu\n", (unsigned long long)errors);
