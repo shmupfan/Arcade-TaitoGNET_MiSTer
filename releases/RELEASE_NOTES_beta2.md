@@ -64,7 +64,12 @@ can settle them.
   beta 1, apart from the Space Invaders change above. On my MiSTer with
   this RBF (2026-11-02, same screenshot method as beta 1, 95 screenshots
   matched to MAME frames) Ray Crisis demo 1 takes 1.073 of MAME's time,
-  against the board's 1.078.
+  against the board's 1.078. Two more board timings, checked on the same
+  day with this RBF: Ray Crisis's "Prepares the start." loader takes 14.5
+  to 14.7 s from a warm boot (board 14.69 s, MAME 12.34 s), and Night
+  Raid's attract cycle, from one high score table to the next, takes 199
+  to 200 s (board 200.0 s, MAME 178.3 s; the board and the core both draw
+  the title screen at about half rate, 9.9 s against MAME's 5.0 s).
 - XII Stag's first boss explosion still slows down a lot on the core. I
   have traced it to the graphics chip's texture reads, which take about
   33 ms per frame there in simulation, and to the game making the CPU wait
