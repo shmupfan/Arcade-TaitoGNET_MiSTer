@@ -73,8 +73,9 @@ can settle them.
 - XII Stag's first boss explosion still slows down a lot on the core. I
   have traced it to the graphics chip's texture reads, which take about
   33 ms per frame there in simulation, and to the game making the CPU wait
-  for the drawing on every flash frame. How fast a board draws it is not
-  known: I have found no board footage of it. I have written a small test
+  for the drawing on every flash frame. I now have board footage of this
+  scene and am comparing it with the core; that work continues in
+  January. I have written a small test
   program that measures the texture read cost; it runs on the core, and
   running it on a real board needs a board owner.
 - Space Invaders Anniversary's march sound: a tester reports that on
