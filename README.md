@@ -316,6 +316,13 @@ kept.
   for the board, 20.8 ms for Cellophane, comes from the Ray Crisis board
   timing, not from footage of this game, so board footage of the 2D
   versions would still help.
+- **Space Invaders Anniversary march sound** ([#17](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/17)).
+  A tester reports that on beta 1 the invaders' march plays only the
+  first two of its four notes, then repeats them. This game has no Zoom
+  board, so all of its sound comes from the PlayStation SPU. I have not
+  reproduced it yet or compared it with MAME. Reports are welcome, with
+  the version played (Cellophane, Upright and so on) and whether beta 2
+  changes it.
 - **Scandoubler Fx** ([#11](https://github.com/shmupfan/Arcade-TaitoGNET_MiSTer/issues/11)).
   Up to alpha 3 the scandoubled output had no vertical sync, so any Fx
   setting other than None lost the picture over HDMI, direct video and
